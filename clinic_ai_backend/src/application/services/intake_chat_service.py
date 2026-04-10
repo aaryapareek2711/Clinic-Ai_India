@@ -1,0 +1,158 @@
+"""Intake chat orchestration service module."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from src.adapters.db.mongo.client import get_database
+from src.adapters.external.ai.openai_client import OpenAIQuestionClient
+from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
+
+
+STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "??", "???"}
+
+
+class IntakeChatService:
+    """Coordinates intake question flow on WhatsApp."""
+
+    def __init__(self) -> None:
+        self.db = get_database()
+        self.whatsapp = MetaWhatsAppClient()
+        self.openai = OpenAIQuestionClient()
+
+    def start_intake(self, patient_id: str, to_number: str, language: str) -> None:
+        """Start intake with one-time greeting and first illness question."""
+        greeting = (
+            "Hello! Welcome to Clinic AI India. "
+            if language == "en"
+            else "??????! Clinic AI India ??? ???? ?????? ??? "
+        )
+        first_question = (
+            "Please describe your main health problem in a few words."
+            if language == "en"
+            else "????? ???? ????? ????????? ?????? ??? ?????? ??? ??????"
+        )
+
+        self.db.intake_sessions.update_one(
+            {"patient_id": patient_id},
+            {
+                "$set": {
+                    "patient_id": patient_id,
+                    "to_number": to_number,
+                    "language": language,
+                    "status": "awaiting_illness",
+                    "greeting_sent": True,
+                    "illness": None,
+                    "questions": [],
+                    "current_index": 0,
+                    "answers": [],
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
+            },
+            upsert=True,
+        )
+        self.whatsapp.send_text(to_number, greeting + first_question)
+
+    def handle_patient_reply(self, from_number: str, message_text: str) -> None:
+        """Handle incoming WhatsApp reply and continue intake."""
+        session = self.db.intake_sessions.find_one({"to_number": from_number})
+        if not session:
+            return
+
+        cleaned = (message_text or "").strip()
+        if cleaned.lower() in STOP_WORDS:
+            self.db.intake_sessions.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"status": "stopped", "updated_at": datetime.now(timezone.utc)}},
+            )
+            end_msg = (
+                "Thank you. We will continue with your submitted answers."
+                if session.get("language") == "en"
+                else "???????? ?? ???? ??? ?? ??????? ?? ??? ??? ????????"
+            )
+            self.whatsapp.send_text(from_number, end_msg)
+            return
+
+        status = session.get("status")
+        if status == "awaiting_illness":
+            self._save_illness_and_generate_questions(session, cleaned)
+            return
+
+        if status == "in_progress":
+            self._save_answer_and_ask_next(session, cleaned)
+
+    def _save_illness_and_generate_questions(self, session: dict, illness_text: str) -> None:
+        language = session.get("language", "en")
+        questions = self._fallback_questions(language)
+        try:
+            ai_questions = self.openai.generate_questions(illness_text, language)
+            if ai_questions:
+                questions = ai_questions
+        except Exception:
+            pass
+
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "illness": illness_text,
+                    "questions": questions,
+                    "status": "in_progress",
+                    "current_index": 0,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$push": {"answers": {"question": "illness", "answer": illness_text}},
+            },
+        )
+        self.whatsapp.send_text(session["to_number"], questions[0])
+
+    def _save_answer_and_ask_next(self, session: dict, answer_text: str) -> None:
+        idx = int(session.get("current_index", 0))
+        questions = session.get("questions", [])
+        if idx >= len(questions):
+            return
+
+        current_question = questions[idx]
+        new_idx = idx + 1
+        next_status = "completed" if new_idx >= len(questions) else "in_progress"
+
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$push": {"answers": {"question": current_question, "answer": answer_text}},
+                "$set": {
+                    "current_index": new_idx,
+                    "status": next_status,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            },
+        )
+
+        if next_status == "completed":
+            done_msg = (
+                "Thank you. Your intake is complete."
+                if session.get("language") == "en"
+                else "???????? ???? ????? ???? ?? ??? ???"
+            )
+            self.whatsapp.send_text(session["to_number"], done_msg)
+            return
+
+        self.whatsapp.send_text(session["to_number"], questions[new_idx])
+
+    @staticmethod
+    def _fallback_questions(language: str) -> list[str]:
+        if language == "hi":
+            return [
+                "?? ?????? ?? ?? ???",
+                "???? ?? ????? ???? ???",
+                "????? ?????? ??? ?? ???-??? ??? ??? ????",
+                "??? ??? ??? ?? ??? ??? ?????",
+                "?????, ?????, ?? ???? ???? ??? ?????? ?? ?????",
+            ]
+        return [
+            "Since when are you facing this issue?",
+            "Where exactly is the discomfort or pain?",
+            "Are symptoms constant or on and off?",
+            "Are you currently taking any medicines?",
+            "Any fever, vomiting, or breathing difficulty?",
+        ]
