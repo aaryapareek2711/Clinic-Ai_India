@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from src.adapters.db.mongo.client import get_database
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
+from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 
 
-STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "??", "???"}
+STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "bas"}
 
 
 class IntakeChatService:
@@ -24,12 +25,12 @@ class IntakeChatService:
         greeting = (
             "Hello! Welcome to Clinic AI India. "
             if language == "en"
-            else "??????! Clinic AI India ??? ???? ?????? ??? "
+            else "Namaste! Clinic AI India mein aapka swagat hai. "
         )
         first_question = (
             "Please describe your main health problem in a few words."
             if language == "en"
-            else "????? ???? ????? ????????? ?????? ??? ?????? ??? ??????"
+            else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
         )
 
         self.db.intake_sessions.update_one(
@@ -68,9 +69,10 @@ class IntakeChatService:
             end_msg = (
                 "Thank you. We will continue with your submitted answers."
                 if session.get("language") == "en"
-                else "???????? ?? ???? ??? ?? ??????? ?? ??? ??? ????????"
+                else "Dhanyavaad. Hum aapke diye gaye jawaabon ke saath aage badhenge."
             )
             self.whatsapp.send_text(from_number, end_msg)
+            self._auto_generate_pre_visit_summary(session)
             return
 
         status = session.get("status")
@@ -132,9 +134,10 @@ class IntakeChatService:
             done_msg = (
                 "Thank you. Your intake is complete."
                 if session.get("language") == "en"
-                else "???????? ???? ????? ???? ?? ??? ???"
+                else "Dhanyavaad. Aapka intake poora ho gaya hai."
             )
             self.whatsapp.send_text(session["to_number"], done_msg)
+            self._auto_generate_pre_visit_summary(session)
             return
 
         self.whatsapp.send_text(session["to_number"], questions[new_idx])
@@ -143,11 +146,11 @@ class IntakeChatService:
     def _fallback_questions(language: str) -> list[str]:
         if language == "hi":
             return [
-                "?? ?????? ?? ?? ???",
-                "???? ?? ????? ???? ???",
-                "????? ?????? ??? ?? ???-??? ??? ??? ????",
-                "??? ??? ??? ?? ??? ??? ?????",
-                "?????, ?????, ?? ???? ???? ??? ?????? ?? ?????",
+                "Yeh samasya kab se hai?",
+                "Dard ya takleef kahan hai?",
+                "Lakshan lagataar hain ya beech-beech mein aate hain?",
+                "Kya aap abhi koi dawa le rahe hain?",
+                "Kya bukhar, ulti, ya saans lene mein dikkat hai?",
             ]
         return [
             "Since when are you facing this issue?",
@@ -156,3 +159,14 @@ class IntakeChatService:
             "Are you currently taking any medicines?",
             "Any fever, vomiting, or breathing difficulty?",
         ]
+
+    @staticmethod
+    def _auto_generate_pre_visit_summary(session: dict) -> None:
+        patient_id = str(session.get("patient_id", "")).strip()
+        if not patient_id:
+            return
+        try:
+            GeneratePreVisitSummaryUseCase().execute(patient_id=patient_id)
+        except Exception:
+            # Do not block intake completion on summary generation errors.
+            return
