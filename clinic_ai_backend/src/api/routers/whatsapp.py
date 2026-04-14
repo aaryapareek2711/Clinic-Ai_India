@@ -8,16 +8,16 @@ from src.core.config import get_settings
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["Workflow"])
 
 
-@router.get("")
+@router.get("", response_class=PlainTextResponse)
 def verify_webhook(
     hub_mode: str = Query(alias="hub.mode"),
     hub_verify_token: str = Query(alias="hub.verify_token"),
     hub_challenge: str = Query(alias="hub.challenge"),
-) -> PlainTextResponse:
+) -> str:
     """Verify WhatsApp webhook endpoint."""
     settings = get_settings()
     if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
-        return PlainTextResponse(content=hub_challenge)
+        return hub_challenge
     raise HTTPException(status_code=403, detail="Webhook verification failed")
 
 
