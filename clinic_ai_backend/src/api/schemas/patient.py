@@ -1,5 +1,6 @@
 """Patient API schemas module."""
 from pydantic import BaseModel, Field
+from pydantic import field_validator
 
 
 class PatientRegisterRequest(BaseModel):
@@ -8,7 +9,18 @@ class PatientRegisterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     phone_number: str = Field(min_length=8, max_length=20)
     age: int = Field(ge=0, le=130)
-    preferred_language: str = Field(default="en", pattern="^(en|hi)$")
+    preferred_language: str = Field(default="en")
+
+    @field_validator("preferred_language")
+    @classmethod
+    def validate_preferred_language(cls, value: str) -> str:
+        """Accept language aliases and normalize to supported app values."""
+        normalized = (value or "").strip()
+        if normalized == "en_US":
+            return "en"
+        if normalized in {"en", "hi"}:
+            return normalized
+        raise ValueError("preferred_language must be one of: en, hi, en_US")
 
 
 class PatientRegisterResponse(BaseModel):
