@@ -21,23 +21,31 @@ class MetaWhatsAppClient:
         }
         self._post_message(payload)
 
-    def send_template(self, to_number: str, template_name: str, language_code: str, body_values: list[str]) -> None:
+    def send_template(
+        self,
+        to_number: str,
+        template_name: str,
+        language_code: str,
+        body_values: list[str] | None = None,
+    ) -> None:
         """Send a template message via Meta WhatsApp Cloud API."""
-        parameters = [{"type": "text", "text": value} for value in body_values]
+        parameters = [{"type": "text", "text": value} for value in (body_values or [])]
+        template_payload: dict = {
+            "name": template_name,
+            "language": {"code": language_code},
+        }
+        if parameters:
+            template_payload["components"] = [
+                {
+                    "type": "body",
+                    "parameters": parameters,
+                }
+            ]
         payload = {
             "messaging_product": "whatsapp",
             "to": to_number,
             "type": "template",
-            "template": {
-                "name": template_name,
-                "language": {"code": language_code},
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": parameters,
-                    }
-                ],
-            },
+            "template": template_payload,
         }
         self._post_message(payload)
 
