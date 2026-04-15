@@ -23,6 +23,7 @@ class IntakeChatService:
 
     def start_intake(self, patient_id: str, to_number: str, language: str) -> None:
         """Start intake with one-time greeting and first illness question."""
+        normalized_to_number = self._normalize_phone_number(to_number)
         greeting = (
             "Hello! Welcome to Clinic AI India. "
             if language == "en"
@@ -39,7 +40,7 @@ class IntakeChatService:
             {
                 "$set": {
                     "patient_id": patient_id,
-                    "to_number": to_number,
+                    "to_number": normalized_to_number,
                     "language": language,
                     "status": "awaiting_illness",
                     "greeting_sent": True,
@@ -62,17 +63,21 @@ class IntakeChatService:
             )
             # Send first business-initiated message as approved template for better reliability.
             self.whatsapp.send_template(
-                to_number=to_number,
+                to_number=normalized_to_number,
                 template_name=settings.whatsapp_intake_template_name,
                 language_code=language_code,
-                body_values=[],
+                body_values=[first_question],
             )
         else:
-            self.whatsapp.send_text(to_number, greeting + first_question)
+            self.whatsapp.send_text(normalized_to_number, greeting + first_question)
 
     def handle_patient_reply(self, from_number: str, message_text: str) -> None:
         """Handle incoming WhatsApp reply and continue intake."""
-        session = self.db.intake_sessions.find_one({"to_number": from_number})
+        normalized_from = self._normalize_phone_number(from_number)
+        session = self.db.intake_sessions.find_one({"to_number": normalized_from})
+        if not session and normalized_from:
+            # Backward compatibility for older records saved with + prefix.
+            session = self.db.intake_sessions.find_one({"to_number": f"+{normalized_from}"})
         if not session:
             return
 
@@ -186,3 +191,8 @@ class IntakeChatService:
         except Exception:
             # Do not block intake completion on summary generation errors.
             return
+
+    @staticmethod
+    def _normalize_phone_number(phone_number: str) -> str:
+        """Normalize phone number for reliable matching across webhook/provider formats."""
+        return "".join(ch for ch in str(phone_number or "") if ch.isdigit())
