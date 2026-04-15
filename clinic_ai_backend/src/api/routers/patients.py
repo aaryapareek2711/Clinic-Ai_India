@@ -1,4 +1,5 @@
 """Patient routes module."""
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from src.application.services.intake_chat_service import IntakeChatService
 from src.api.schemas.patient import PatientRegisterRequest, PatientRegisterResponse
 
 router = APIRouter(prefix="/patients", tags=["Patients"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=PatientRegisterResponse)
