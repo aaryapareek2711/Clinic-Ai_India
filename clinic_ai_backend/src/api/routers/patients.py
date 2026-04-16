@@ -22,7 +22,10 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
             "name": payload.name,
             "phone_number": payload.phone_number,
             "age": payload.age,
+            "gender": payload.gender,
             "preferred_language": payload.preferred_language,
+            "travelled_recently": payload.travelled_recently,
+            "constant": payload.constant,
             "created_at": datetime.now(timezone.utc),
         }
     )

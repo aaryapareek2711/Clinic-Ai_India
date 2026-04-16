@@ -9,7 +9,10 @@ class PatientRegisterRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     phone_number: str = Field(min_length=8, max_length=20)
     age: int = Field(ge=0, le=130)
+    gender: str = Field(min_length=1, max_length=20)
     preferred_language: str = Field(default="en")
+    travelled_recently: bool = Field(default=False)
+    constant: bool = Field(default=True)
 
     @field_validator("preferred_language")
     @classmethod

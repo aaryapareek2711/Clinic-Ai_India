@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("")
-@router.get("/")
 def verify_webhook(
     hub_mode: str = Query(alias="hub.mode"),
     hub_verify_token: str = Query(alias="hub.verify_token"),
@@ -25,7 +24,6 @@ def verify_webhook(
 
 
 @router.post("")
-@router.post("/")
 async def receive_webhook(request: Request) -> dict:
     """Receive incoming WhatsApp messages and continue intake flow."""
     body = await request.json()
