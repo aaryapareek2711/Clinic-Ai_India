@@ -11,6 +11,17 @@ from src.core.config import get_settings
 
 
 STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "bas"}
+GREETING_WORDS = {
+    "hi",
+    "hii",
+    "hiii",
+    "hello",
+    "hey",
+    "namaste",
+    "namaskar",
+    "good morning",
+    "good evening",
+}
 
 
 class IntakeChatService:
@@ -23,23 +34,20 @@ class IntakeChatService:
 
     def start_intake(self, patient_id: str, to_number: str, language: str) -> None:
         """Start intake with one-time greeting and first illness question."""
+        normalized_to_number = self._normalize_phone_number(to_number)
         greeting = (
             "Hello! Welcome to Clinic AI India. "
             if language == "en"
             else "Namaste! Clinic AI India mein aapka swagat hai. "
         )
-        first_question = (
-            "Please describe your main health problem in a few words."
-            if language == "en"
-            else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
-        )
+        first_question = self._chief_complaint_question(language)
 
         self.db.intake_sessions.update_one(
             {"patient_id": patient_id},
             {
                 "$set": {
                     "patient_id": patient_id,
-                    "to_number": to_number,
+                    "to_number": normalized_to_number,
                     "language": language,
                     "status": "awaiting_illness",
                     "greeting_sent": True,
@@ -60,19 +68,36 @@ class IntakeChatService:
                 if language == "hi"
                 else settings.whatsapp_intake_template_lang_en
             )
+            body_values = [first_question] if settings.whatsapp_intake_template_param_count > 0 else []
             # Send first business-initiated message as approved template for better reliability.
             self.whatsapp.send_template(
-                to_number=to_number,
+                to_number=normalized_to_number,
                 template_name=settings.whatsapp_intake_template_name,
                 language_code=language_code,
-                body_values=[],
+                body_values=body_values,
             )
         else:
-            self.whatsapp.send_text(to_number, greeting + first_question)
+            self.whatsapp.send_text(normalized_to_number, greeting + first_question)
 
     def handle_patient_reply(self, from_number: str, message_text: str) -> None:
         """Handle incoming WhatsApp reply and continue intake."""
-        session = self.db.intake_sessions.find_one({"to_number": from_number})
+        normalized_from = self._normalize_phone_number(from_number)
+        session = self.db.intake_sessions.find_one(
+            {
+                "to_number": normalized_from,
+                "status": {"$in": ["awaiting_illness", "in_progress"]},
+            },
+            sort=[("updated_at", -1)],
+        )
+        if not session and normalized_from:
+            # Backward compatibility for older records saved with + prefix.
+            session = self.db.intake_sessions.find_one(
+                {
+                    "to_number": f"+{normalized_from}",
+                    "status": {"$in": ["awaiting_illness", "in_progress"]},
+                },
+                sort=[("updated_at", -1)],
+            )
         if not session:
             return
 
@@ -93,6 +118,12 @@ class IntakeChatService:
 
         status = session.get("status")
         if status == "awaiting_illness":
+            if self._looks_like_greeting(cleaned):
+                self.whatsapp.send_text(
+                    session["to_number"],
+                    self._chief_complaint_question(session.get("language", "en")),
+                )
+                return
             self._save_illness_and_generate_questions(session, cleaned)
             return
 
@@ -186,3 +217,23 @@ class IntakeChatService:
         except Exception:
             # Do not block intake completion on summary generation errors.
             return
+
+    @staticmethod
+    def _normalize_phone_number(phone_number: str) -> str:
+        """Normalize phone number for reliable matching across webhook/provider formats."""
+        return "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+
+    @staticmethod
+    def _chief_complaint_question(language: str) -> str:
+        """Return the question that asks for patient's primary problem."""
+        return (
+            "Please describe your main health problem in a few words."
+            if language == "en"
+            else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
+        )
+
+    @staticmethod
+    def _looks_like_greeting(message_text: str) -> bool:
+        """Detect greeting-only replies that should not be treated as illness."""
+        normalized = " ".join((message_text or "").strip().lower().split())
+        return normalized in GREETING_WORDS
