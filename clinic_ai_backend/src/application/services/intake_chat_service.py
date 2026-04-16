@@ -82,10 +82,22 @@ class IntakeChatService:
     def handle_patient_reply(self, from_number: str, message_text: str) -> None:
         """Handle incoming WhatsApp reply and continue intake."""
         normalized_from = self._normalize_phone_number(from_number)
-        session = self.db.intake_sessions.find_one({"to_number": normalized_from})
+        session = self.db.intake_sessions.find_one(
+            {
+                "to_number": normalized_from,
+                "status": {"$in": ["awaiting_illness", "in_progress"]},
+            },
+            sort=[("updated_at", -1)],
+        )
         if not session and normalized_from:
             # Backward compatibility for older records saved with + prefix.
-            session = self.db.intake_sessions.find_one({"to_number": f"+{normalized_from}"})
+            session = self.db.intake_sessions.find_one(
+                {
+                    "to_number": f"+{normalized_from}",
+                    "status": {"$in": ["awaiting_illness", "in_progress"]},
+                },
+                sort=[("updated_at", -1)],
+            )
         if not session:
             return
 
