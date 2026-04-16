@@ -15,6 +15,9 @@ PATIENT CONTEXT:
 - previous_qa_json: {{previous_qa_json}}
 - has_travelled_recently: {{has_travelled_recently}}   # true | false
 - chief_complaint: {{chief_complaint}} # filled after Q1, empty on first call
+- deterministic_condition_category: {{deterministic_condition_category}}
+- deterministic_priority_topics: {{deterministic_priority_topics}}
+- deterministic_avoid_topics: {{deterministic_avoid_topics}}
 
 ---
 
@@ -42,6 +45,13 @@ REASONING RULES:
    musculoskeletal | neurological | gastrointestinal | respiratory |
    mental_health | gynaecological | ophthalmology | general_other
 
+   HARD GUARDRAIL:
+   - The backend has already derived deterministic_condition_category.
+   - Unless the chief complaint clearly contains stronger evidence that the backend missed,
+     use deterministic_condition_category exactly as the condition_category.
+   - Use deterministic_priority_topics as the default ordered category topic set.
+   - Use deterministic_avoid_topics as default avoid_topics.
+
    If the chief_complaint is not a medical problem, or looks like only a person's name,
    greeting, acknowledgment, or unclear text, classify as general_other and treat it as
    an unclear complaint rather than inventing a diagnosis.
@@ -63,6 +73,11 @@ REASONING RULES:
 4. BUILD priority_topics — ordered list of what matters most for this complaint.
    Think like a doctor doing a focused history. What 5-6 things do you actually need to know?
    Not a generic checklist. Specific to the condition.
+
+   IMPORTANT:
+   - For this project, illness category must drive question category.
+   - If deterministic_priority_topics is non-empty, it should be preserved unless a clear
+     patient-safety reason requires inserting red_flag_check earlier.
 
    If the complaint is unclear/non-medical/name-only, set priority_topics = ["reason_for_visit"]
    and topic_plan = ["reason_for_visit"].
