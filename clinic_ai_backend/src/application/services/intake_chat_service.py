@@ -249,20 +249,19 @@ class IntakeChatService:
                 is_complete = True
 
             if self._is_repeated_turn(session, message, topic):
-                recovery_question = self._build_recovery_question(language, topic, session)
-                if recovery_question:
+                recovery = self._build_recovery_turn(language, topic, session, ai_turn)
+                if recovery:
                     self._store_and_send_question(
                         session=session,
-                        message=recovery_question,
-                        topic=topic or str(session.get("pending_topic", "") or "clarification"),
+                        message=recovery["message"],
+                        topic=recovery["topic"],
                         question_number=question_number,
                     )
                     return
-                fallback_topic = str(topic or session.get("pending_topic") or "clarification")
                 self._store_and_send_question(
                     session=session,
                     message=fallback_question,
-                    topic=fallback_topic,
+                    topic="clarification",
                     question_number=question_number,
                 )
                 return
@@ -272,12 +271,12 @@ class IntakeChatService:
                 return
 
             if is_complete:
-                recovery_question = self._build_recovery_question(language, topic, session)
-                if recovery_question:
+                recovery = self._build_recovery_turn(language, topic, session, ai_turn)
+                if recovery:
                     self._store_and_send_question(
                         session=session,
-                        message=recovery_question,
-                        topic=topic or "clarification",
+                        message=recovery["message"],
+                        topic=recovery["topic"],
                         question_number=question_number,
                     )
                     return
@@ -410,6 +409,10 @@ class IntakeChatService:
         if asked_questions < MIN_FOLLOW_UP_QUESTIONS:
             return False
 
+        fields_missing = [field for field in (ai_turn.get("fields_missing") or []) if isinstance(field, str) and field]
+        if not fields_missing:
+            return True
+
         extracted_facts = (ai_turn.get("agent2") or {}).get("extracted_facts") or {}
         substantive_fact_count = sum(
             1
@@ -421,6 +424,41 @@ class IntakeChatService:
 
         information_gaps = (ai_turn.get("agent2") or {}).get("information_gaps") or []
         return len(information_gaps) == 0
+
+    def _build_recovery_turn(self, language: str, topic: str, session: dict, ai_turn: dict) -> dict | None:
+        topic_key = str(topic or session.get("pending_topic") or "").strip()
+        covered_topics = set(self._covered_topics_from_session(session))
+        missing_topics = [
+            item
+            for item in (ai_turn.get("fields_missing") or [])
+            if isinstance(item, str) and item and item not in covered_topics
+        ]
+
+        # If the repeated topic is already covered, jump to the next missing topic instead of re-asking it.
+        if missing_topics:
+            next_topic = missing_topics[0]
+            return {
+                "topic": next_topic,
+                "message": self.openai._topic_message(next_topic, language),
+            }
+
+        # If nothing meaningful remains, stop instead of looping.
+        if self._can_complete_intake(session, ai_turn):
+            return {
+                "topic": "closing",
+                "message": self._closing_message(language, session.get("patient_name")),
+            }
+
+        recovery_question = self._build_recovery_question(language, topic_key, session)
+        if recovery_question and topic_key not in covered_topics:
+            return {
+                "topic": topic_key or "clarification",
+                "message": recovery_question,
+            }
+        return None
+
+    def _covered_topics_from_session(self, session: dict) -> list[str]:
+        return self.openai._extract_covered_topics({"previous_qa_json": session.get("answers", [])})
 
     def _build_recovery_question(self, language: str, topic: str, session: dict) -> str:
         topic_key = str(topic or session.get("pending_topic") or "").strip()
