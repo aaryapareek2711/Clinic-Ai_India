@@ -42,7 +42,7 @@ class IntakeChatService:
                     "pending_question": None,
                     "pending_topic": None,
                     "question_number": 1,
-                    "max_questions": 8,
+                    "max_questions": 10,
                     "processed_message_ids": [],
                     "recent_inbound_text": None,
                     "recent_inbound_at": None,
@@ -222,6 +222,14 @@ class IntakeChatService:
         language = session.get("language", "en")
         fallback_question = self._fallback_questions(language)[0]
         try:
+            if self._should_ask_final_question(session):
+                self._store_and_send_question(
+                    session=session,
+                    message=self._final_question(language),
+                    topic="final_check",
+                    question_number=int(session.get("question_number", 1) or 1),
+                )
+                return
             if self._has_reached_intake_limit(session):
                 closing_message = self._closing_message(language, session.get("patient_name"))
                 self._complete_session(session, closing_message, "closing", int(session.get("question_number", 1) or 1))
@@ -397,9 +405,20 @@ class IntakeChatService:
         return False
 
     def _has_reached_intake_limit(self, session: dict) -> bool:
-        max_questions = int(session.get("max_questions", 8) or 8)
+        max_questions = int(session.get("max_questions", 10) or 10)
         asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
         return asked_questions >= max_questions
+
+    def _should_ask_final_question(self, session: dict) -> bool:
+        max_questions = int(session.get("max_questions", 10) or 10)
+        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+        if asked_questions != max_questions - 1:
+            return False
+        pending_topic = str(session.get("pending_topic", "") or "").strip()
+        if pending_topic == "final_check":
+            return False
+        asked_topics = {str(answer.get("topic", "") or "").strip() for answer in session.get("answers", [])}
+        return "final_check" not in asked_topics
 
     def _can_complete_intake(self, session: dict, ai_turn: dict) -> bool:
         if str(ai_turn.get("topic", "") or "") == "safety_interrupt":
@@ -562,6 +581,12 @@ class IntakeChatService:
             "Thank you, we have everything we need. "
             "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
         )
+
+    @staticmethod
+    def _final_question(language: str) -> str:
+        if language == "hi":
+            return "कृपया बताइए कि क्या आपकी तकलीफ, स्वास्थ्य, या चिंता के बारे में कोई और महत्वपूर्ण बात है जो अभी तक साझा नहीं हुई है?"
+        return "Please describe anything else about your symptoms, health, or concerns that you feel is important and has not been shared yet?"
 
     @staticmethod
     def _normalize_for_similarity(text: str) -> str:

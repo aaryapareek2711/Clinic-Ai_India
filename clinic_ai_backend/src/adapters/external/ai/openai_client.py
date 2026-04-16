@@ -22,294 +22,59 @@ ALLOWED_TOPICS = {
     "recurrence_status",
     "family_history",
     "trigger_cause",
+    "travel_history",
+    "pain_assessment",
+    "past_evaluation",
     "menstrual_pregnancy",
     "allergies",
     "closing",
 }
 
-CONDITION_TOPIC_RULES = {
-    "oncology": {
-        "keywords": [
-            "cancer",
-            "tumor",
-            "tumour",
-            "chemo",
-            "chemotherapy",
-            "radiation",
-            "oncology",
-            "metastasis",
-            "biopsy",
-            "malignancy",
-            "carcinoma",
-            "leukemia",
-            "lymphoma",
-        ],
-        "priority_topics": [
-            "treatment_history",
-            "recurrence_status",
-            "onset_duration",
-            "associated_symptoms",
-            "current_medications",
-            "family_history",
-        ],
-        "avoid_topics": ["trigger_cause"],
-    },
-    "infection_fever": {
-        "keywords": [
-            "fever",
-            "viral",
-            "infection",
-            "cold",
-            "flu",
-            "cough",
-            "sore throat",
-            "dengue",
-            "malaria",
-            "typhoid",
-            "chills",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "severity_progression",
-            "associated_symptoms",
-            "red_flag_check",
-            "trigger_cause",
-            "current_medications",
-        ],
-        "avoid_topics": [],
-    },
-    "cardiac": {
-        "keywords": [
-            "chest pain",
-            "chest tightness",
-            "palpitation",
-            "palpitations",
-            "heart",
-            "bp",
-            "blood pressure",
-            "hypertension",
-            "pressure in chest",
-        ],
-        "priority_topics": [
-            "red_flag_check",
-            "onset_duration",
-            "severity_progression",
-            "associated_symptoms",
-            "past_medical_history",
-            "current_medications",
-            "family_history",
-        ],
-        "avoid_topics": [],
-    },
-    "dermatology": {
-        "keywords": [
-            "rash",
-            "itch",
-            "itching",
-            "skin",
-            "pimple",
-            "psoriasis",
-            "eczema",
-            "acne",
-            "lesion",
-            "spot",
-            "pigmentation",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "associated_symptoms",
-            "severity_progression",
-            "trigger_cause",
-            "current_medications",
-            "allergies",
-        ],
-        "avoid_topics": ["family_history"],
-    },
-    "metabolic_chronic": {
-        "keywords": [
-            "diabetes",
-            "sugar",
-            "thyroid",
-            "hypertension",
-            "high bp",
-            "high sugar",
-            "cholesterol",
-            "pcos",
-            "pcod",
-        ],
-        "priority_topics": [
-            "past_medical_history",
-            "current_medications",
-            "severity_progression",
-            "impact_daily_life",
-            "associated_symptoms",
-            "family_history",
-        ],
-        "avoid_topics": ["trigger_cause"],
-    },
-    "musculoskeletal": {
-        "keywords": [
-            "back pain",
-            "knee pain",
-            "joint pain",
-            "body pain",
-            "shoulder pain",
-            "neck pain",
-            "sprain",
-            "swelling in joint",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "severity_progression",
-            "associated_symptoms",
-            "trigger_cause",
-            "impact_daily_life",
-            "current_medications",
-        ],
-        "avoid_topics": ["family_history"],
-    },
-    "neurological": {
-        "keywords": [
-            "headache",
-            "migraine",
-            "seizure",
-            "fit",
-            "numbness",
-            "tingling",
-            "weakness",
-            "vertigo",
-            "dizziness",
-            "memory",
-        ],
-        "priority_topics": [
-            "red_flag_check",
-            "onset_duration",
-            "severity_progression",
-            "associated_symptoms",
-            "past_medical_history",
-            "current_medications",
-        ],
-        "avoid_topics": [],
-    },
-    "gastrointestinal": {
-        "keywords": [
-            "stomach",
-            "abdomen",
-            "abdominal",
-            "vomiting",
-            "diarrhea",
-            "diarrhoea",
-            "constipation",
-            "acidity",
-            "gas",
-            "bloating",
-            "loose motion",
-            "loose motions",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "associated_symptoms",
-            "severity_progression",
-            "trigger_cause",
-            "current_medications",
-            "impact_daily_life",
-        ],
-        "avoid_topics": [],
-    },
-    "respiratory": {
-        "keywords": [
-            "breath",
-            "breathing",
-            "wheeze",
-            "asthma",
-            "cough",
-            "cold",
-            "phlegm",
-            "congestion",
-            "shortness of breath",
-        ],
-        "priority_topics": [
-            "red_flag_check",
-            "onset_duration",
-            "associated_symptoms",
-            "severity_progression",
-            "trigger_cause",
-            "current_medications",
-        ],
-        "avoid_topics": [],
-    },
-    "mental_health": {
-        "keywords": [
-            "anxiety",
-            "depression",
-            "stress",
-            "panic",
-            "sleep problem",
-            "insomnia",
-            "low mood",
-            "overthinking",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "severity_progression",
-            "impact_daily_life",
-            "associated_symptoms",
-            "past_medical_history",
-            "current_medications",
-        ],
-        "avoid_topics": ["trigger_cause"],
-    },
-    "gynaecological": {
-        "keywords": [
-            "period",
-            "periods",
-            "pregnan",
-            "bleeding",
-            "white discharge",
-            "pelvic pain",
-            "uterus",
-            "ovary",
-            "ovarian",
-            "fibroid",
-            "vaginal",
-            "menstrual",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "associated_symptoms",
-            "menstrual_pregnancy",
-            "severity_progression",
-            "current_medications",
-            "past_medical_history",
-        ],
-        "avoid_topics": [],
-    },
-    "ophthalmology": {
-        "keywords": [
-            "eye",
-            "vision",
-            "blurred vision",
-            "red eye",
-            "watering",
-            "itchy eye",
-            "eye pain",
-            "swelling near eye",
-        ],
-        "priority_topics": [
-            "onset_duration",
-            "associated_symptoms",
-            "severity_progression",
-            "trigger_cause",
-            "current_medications",
-            "past_medical_history",
-        ],
-        "avoid_topics": ["family_history"],
-    },
-    "general_other": {
-        "keywords": [],
-        "priority_topics": ["reason_for_visit"],
-        "avoid_topics": [],
-    },
+CHRONIC_KEYWORDS = {
+    "diabetes",
+    "thyroid",
+    "hypertension",
+    "blood pressure",
+    "high bp",
+    "high sugar",
+    "asthma",
+    "arthritis",
+    "migraine",
+    "pcos",
+    "pcod",
+    "cancer",
+}
+HEREDITARY_KEYWORDS = {"family history", "genetic", "runs in family", "inherited"}
+ALLERGY_KEYWORDS = {"allergy", "allergic", "rash", "hives", "itching", "reaction"}
+PAIN_KEYWORDS = {
+    "pain",
+    "ache",
+    "aching",
+    "cramp",
+    "burning",
+    "stabbing",
+    "back pain",
+    "chest pain",
+    "abdominal pain",
+    "pelvic pain",
+    "headache",
+}
+WOMENS_HEALTH_KEYWORDS = {
+    "period",
+    "periods",
+    "pregnan",
+    "menstrual",
+    "bleeding",
+    "pelvic pain",
+    "vaginal",
+    "white discharge",
+    "fibroid",
+    "ovary",
+    "ovarian",
+    "uterus",
+    "lower abdominal pain",
+    "abdominal pain",
+    "stomach pain",
 }
 
 TOPIC_QUESTION_TEMPLATES = {
@@ -326,6 +91,9 @@ TOPIC_QUESTION_TEMPLATES = {
         "recurrence_status": "Please describe whether this is a new problem, a recurrence, or a follow-up of an older diagnosis?",
         "family_history": "Please describe any similar or related health problems in your close family, such as parents or siblings?",
         "trigger_cause": "Did anything happen around the time this started, such as travel, food changes, injury, infection exposure, or stress?",
+        "travel_history": "Please describe any recent travel you have had, including where you went, when you traveled, and whether symptoms started during or after the trip?",
+        "pain_assessment": "Please describe any pain you are having, including where it is, how severe it feels, what it feels like, and whether it spreads anywhere?",
+        "past_evaluation": "Please describe any previous doctor visits, tests, or evaluations you have already had for this problem and what you were told?",
         "menstrual_pregnancy": "When was your last menstrual period, and have you noticed any cycle changes or a possibility of pregnancy?",
         "allergies": "Please describe any allergies to medicines, foods, or anything else that doctors should know about?",
         "closing": "Thank you, we have everything we need for now. Please arrive on time for your visit.",
@@ -343,6 +111,9 @@ TOPIC_QUESTION_TEMPLATES = {
         "recurrence_status": "कृपया बताइए कि यह नई समस्या है, पुरानी समस्या दोबारा हुई है, या किसी पुराने निदान का फॉलो-अप है?",
         "family_history": "क्या आपके परिवार में माता-पिता या भाई-बहनों को ऐसी या मिलती-जुलती स्वास्थ्य समस्या रही है?",
         "trigger_cause": "यह शुरू होने के आसपास क्या हुआ था, जैसे यात्रा, खाने में बदलाव, चोट, संक्रमण का संपर्क, या तनाव?",
+        "travel_history": "कृपया अपनी हाल की किसी भी यात्रा के बारे में बताइए, जैसे आप कहाँ गए थे, कब गए थे, और क्या लक्षण यात्रा के दौरान या उसके बाद शुरू हुए?",
+        "pain_assessment": "कृपया अपने दर्द के बारे में बताइए, जैसे कहाँ है, कितना तेज है, कैसा महसूस होता है, और क्या यह कहीं और फैलता है?",
+        "past_evaluation": "कृपया बताइए कि इस समस्या के लिए आपने पहले कौन-कौन से डॉक्टर, जांच, या मूल्यांकन कराए हैं और आपको क्या बताया गया था?",
         "menstrual_pregnancy": "आपकी आखिरी माहवारी कब हुई थी, और क्या चक्र में कोई बदलाव या गर्भावस्था की संभावना है?",
         "allergies": "कृपया बताइए कि आपको दवाओं, खाने, या किसी और चीज से कोई एलर्जी है क्या?",
         "closing": "धन्यवाद, अभी के लिए हमें जरूरी जानकारी मिल गई है। कृपया समय पर आएं।",
@@ -468,8 +239,8 @@ class OpenAIQuestionClient:
     def _build_condition_guidance(cls, context: dict) -> dict:
         complaint = _normalize_text(context.get("chief_complaint", ""))
         category = cls._infer_condition_category(complaint)
-        priority_topics = list(CONDITION_TOPIC_RULES[category]["priority_topics"])
-        avoid_topics = list(CONDITION_TOPIC_RULES[category]["avoid_topics"])
+        priority_topics = cls._build_universal_topic_plan(context=context, complaint=complaint)
+        avoid_topics: list[str] = []
 
         gender = _normalize_text(context.get("gender", ""))
         age = context.get("patient_age")
@@ -478,18 +249,13 @@ class OpenAIQuestionClient:
         except (TypeError, ValueError):
             age_value = None
 
-        if category != "gynaecological" and "menstrual_pregnancy" in priority_topics:
+        if "menstrual_pregnancy" in priority_topics and category != "womens_health_related":
             priority_topics = [topic for topic in priority_topics if topic != "menstrual_pregnancy"]
         if gender in {"male", "m", "man", "boy"} or (age_value is not None and age_value < 12):
             if "menstrual_pregnancy" in priority_topics:
                 priority_topics = [topic for topic in priority_topics if topic != "menstrual_pregnancy"]
             if "menstrual_pregnancy" not in avoid_topics:
                 avoid_topics.append("menstrual_pregnancy")
-
-        if category != "infection_fever" and not bool(context.get("has_travelled_recently", False)):
-            if "trigger_cause" in priority_topics and complaint:
-                # Keep trigger questions for non-infectious conditions, but avoid travel-specific drift.
-                pass
 
         return {
             "condition_category": category,
@@ -501,14 +267,45 @@ class OpenAIQuestionClient:
     def _infer_condition_category(cls, complaint: str) -> str:
         if not complaint or complaint in {"hi", "hello", "hey", "ok", "okay", "yes", "no"}:
             return "general_other"
-
-        for category, config in CONDITION_TOPIC_RULES.items():
-            if category == "general_other":
-                continue
-            if any(keyword in complaint for keyword in config["keywords"]):
-                return category
-
+        if any(keyword in complaint for keyword in WOMENS_HEALTH_KEYWORDS):
+            return "womens_health_related"
+        if any(keyword in complaint for keyword in ALLERGY_KEYWORDS):
+            return "allergy_related"
+        if any(keyword in complaint for keyword in PAIN_KEYWORDS):
+            return "pain_related"
+        if any(keyword in complaint for keyword in CHRONIC_KEYWORDS | HEREDITARY_KEYWORDS):
+            return "chronic_or_hereditary"
         return "general_other"
+
+    @classmethod
+    def _build_universal_topic_plan(cls, context: dict, complaint: str) -> list[str]:
+        has_travel = bool(context.get("has_travelled_recently", False))
+        is_chronic = any(keyword in complaint for keyword in CHRONIC_KEYWORDS)
+        is_hereditary = any(keyword in complaint for keyword in HEREDITARY_KEYWORDS)
+        is_allergy = any(keyword in complaint for keyword in ALLERGY_KEYWORDS)
+        is_pain = any(keyword in complaint for keyword in PAIN_KEYWORDS)
+        is_womens = any(keyword in complaint for keyword in WOMENS_HEALTH_KEYWORDS)
+
+        base_topics = [
+            "onset_duration",
+            "associated_symptoms",
+            "current_medications",
+            "past_medical_history",
+            "trigger_cause",
+            ("travel_history" if has_travel else "impact_daily_life"),
+        ]
+
+        if is_chronic or is_hereditary:
+            branch_topic = "family_history"
+        elif is_allergy:
+            branch_topic = "allergies"
+        elif is_pain:
+            branch_topic = "pain_assessment"
+        else:
+            branch_topic = "severity_progression"
+
+        final_branch_topic = "menstrual_pregnancy" if is_womens else "past_evaluation"
+        return base_topics + [branch_topic, final_branch_topic]
 
     @classmethod
     def _extract_covered_topics(cls, context: dict) -> list[str]:
@@ -551,6 +348,9 @@ class OpenAIQuestionClient:
             "recurrence_status": ["new problem", "recurrence", "फॉलोअप", "फॉलो-अप"],
             "family_history": ["close family", "परिवार", "parents or siblings"],
             "trigger_cause": ["around the time this started", "शुरू होने के आसपास", "travel food changes injury"],
+            "travel_history": ["recent travel", "हाल की किसी भी यात्रा", "during or after the trip"],
+            "pain_assessment": ["pain you are having", "दर्द", "how severe it feels"],
+            "past_evaluation": ["previous doctor visits", "पहले कौनकौन से डॉक्टर", "what you were told"],
             "menstrual_pregnancy": ["last menstrual period", "आखिरी माहवारी", "possibility of pregnancy"],
             "allergies": ["allergies to medicines", "एलर्जी", "foods or anything else"],
         }

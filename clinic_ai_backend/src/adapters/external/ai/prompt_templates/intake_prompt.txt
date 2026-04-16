@@ -25,7 +25,7 @@ ALLOWED TOPICS (use exact keys):
 reason_for_visit, onset_duration, severity_progression, associated_symptoms,
 red_flag_check, impact_daily_life, current_medications, past_medical_history,
 treatment_history, recurrence_status, family_history, trigger_cause,
-menstrual_pregnancy, allergies, closing
+travel_history, pain_assessment, past_evaluation, menstrual_pregnancy, allergies, closing
 
 ---
 
@@ -41,9 +41,7 @@ Your job is to understand the complaint like a clinician and define what matters
 REASONING RULES:
 
 1. CLASSIFY the complaint into one of these categories:
-   oncology | infection_fever | cardiac | dermatology | metabolic_chronic |
-   musculoskeletal | neurological | gastrointestinal | respiratory |
-   mental_health | gynaecological | ophthalmology | general_other
+   chronic_or_hereditary | allergy_related | pain_related | womens_health_related | general_other
 
    HARD GUARDRAIL:
    - The backend has already derived deterministic_condition_category.
@@ -70,23 +68,24 @@ REASONING RULES:
    - Headache: thunderclap onset, focal neuro deficit, fever with rash
    - Skin: rapidly changing lesion, bleeding, satellite lesions
 
-4. BUILD priority_topics — ordered list of what matters most for this complaint.
-   Think like a doctor doing a focused history. What 5-6 things do you actually need to know?
-   Not a generic checklist. Specific to the condition.
+4. BUILD priority_topics using this HARD-CODED UNIVERSAL ORDER for every illness.
+   Do not invent a complaint-specific order unless there is a safety emergency.
 
    IMPORTANT:
-   - For this project, illness category must drive question category.
-   - If deterministic_priority_topics is non-empty, it should be preserved unless a clear
+   - For this project, every illness follows this list:
+     onset_duration
+     associated_symptoms
+     current_medications
+     past_medical_history
+     trigger_cause
+     travel_history or impact_daily_life
+     one of: family_history / allergies / pain_assessment / severity_progression
+     one of: menstrual_pregnancy / past_evaluation
+   - If deterministic_priority_topics is non-empty, preserve that exact order unless a clear
      patient-safety reason requires inserting red_flag_check earlier.
 
    If the complaint is unclear/non-medical/name-only, set priority_topics = ["reason_for_visit"]
    and topic_plan = ["reason_for_visit"].
-
-   Examples:
-   - Skin cancer → treatment_history, recurrence_status, onset_duration, associated_symptoms, current_medications, family_history
-   - Fever 3 days → onset_duration, severity_progression, associated_symptoms, red_flag_check, trigger_cause, current_medications
-   - Diabetes review → past_medical_history, current_medications, severity_progression, impact_daily_life, associated_symptoms, red_flag_check
-   - Chest pain → red_flag_check, onset_duration, severity_progression, associated_symptoms, past_medical_history, current_medications
 
 5. BUILD avoid_topics — topics that are irrelevant or tone-deaf for this complaint.
    Examples:

@@ -69,3 +69,47 @@ def test_recovery_turn_closes_when_nothing_missing() -> None:
 
     assert recovery is not None
     assert recovery["topic"] == "closing"
+
+
+def test_should_ask_final_question_on_last_allowed_turn() -> None:
+    service = _build_service()
+    session = {
+        "max_questions": 10,
+        "pending_topic": None,
+        "answers": [
+            {"question": "illness", "answer": "stomach pain"},
+            {"question": "q1", "answer": "a1", "topic": "onset_duration"},
+            {"question": "q2", "answer": "a2", "topic": "associated_symptoms"},
+            {"question": "q3", "answer": "a3", "topic": "severity_progression"},
+            {"question": "q4", "answer": "a4", "topic": "trigger_cause"},
+            {"question": "q5", "answer": "a5", "topic": "current_medications"},
+            {"question": "q6", "answer": "a6", "topic": "impact_daily_life"},
+            {"question": "q7", "answer": "a7", "topic": "past_medical_history"},
+            {"question": "q8", "answer": "a8", "topic": "allergies"},
+            {"question": "q9", "answer": "a9", "topic": "family_history"},
+        ],
+    }
+
+    assert service._should_ask_final_question(session) is True
+
+
+def test_should_not_reask_final_question_if_already_present() -> None:
+    service = _build_service()
+    session = {
+        "max_questions": 10,
+        "pending_topic": None,
+        "answers": [
+            {"question": "illness", "answer": "stomach pain"},
+            {"question": "q1", "answer": "a1", "topic": "onset_duration"},
+            {"question": "q2", "answer": "a2", "topic": "associated_symptoms"},
+            {"question": "q3", "answer": "a3", "topic": "severity_progression"},
+            {"question": "q4", "answer": "a4", "topic": "trigger_cause"},
+            {"question": "q5", "answer": "a5", "topic": "current_medications"},
+            {"question": "q6", "answer": "a6", "topic": "impact_daily_life"},
+            {"question": "q7", "answer": "a7", "topic": "past_medical_history"},
+            {"question": "q8", "answer": "a8", "topic": "allergies"},
+            {"question": "q9", "answer": "a9", "topic": "final_check"},
+        ],
+    }
+
+    assert service._should_ask_final_question(session) is False
