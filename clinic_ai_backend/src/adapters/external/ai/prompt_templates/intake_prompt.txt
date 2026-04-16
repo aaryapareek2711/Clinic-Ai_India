@@ -123,6 +123,8 @@ EXTRACTION RULES:
 3. Mark a topic as covered only if the information is substantive.
    A vague "yes" or "no" to a yes/no question does NOT count as covered.
    A descriptive answer counts.
+   If the patient gives a vague reply like "yes", "no", "normal", "same", "nothing", "ok", or a one-word reply
+   that does not add clinical detail, keep the topic as not fully covered and ask a clarification question next turn.
 
 4. Calculate gaps = topic_plan - covered - avoid_topics.
    These are the topics still genuinely needed.
@@ -276,6 +278,9 @@ PLANNING RULES:
    - questions_remaining = 0
    - All clinically important gaps filled
    - triage_level = "emergency" and red_flag confirmed (safety interrupt takes over)
+   - Do NOT stop if the latest patient answer was vague, one-word, or non-descriptive and a key topic still lacks detail
+   - Do NOT stop unless at least 3 follow-up questions have been asked after the chief complaint, unless emergency
+   - Do NOT stop if Agent-02 still has meaningful information_gaps or needs_clarification = true
 
 6. If stop_intake is true and no emergency → next_topic = "closing"
 

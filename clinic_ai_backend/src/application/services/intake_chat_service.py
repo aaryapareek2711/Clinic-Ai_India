@@ -12,17 +12,7 @@ from src.core.config import get_settings
 
 
 STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "bas"}
-GREETING_WORDS = {
-    "hi",
-    "hii",
-    "hiii",
-    "hello",
-    "hey",
-    "namaste",
-    "namaskar",
-    "good morning",
-    "good evening",
-}
+MIN_FOLLOW_UP_QUESTIONS = 3
 
 
 class IntakeChatService:
@@ -59,6 +49,8 @@ class IntakeChatService:
                     "question_number": 1,
                     "max_questions": 8,
                     "processed_message_ids": [],
+                    "recent_inbound_text": None,
+                    "recent_inbound_at": None,
                     "last_outbound_at": None,
                     "updated_at": datetime.now(timezone.utc),
                 },
@@ -110,6 +102,11 @@ class IntakeChatService:
             return
 
         cleaned = (message_text or "").strip()
+        if not cleaned:
+            return
+        if self._is_probable_duplicate_reply(session, cleaned):
+            return
+        self._remember_inbound_text(session["_id"], cleaned)
         if cleaned.lower() in STOP_WORDS:
             self.db.intake_sessions.update_one(
                 {"_id": session["_id"]},
@@ -126,12 +123,6 @@ class IntakeChatService:
 
         status = session.get("status")
         if status == "awaiting_illness":
-            if self._looks_like_greeting(cleaned):
-                self.whatsapp.send_text(
-                    session["to_number"],
-                    self._chief_complaint_question(session.get("language", "en")),
-                )
-                return
             self._save_illness_and_generate_questions(session, cleaned)
             return
 
@@ -220,6 +211,10 @@ class IntakeChatService:
         language = session.get("language", "en")
         fallback_question = self._fallback_questions(language)[0]
         try:
+            if self._has_reached_intake_limit(session):
+                closing_message = self._closing_message(language, session.get("patient_name"))
+                self._complete_session(session, closing_message, "closing", int(session.get("question_number", 1) or 1))
+                return
             patient = self.db.patients.find_one({"patient_id": session.get("patient_id")}) or {}
             context = {
                 "patient_name": patient.get("name", ""),
@@ -239,39 +234,49 @@ class IntakeChatService:
             is_complete = bool(ai_turn.get("is_complete", False))
             topic = str(ai_turn.get("topic", "") or "")
             question_number = int(ai_turn.get("question_number", session.get("question_number", 1)) or 1)
+            if topic == "closing":
+                is_complete = True
 
-            if is_complete:
-                self.db.intake_sessions.update_one(
-                    {"_id": session["_id"]},
-                    {
-                        "$set": {
-                            "status": "completed",
-                            "pending_question": None,
-                            "pending_topic": topic,
-                            "question_number": question_number,
-                            "last_outbound_at": datetime.now(timezone.utc).isoformat(),
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
+            if self._is_repeated_turn(session, message, topic):
+                recovery_question = self._build_recovery_question(language, topic, session)
+                if recovery_question:
+                    self._store_and_send_question(
+                        session=session,
+                        message=recovery_question,
+                        topic=topic or str(session.get("pending_topic", "") or "clarification"),
+                        question_number=question_number,
+                    )
+                    return
+                fallback_topic = str(topic or session.get("pending_topic") or "clarification")
+                self._store_and_send_question(
+                    session=session,
+                    message=fallback_question,
+                    topic=fallback_topic,
+                    question_number=question_number,
                 )
-                self.whatsapp.send_text(session["to_number"], message)
-                self._auto_generate_pre_visit_summary(session)
                 return
 
-            self.db.intake_sessions.update_one(
-                {"_id": session["_id"]},
-                {
-                    "$set": {
-                        "status": "in_progress",
-                        "pending_question": message,
-                        "pending_topic": topic,
-                        "question_number": max(question_number + 1, int(session.get("question_number", 1) or 1) + 1),
-                        "last_outbound_at": datetime.now(timezone.utc).isoformat(),
-                        "updated_at": datetime.now(timezone.utc),
-                    }
-                },
+            if is_complete and self._can_complete_intake(session, ai_turn):
+                self._complete_session(session, message, topic, question_number)
+                return
+
+            if is_complete:
+                recovery_question = self._build_recovery_question(language, topic, session)
+                if recovery_question:
+                    self._store_and_send_question(
+                        session=session,
+                        message=recovery_question,
+                        topic=topic or "clarification",
+                        question_number=question_number,
+                    )
+                    return
+
+            self._store_and_send_question(
+                session=session,
+                message=message,
+                topic=topic,
+                question_number=question_number,
             )
-            self.whatsapp.send_text(session["to_number"], message)
             return
         except Exception:
             pass
@@ -290,6 +295,41 @@ class IntakeChatService:
             },
         )
         self.whatsapp.send_text(session["to_number"], fallback_question)
+
+    def _store_and_send_question(self, session: dict, message: str, topic: str, question_number: int) -> None:
+        now = datetime.now(timezone.utc)
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "status": "in_progress",
+                    "pending_question": message,
+                    "pending_topic": topic,
+                    "question_number": max(question_number + 1, int(session.get("question_number", 1) or 1) + 1),
+                    "last_outbound_at": now.isoformat(),
+                    "updated_at": now,
+                }
+            },
+        )
+        self.whatsapp.send_text(session["to_number"], message)
+
+    def _complete_session(self, session: dict, message: str, topic: str, question_number: int) -> None:
+        now = datetime.now(timezone.utc)
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "status": "completed",
+                    "pending_question": None,
+                    "pending_topic": topic,
+                    "question_number": question_number,
+                    "last_outbound_at": now.isoformat(),
+                    "updated_at": now,
+                }
+            },
+        )
+        self.whatsapp.send_text(session["to_number"], message)
+        self._auto_generate_pre_visit_summary(session)
 
     def _claim_message(self, session_id: object, message_id: str) -> bool:
         result = self.db.intake_sessions.update_one(
@@ -326,6 +366,119 @@ class IntakeChatService:
 
         similarity = SequenceMatcher(a=normalized_new, b=normalized_old).ratio()
         return similarity >= 0.6
+
+    def _is_repeated_turn(self, session: dict, message: str, topic: str) -> bool:
+        normalized_message = self._normalize_for_similarity(message)
+        if not normalized_message:
+            return False
+
+        previous_questions = [
+            self._normalize_for_similarity(answer.get("question", ""))
+            for answer in session.get("answers", [])
+            if answer.get("question") != "illness"
+        ]
+        if normalized_message in previous_questions:
+            return True
+
+        if topic:
+            topic_count = sum(1 for answer in session.get("answers", []) if answer.get("topic") == topic)
+            if topic_count >= 1:
+                return True
+        return False
+
+    def _has_reached_intake_limit(self, session: dict) -> bool:
+        max_questions = int(session.get("max_questions", 8) or 8)
+        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+        return asked_questions >= max_questions
+
+    def _can_complete_intake(self, session: dict, ai_turn: dict) -> bool:
+        if str(ai_turn.get("topic", "") or "") == "safety_interrupt":
+            return True
+
+        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+        if asked_questions < MIN_FOLLOW_UP_QUESTIONS:
+            return False
+
+        extracted_facts = (ai_turn.get("agent2") or {}).get("extracted_facts") or {}
+        substantive_fact_count = sum(
+            1
+            for value in extracted_facts.values()
+            if value not in (None, "", "null")
+        )
+        if substantive_fact_count < 2:
+            return False
+
+        information_gaps = (ai_turn.get("agent2") or {}).get("information_gaps") or []
+        return len(information_gaps) == 0
+
+    def _build_recovery_question(self, language: str, topic: str, session: dict) -> str:
+        topic_key = str(topic or session.get("pending_topic") or "").strip()
+        if language == "hi":
+            recovery_questions = {
+                "onset_duration": "यह समस्या कब शुरू हुई थी, और क्या यह लगातार रहती है या बीच-बीच में होती है?",
+                "severity_progression": "समय के साथ यह समस्या कैसी बदल रही है - बेहतर, बदतर, या लगभग वैसी ही?",
+                "associated_symptoms": "इस समस्या के साथ और कौन से लक्षण हो रहे हैं? कृपया थोड़ा विस्तार से बताइए।",
+                "red_flag_check": "क्या कोई गंभीर लक्षण हुए हैं, जैसे तेज दर्द, सांस की दिक्कत, बेहोशी, या खून आना?",
+                "current_medications": "अभी आप कौन-कौन सी दवाएं, सप्लीमेंट, या घरेलू इलाज ले रहे हैं?",
+                "impact_daily_life": "यह समस्या आपकी रोज़मर्रा की ज़िंदगी पर कैसे असर डाल रही है - जैसे नींद, खाना, काम या चलना-फिरना?",
+                "treatment_history": "अब तक आपने इसके लिए क्या इलाज कराया है? कृपया थोड़ा विस्तार से बताइए।",
+                "recurrence_status": "क्या यह पुरानी समस्या दोबारा हुई है, या पहले से चली आ रही बीमारी का फॉलो-अप है?",
+            }
+        else:
+            recovery_questions = {
+                "onset_duration": "When did this problem first start, and has it been constant or on and off since then?",
+                "severity_progression": "How has this problem been changing over time - better, worse, or about the same?",
+                "associated_symptoms": "What other symptoms have you noticed along with this? Please describe them a little.",
+                "red_flag_check": "Have you had any serious warning symptoms such as severe pain, breathing trouble, fainting, or bleeding?",
+                "current_medications": "What medicines, supplements, or home remedies are you taking right now for this?",
+                "impact_daily_life": "How is this affecting your daily routine - like sleep, eating, work, or movement?",
+                "treatment_history": "What treatment have you already received for this? Please share a bit more detail.",
+                "recurrence_status": "Is this a recurrence of an older problem, or a follow-up for an existing diagnosis?",
+            }
+        return recovery_questions.get(topic_key, "")
+
+    def _is_probable_duplicate_reply(self, session: dict, message_text: str) -> bool:
+        recent_text = str(session.get("recent_inbound_text", "") or "").strip()
+        recent_at = self._parse_datetime(session.get("recent_inbound_at"))
+        if not recent_text or not recent_at:
+            return False
+        if self._normalize_for_similarity(recent_text) != self._normalize_for_similarity(message_text):
+            return False
+        return (datetime.now(timezone.utc) - recent_at).total_seconds() <= 12
+
+    def _remember_inbound_text(self, session_id: object, message_text: str) -> None:
+        self.db.intake_sessions.update_one(
+            {"_id": session_id},
+            {
+                "$set": {
+                    "recent_inbound_text": message_text,
+                    "recent_inbound_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+        )
+
+    @staticmethod
+    def _closing_message(language: str, patient_name: str | None) -> str:
+        name = str(patient_name or "").strip()
+        if language == "hi":
+            if name:
+                return (
+                    f"धन्यवाद {name}, हमें सारी ज़रूरी जानकारी मिल गई है। "
+                    "आपके डॉक्टर पूरी तरह तैयार रहेंगे। कृपया समय पर पहुँचें। जल्द मिलेंगे।"
+                )
+            return (
+                "धन्यवाद, हमें सारी ज़रूरी जानकारी मिल गई है। "
+                "आपके डॉक्टर पूरी तरह तैयार रहेंगे। कृपया समय पर पहुँचें। जल्द मिलेंगे।"
+            )
+        if name:
+            return (
+                f"Thank you {name}, we have everything we need. "
+                "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
+            )
+        return (
+            "Thank you, we have everything we need. "
+            "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
+        )
 
     @staticmethod
     def _normalize_for_similarity(text: str) -> str:
@@ -383,9 +536,3 @@ class IntakeChatService:
             if language == "en"
             else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
         )
-
-    @staticmethod
-    def _looks_like_greeting(message_text: str) -> bool:
-        """Detect greeting-only replies that should not be treated as illness."""
-        normalized = " ".join((message_text or "").strip().lower().split())
-        return normalized in GREETING_WORDS
