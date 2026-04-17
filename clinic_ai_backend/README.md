@@ -17,22 +17,34 @@ make dev
 | Variable | Required | Description | Example |
 |---|---|---|---|
 | OPENAI_API_KEY | Yes | API key for LLM provider | sk-... |
+| OPENAI_MODEL | No | OpenAI model for chat/note generation | gpt-4o-mini |
 | MONGODB_URL | Yes | MongoDB connection URI | mongodb://localhost:27017/clinic_ai |
-| TRANSCRIPTION_SERVICE | Yes | Active speech-to-text provider | whisper |
-| CORS_ORIGINS | Yes | Allowed frontend origins | http://localhost:3000 |
-| LOG_LEVEL | No | Logging level | INFO |
-| FFMPEG_PATH | No | ffmpeg binary path | ffmpeg |
-| FFPROBE_PATH | No | ffprobe binary path | ffprobe |
-| QUEUE_CONNECTION_STRING | No | Queue broker URL/connection string | redis://localhost:6379/0 |
-| STORAGE_PROVIDER | Yes | Storage backend selector | local |
+| MONGODB_DB_NAME | Yes | MongoDB database name | clinic_ai |
+| AZURE_SPEECH_KEY | Yes | Azure Speech Service API key | your-azure-speech-key |
+| AZURE_SPEECH_REGION | Yes* | Azure Speech region (required if endpoint not fully set) | centralindia |
+| AZURE_SPEECH_ENDPOINT | No | Optional explicit Speech endpoint | https://<region>.api.cognitive.microsoft.com/ |
+| AZURE_BLOB_CONTAINER_AUDIO | No | Logical container name in audio metadata | audio |
+| MAX_AUDIO_SIZE_MB | No | Max upload size in MB | 25 |
+| TRANSCRIPTION_MAX_RETRIES | No | Retry attempts for failed jobs | 3 |
+| TRANSCRIPTION_TIMEOUT_SEC | No | Worker timeout per transcription call | 120 |
+| USE_LOCAL_ADAPTERS | No | Use in-memory queue for local dev | true |
+| LOCAL_AUDIO_STORAGE_PATH | No | Local temp/audio path | /tmp/clinic_audio |
+| MONGO_AUDIO_BUCKET_NAME | No | Mongo GridFS bucket name | audio_blobs |
+| DEFAULT_NOTE_TYPE | No | Auto note generation type after transcription | india_clinical |
+| WHATSAPP_ACCESS_TOKEN | Yes (for WhatsApp) | Meta WhatsApp Cloud API token | EAA... |
+| WHATSAPP_PHONE_NUMBER_ID | Yes (for WhatsApp) | WhatsApp phone number id | 101648... |
+| WHATSAPP_VERIFY_TOKEN | Yes (for WhatsApp) | Webhook verify token | clinicai_india_webhook_2024 |
+| WHATSAPP_API_VERSION | No | Meta API version | v21.0 |
+| WHATSAPP_INTAKE_TEMPLATE_NAME | No | Initial outbound WhatsApp template name | opening_msg |
+| WHATSAPP_INTAKE_TEMPLATE_LANG_EN | No | English template locale code | en_US |
+| WHATSAPP_INTAKE_TEMPLATE_LANG_HI | No | Hindi template locale code | hi |
+| WHATSAPP_INTAKE_TEMPLATE_PARAM_COUNT | No | Number of body params in template | 1 |
 
 ## Endpoint Module Map
-- Health: `src/clinic_ai_india/api/routers/health.py`
-- Patients: `src/clinic_ai_india/api/routers/patients.py`
-- Intake: `src/clinic_ai_india/api/routers/intake.py`
-- Notes: `src/clinic_ai_india/api/routers/notes.py`
-- Audio: `src/clinic_ai_india/api/routers/audio.py`
-- Prescriptions: `src/clinic_ai_india/api/routers/prescriptions.py`
-- Doctor: `src/clinic_ai_india/api/routers/doctor.py`
-- Transcription: `src/clinic_ai_india/api/routers/transcription.py`
-- Workflow: `src/clinic_ai_india/api/routers/workflow.py`
+- Health: `src/api/routers/health.py`
+- Patients: `src/api/routers/patients.py`
+- Notes: `src/api/routers/notes.py`
+- Transcription: `src/api/routers/transcription.py`
+- Vitals: `src/api/routers/vitals.py`
+- WhatsApp: `src/api/routers/whatsapp.py`
+- Workflow: `src/api/routers/workflow.py`

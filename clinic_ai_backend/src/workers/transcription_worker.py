@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import tempfile
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -16,7 +14,6 @@ from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
 from src.core.config import get_settings
 
-_WHISPER_MODEL: Any | None = None
 _BACKGROUND_TASKS: list[asyncio.Task] = []
 _STOP_EVENT: asyncio.Event | None = None
 
@@ -78,18 +75,10 @@ class TranscriptionWorker:
 
         self.repo.mark_processing(job_id)
         try:
-            blob_url = str(audio_doc.get("blob_url", "") or "")
-            can_use_azure_speech = bool(self.settings.azure_speech_key) and blob_url.startswith("http")
-            if can_use_azure_speech:
-                speech_response = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
-                    timeout=self.settings.transcription_timeout_sec,
-                )
-            else:
-                speech_response = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_whisper_local, audio_doc=audio_doc),
-                    timeout=self.settings.transcription_timeout_sec,
-                )
+            speech_response = await asyncio.wait_for(
+                asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
+                timeout=self.settings.transcription_timeout_sec,
+            )
 
             normalized = self._normalize_segments(speech_response.get("segments", []))
             if not normalized:
@@ -164,77 +153,76 @@ class TranscriptionWorker:
     def _call_azure_speech(self, *, job: dict, audio_doc: dict) -> dict:
         if not self.settings.azure_speech_key:
             raise RuntimeError("AZURE_SPEECH_KEY is not configured")
-        endpoint = self.settings.azure_speech_endpoint or (
-            "https://"
-            f"{self.settings.azure_speech_region}.stt.speech.microsoft.com/speech/recognition/"
-            "conversation/cognitiveservices/v1?format=detailed"
-        )
-        payload = {
-            "contentUrls": [audio_doc["blob_url"]],
-            "properties": {
-                "languageHints": job["language_mix"].split("-"),
-                "noiseEnvironment": job["noise_environment"],
-                "expectedSpeakers": 2 if job["speaker_mode"] == "two_speakers" else 3,
-            },
-        }
-        body = json.dumps(payload).encode("utf-8")
-        req = Request(endpoint, data=body, method="POST")
+        locale = self._language_hint_to_locale(str(job.get("language_mix", "") or "en"))
+        endpoint = self._resolve_azure_speech_endpoint(locale)
+        storage_ref = str(audio_doc.get("blob_url", "") or audio_doc.get("blob_path", "") or "")
+        if not storage_ref:
+            raise RuntimeError("Audio storage reference not found")
+        audio_bytes = AzureBlobStorage().download_audio(storage_ref)
+        req = Request(endpoint, data=audio_bytes, method="POST")
         req.add_header("Ocp-Apim-Subscription-Key", self.settings.azure_speech_key)
-        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json;text/xml")
+        req.add_header("Content-Type", str(audio_doc.get("mime_type", "") or "audio/wav"))
         with urlopen(req, timeout=self.settings.transcription_timeout_sec) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = json.loads(response.read().decode("utf-8"))
+        return self._normalize_azure_response(raw, locale)
 
-    def _call_whisper_local(self, *, audio_doc: dict) -> dict:
-        try:
-            import whisper  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError("openai-whisper is not installed") from exc
-        global _WHISPER_MODEL
-        if _WHISPER_MODEL is None:
-            _WHISPER_MODEL = whisper.load_model(self.settings.whisper_model_size)
-        model = _WHISPER_MODEL
-        blob_path = str(audio_doc.get("blob_path", "") or "")
-        audio_path = blob_path
-        temp_path: str | None = None
-        if blob_path.startswith("gridfs://"):
-            audio_bytes = AzureBlobStorage().download_audio(blob_path)
-            suffix = self._suffix_from_mime(str(audio_doc.get("mime_type", "") or ""))
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(audio_bytes)
-                temp_path = tmp.name
-            audio_path = temp_path
-        result = model.transcribe(audio_path)
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
+    @staticmethod
+    def _language_hint_to_locale(language_mix: str) -> str:
+        mapping = {
+            "en": "en-IN",
+            "hi": "hi-IN",
+            "ta": "ta-IN",
+            "te": "te-IN",
+            "bn": "bn-IN",
+            "mr": "mr-IN",
+            "kn": "kn-IN",
+        }
+        token = str(language_mix or "").strip().lower().split("-")[0]
+        return mapping.get(token, "en-IN")
+
+    def _resolve_azure_speech_endpoint(self, locale: str) -> str:
+        configured = str(self.settings.azure_speech_endpoint or "").strip().rstrip("/")
+        if configured:
+            if "/speech/recognition/" in configured:
+                if "language=" in configured:
+                    return configured
+                separator = "&" if "?" in configured else "?"
+                return f"{configured}{separator}language={locale}&format=detailed"
+            return (
+                f"{configured}/speech/recognition/conversation/cognitiveservices/v1"
+                f"?language={locale}&format=detailed"
+            )
+        if not self.settings.azure_speech_region:
+            raise RuntimeError("Set AZURE_SPEECH_REGION or AZURE_SPEECH_ENDPOINT")
+        return (
+            f"https://{self.settings.azure_speech_region}.stt.speech.microsoft.com/"
+            f"speech/recognition/conversation/cognitiveservices/v1?language={locale}&format=detailed"
+        )
+
+    @staticmethod
+    def _normalize_azure_response(raw: dict, locale: str) -> dict:
+        nbest = raw.get("NBest") or []
+        best = nbest[0] if isinstance(nbest, list) and nbest else {}
+        display_text = str(raw.get("DisplayText") or best.get("Display") or best.get("Lexical") or "").strip()
+        confidence = float(best.get("Confidence", 0.85) or 0.85)
+        offset_ticks = int(raw.get("Offset", 0) or 0)
+        duration_ticks = int(raw.get("Duration", 0) or 0)
+        start_ms = max(0, offset_ticks // 10000)
+        end_ms = max(start_ms, start_ms + (duration_ticks // 10000))
         segments = []
-        for raw in result.get("segments", []):
+        if display_text:
             segments.append(
                 {
-                    "start_ms": int(float(raw.get("start", 0.0)) * 1000),
-                    "end_ms": int(float(raw.get("end", 0.0)) * 1000),
+                    "start_ms": start_ms,
+                    "end_ms": end_ms,
                     "speaker_label": "unknown",
-                    "text": str(raw.get("text", "")).strip(),
-                    "confidence": 0.90,
+                    "text": display_text,
+                    "confidence": confidence,
                     "needs_manual_review": False,
                 }
             )
-        return {"language_detected": result.get("language", "unknown"), "segments": segments}
-
-    @staticmethod
-    def _suffix_from_mime(mime_type: str) -> str:
-        mime = mime_type.lower().strip()
-        if "wav" in mime:
-            return ".wav"
-        if "mpeg" in mime or "mp3" in mime:
-            return ".mp3"
-        if "mp4" in mime or "m4a" in mime:
-            return ".m4a"
-        if "webm" in mime:
-            return ".webm"
-        return ".audio"
+        return {"language_detected": locale, "segments": segments}
 
     def _normalize_segments(self, segments: list[dict[str, Any]]) -> list[dict]:
         normalized: list[dict] = []

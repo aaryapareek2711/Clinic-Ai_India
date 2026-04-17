@@ -40,6 +40,8 @@ async def upload_transcription_audio(
         raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
 
     settings = get_settings()
+    if not settings.azure_speech_key:
+        raise HTTPException(status_code=503, detail="AZURE_SPEECH_KEY is not configured")
     if audio_file.content_type not in settings.allowed_audio_mime_types:
         raise HTTPException(status_code=400, detail="Unsupported audio MIME type")
 
@@ -83,7 +85,7 @@ async def upload_transcription_audio(
         audio_id=audio_id,
         patient_id=patient_id,
         visit_id=visit_id,
-        provider="whisper",
+        provider="azure_speech",
         noise_environment=noise_environment,
         language_mix=language_mix,
         speaker_mode=speaker_mode,
