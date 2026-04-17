@@ -13,6 +13,7 @@ from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.external.storage.object_storage import AzureBlobStorage
 from src.adapters.external.queue.consumer import TranscriptionQueueConsumer
 from src.adapters.external.queue.producer import TranscriptionQueueProducer
+from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
 from src.core.config import get_settings
 
 
@@ -114,6 +115,7 @@ class TranscriptionWorker:
                 }
             )
             self.repo.mark_completed(job_id)
+            self._auto_generate_default_note(job=job)
         except Exception as exc:  # noqa: BLE001
             refreshed = self.repo.increment_retry(
                 job_id,
@@ -133,6 +135,21 @@ class TranscriptionWorker:
         finally:
             self.consumer.ack_last()
         return True
+
+    def _auto_generate_default_note(self, *, job: dict) -> None:
+        """Generate default India note after successful transcription completion."""
+        if self.settings.default_note_type != "india_clinical":
+            return
+        try:
+            GenerateIndiaClinicalNoteUseCase().execute(
+                patient_id=str(job.get("patient_id")),
+                visit_id=job.get("visit_id"),
+                transcription_job_id=str(job.get("job_id")),
+                force_regenerate=False,
+            )
+        except Exception:
+            # Do not fail transcription completion if note generation errors.
+            return
 
     def _has_previsit(self, patient_id: str) -> bool:
         return (

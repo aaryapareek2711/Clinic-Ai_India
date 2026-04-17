@@ -32,7 +32,16 @@ class InMemoryCollection:
         return InsertOneResult(item["_id"])
 
     def _matches(self, doc: dict, query: dict) -> bool:
-        return all(doc.get(key) == value for key, value in query.items())
+        for key, value in query.items():
+            doc_value = doc.get(key)
+            if isinstance(value, dict):
+                if "$lt" in value and not (doc_value is not None and doc_value < value["$lt"]):
+                    return False
+                if "$in" in value and doc_value not in value["$in"]:
+                    return False
+            elif doc_value != value:
+                return False
+        return True
 
     def find_one(self, query: dict | None = None, sort: list[tuple[str, int]] | None = None) -> dict | None:
         query = query or {}
@@ -44,6 +53,20 @@ class InMemoryCollection:
                 reverse = direction < 0
                 filtered.sort(key=lambda item: item.get(field), reverse=reverse)
         return deepcopy(filtered[0])
+
+    def find(self, query: dict | None = None, projection: dict | None = None) -> list[dict]:
+        query = query or {}
+        filtered = [deepcopy(doc) for doc in self.docs if self._matches(doc, query)]
+        if projection is None:
+            return filtered
+        projected: list[dict] = []
+        include_keys = {key for key, value in projection.items() if value}
+        for item in filtered:
+            if include_keys:
+                projected.append({key: item.get(key) for key in include_keys if key in item})
+            else:
+                projected.append(item)
+        return projected
 
     def delete_one(self, query: dict) -> None:
         for index, doc in enumerate(self.docs):
@@ -61,6 +84,16 @@ class InMemoryCollection:
                     updated[key] = int(updated.get(key, 0)) + int(value)
                 self.docs[index] = updated
                 return
+
+    def update_many(self, query: dict, update: dict) -> None:
+        for index, doc in enumerate(self.docs):
+            if self._matches(doc, query):
+                updated = deepcopy(doc)
+                for key, value in update.get("$set", {}).items():
+                    updated[key] = value
+                for key, value in update.get("$inc", {}).items():
+                    updated[key] = int(updated.get(key, 0)) + int(value)
+                self.docs[index] = updated
 
     def replace_one(self, query: dict, replacement: dict, upsert: bool = False) -> None:
         for index, doc in enumerate(self.docs):
@@ -80,6 +113,10 @@ class InMemoryDatabase:
         self.transcription_results = InMemoryCollection()
         self.transcription_queue = InMemoryCollection()
         self.pre_visit_summaries = InMemoryCollection()
+        self.intake_sessions = InMemoryCollection()
+        self.patients = InMemoryCollection()
+        self.patient_vitals = InMemoryCollection()
+        self.clinical_notes = InMemoryCollection()
 
 
 @pytest.fixture
@@ -92,6 +129,7 @@ def force_azure_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep tests deterministic regardless of your local `.env`."""
     settings = config_module.get_settings()
     settings.use_local_adapters = False
+    settings.azure_speech_key = settings.azure_speech_key or "test-azure-key"
     monkeypatch.setattr("src.core.config.get_settings", lambda: settings)
 
 
@@ -103,7 +141,11 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     monkeypatch.setattr("src.adapters.external.queue.producer.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.external.queue.consumer.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.db.mongo.repositories.audio_repository.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.adapters.db.mongo.repositories.clinical_note_repository.get_database", lambda: fake_db)
     monkeypatch.setattr("src.workers.transcription_worker.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.application.use_cases.generate_india_clinical_note.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.application.use_cases.generate_soap_note.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.api.routers.transcription.asyncio.create_task", lambda coro: coro.close())
     return fake_db
 
 

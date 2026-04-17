@@ -208,6 +208,23 @@ class OpenAIQuestionClient:
             raise RuntimeError("Model did not return object")
         return result
 
+    def generate_india_clinical_note(self, context: dict) -> dict:
+        """Generate India OPD clinical note from merged visit context."""
+        template_path = Path(__file__).resolve().parent / "prompt_templates" / "india_note_prompt.txt"
+        template = template_path.read_text(encoding="utf-8")
+        prompt = template.replace("{{context_json}}", json.dumps(context, ensure_ascii=True))
+        content = self._chat_completion(
+            prompt=prompt,
+            system_role=(
+                "You generate strict JSON India OPD clinical notes. "
+                "Follow schema exactly and do not output extra keys."
+            ),
+        )
+        result = json.loads(content)
+        if not isinstance(result, dict):
+            raise RuntimeError("Model did not return object")
+        return result
+
     @staticmethod
     def _chat_completion(prompt: str, system_role: str) -> str:
         settings = get_settings()

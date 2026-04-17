@@ -7,3 +7,4 @@ pytest
 ruff
 python-multipart==0.0.9
 openai-whisper
+azure-storage-queue

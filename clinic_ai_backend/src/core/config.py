@@ -31,6 +31,7 @@ class Settings:
     azure_storage_account_name: str = os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "")
     azure_storage_account_key: str = os.getenv("AZURE_STORAGE_ACCOUNT_KEY", "")
     azure_blob_container_audio: str = os.getenv("AZURE_BLOB_CONTAINER_AUDIO", "audio")
+    azure_queue_name: str = os.getenv("AZURE_QUEUE_NAME", "transcription-jobs")
     azure_speech_key: str = os.getenv("AZURE_SPEECH_KEY", "")
     azure_speech_region: str = os.getenv("AZURE_SPEECH_REGION", "")
     azure_speech_endpoint: str = os.getenv("AZURE_SPEECH_ENDPOINT", "")
@@ -55,6 +56,7 @@ class Settings:
     local_audio_storage_path: str = os.getenv("LOCAL_AUDIO_STORAGE_PATH", "/tmp/clinic_audio")
     mongo_audio_bucket_name: str = os.getenv("MONGO_AUDIO_BUCKET_NAME", "audio_blobs")
     whisper_model_size: str = os.getenv("WHISPER_MODEL_SIZE", "medium")
+    default_note_type: str = os.getenv("DEFAULT_NOTE_TYPE", "india_clinical")
 
 
 @lru_cache(maxsize=1)
