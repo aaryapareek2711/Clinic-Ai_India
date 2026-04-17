@@ -84,6 +84,7 @@ async def upload_transcription_audio(
         audio_id=audio_id,
         patient_id=patient_id,
         visit_id=visit_id,
+        provider="whisper",
         noise_environment=noise_environment,
         language_mix=language_mix,
         speaker_mode=speaker_mode,

@@ -1,7 +1,7 @@
 """Mongo repository for transcription pipeline."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pymongo import ASCENDING, DESCENDING
 
@@ -41,6 +41,7 @@ class AudioRepository:
         audio_id: str,
         patient_id: str,
         visit_id: str | None,
+        provider: str,
         noise_environment: str,
         language_mix: str,
         speaker_mode: str,
@@ -53,7 +54,7 @@ class AudioRepository:
             "patient_id": patient_id,
             "visit_id": visit_id,
             "status": "queued",
-            "provider": "azure_speech",
+            "provider": provider,
             "noise_environment": noise_environment,
             "language_mix": language_mix,
             "speaker_mode": speaker_mode,
@@ -118,6 +119,38 @@ class AudioRepository:
             update,
         )
         return self.get_job(job_id)
+
+    def requeue_stale_processing_jobs(self, *, max_processing_sec: int) -> list[str]:
+        """Move stale processing jobs back to queued and return their IDs."""
+        cutoff = _utc_now() - timedelta(seconds=max_processing_sec)
+        stale_jobs = list(
+            self.transcription_jobs.find(
+                {
+                    "status": "processing",
+                    "started_at": {"$lt": cutoff},
+                },
+                {"job_id": 1},
+            )
+        )
+        if not stale_jobs:
+            return []
+        stale_job_ids = [str(item.get("job_id", "")).strip() for item in stale_jobs if item.get("job_id")]
+        if not stale_job_ids:
+            return []
+        now = _utc_now()
+        self.transcription_jobs.update_many(
+            {"job_id": {"$in": stale_job_ids}},
+            {
+                "$inc": {"retry_count": 1},
+                "$set": {
+                    "status": "queued",
+                    "updated_at": now,
+                    "error_code": "TRANSCRIPTION_STALE_REQUEUED",
+                    "error_message": "Job was stale in processing and has been requeued",
+                },
+            },
+        )
+        return stale_job_ids
 
     def save_result(self, result_doc: dict) -> None:
         result_doc["created_at"] = _utc_now()

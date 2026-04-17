@@ -37,6 +37,12 @@ class TranscriptionWorker:
 
     async def process_next_async(self) -> bool:
         """Process one queued message (async-friendly for local demo mode)."""
+        stale_job_ids = self.repo.requeue_stale_processing_jobs(
+            max_processing_sec=self.settings.transcription_timeout_sec
+        )
+        for stale_job_id in stale_job_ids:
+            self.producer.enqueue(stale_job_id)
+
         job_id = self.consumer.pop_next_job_id()
         if not job_id:
             return False
@@ -67,9 +73,15 @@ class TranscriptionWorker:
             blob_url = str(audio_doc.get("blob_url", "") or "")
             can_use_azure_speech = bool(self.settings.azure_speech_key) and blob_url.startswith("http")
             if can_use_azure_speech:
-                speech_response = await asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc)
+                speech_response = await asyncio.wait_for(
+                    asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
+                    timeout=self.settings.transcription_timeout_sec,
+                )
             else:
-                speech_response = await asyncio.to_thread(self._call_whisper_local, audio_doc=audio_doc)
+                speech_response = await asyncio.wait_for(
+                    asyncio.to_thread(self._call_whisper_local, audio_doc=audio_doc),
+                    timeout=self.settings.transcription_timeout_sec,
+                )
 
             normalized = self._normalize_segments(speech_response.get("segments", []))
             if not normalized:
