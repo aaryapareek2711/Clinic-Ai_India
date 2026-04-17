@@ -225,6 +225,27 @@ class OpenAIQuestionClient:
             raise RuntimeError("Model did not return object")
         return result
 
+    def generate_post_visit_summary(self, *, context: dict, language_name: str) -> dict:
+        """Generate patient-facing post-visit summary from structured context."""
+        template_path = Path(__file__).resolve().parent / "prompt_templates" / "post_visit_summary_prompt.txt"
+        template = template_path.read_text(encoding="utf-8")
+        prompt = (
+            template.replace("{{language_name}}", language_name).replace(
+                "{{context_json}}", json.dumps(context, ensure_ascii=True)
+            )
+        )
+        content = self._chat_completion(
+            prompt=prompt,
+            system_role=(
+                "You generate strict JSON patient-facing post-visit summaries. "
+                "Return only the required keys and no extra text."
+            ),
+        )
+        result = json.loads(content)
+        if not isinstance(result, dict):
+            raise RuntimeError("Model did not return object")
+        return result
+
     @staticmethod
     def _chat_completion(prompt: str, system_role: str) -> str:
         settings = get_settings()

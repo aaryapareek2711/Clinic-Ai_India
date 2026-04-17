@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-NoteType = Literal["india_clinical", "soap"]
+NoteType = Literal["india_clinical", "soap", "post_visit_summary"]
 NoteStatus = Literal["generated", "fallback_generated", "failed"]
 InvestigationUrgency = Literal["routine", "urgent", "stat"]
 
@@ -60,6 +60,18 @@ class IndiaClinicalNotePayload(BaseModel):
         return self
 
 
+class PostVisitSummaryPayload(BaseModel):
+    """Patient-friendly post-visit summary output contract."""
+
+    visit_reason: str
+    what_doctor_found: str
+    medicines_to_take: list[str]
+    tests_recommended: list[str]
+    self_care: list[str]
+    warning_signs: list[str]
+    follow_up: str
+
+
 class NoteGenerateRequest(BaseModel):
     """Generate/re-generate note request."""
 
@@ -67,6 +79,7 @@ class NoteGenerateRequest(BaseModel):
     visit_id: str | None = None
     transcription_job_id: str | None = None
     note_type: NoteType | None = None
+    preferred_language: str | None = None
 
 
 class NoteGenerateResponse(BaseModel):
@@ -80,5 +93,6 @@ class NoteGenerateResponse(BaseModel):
     status: NoteStatus
     version: int
     created_at: datetime
-    payload: IndiaClinicalNotePayload
+    payload: IndiaClinicalNotePayload | PostVisitSummaryPayload
+    whatsapp_payload: str | None = None
     legacy: bool = False

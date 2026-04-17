@@ -144,6 +144,7 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     monkeypatch.setattr("src.adapters.db.mongo.repositories.clinical_note_repository.get_database", lambda: fake_db)
     monkeypatch.setattr("src.workers.transcription_worker.get_database", lambda: fake_db)
     monkeypatch.setattr("src.application.use_cases.generate_india_clinical_note.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.application.use_cases.generate_post_visit_summary.get_database", lambda: fake_db)
     monkeypatch.setattr("src.application.use_cases.generate_soap_note.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.transcription.asyncio.create_task", lambda coro: coro.close())
     return fake_db

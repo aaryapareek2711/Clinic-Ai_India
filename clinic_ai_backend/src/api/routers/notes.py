@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.api.schemas.notes import NoteGenerateRequest, NoteGenerateResponse, NoteType
 from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
+from src.application.use_cases.generate_post_visit_summary import GeneratePostVisitSummaryUseCase
 from src.application.use_cases.generate_soap_note import GenerateSoapNoteUseCase
 from src.core.config import get_settings
 
@@ -46,6 +47,23 @@ def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
     return NoteGenerateResponse(**doc)
 
 
+@router.post("/post-visit-summary", response_model=NoteGenerateResponse)
+def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateResponse:
+    """Generate patient-facing post-visit summary explicitly."""
+    try:
+        doc = GeneratePostVisitSummaryUseCase().execute(
+            patient_id=request.patient_id,
+            visit_id=request.visit_id,
+            transcription_job_id=request.transcription_job_id,
+            preferred_language=request.preferred_language,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 422 if "preferred_language" in detail else 404
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return NoteGenerateResponse(**doc)
+
+
 @router.get("/latest/by-context", response_model=NoteGenerateResponse)
 def get_latest_note(
     patient_id: str = Query(default=""),
@@ -75,6 +93,8 @@ def get_note(note_id: str) -> NoteGenerateResponse:
 def _generate_by_type(*, note_type: NoteType, request: NoteGenerateRequest) -> NoteGenerateResponse:
     if note_type == "soap":
         return generate_soap_note(request)
+    if note_type == "post_visit_summary":
+        return generate_post_visit_summary(request)
     try:
         doc = GenerateIndiaClinicalNoteUseCase().execute(
             patient_id=request.patient_id,
