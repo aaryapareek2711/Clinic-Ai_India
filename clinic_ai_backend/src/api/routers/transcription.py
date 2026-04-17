@@ -20,7 +20,6 @@ from src.api.schemas.audio import (
     TranscriptionUploadAcceptedResponse,
 )
 from src.core.config import get_settings
-from src.workers.transcription_worker import TranscriptionWorker
 
 router = APIRouter(prefix="/notes", tags=["Transcription"])
 
@@ -91,10 +90,6 @@ async def upload_transcription_audio(
         max_retries=settings.transcription_max_retries,
     )
     TranscriptionQueueProducer().enqueue(job_id)
-    # Fire-and-forget worker scheduling so jobs don't get stuck on `queued`.
-    # In local demo mode, the worker will pick from the in-memory queue;
-    # in non-local mode, it will pick from the Mongo-backed queue.
-    asyncio.create_task(TranscriptionWorker().process_next_async())
 
     return TranscriptionUploadAcceptedResponse(
         job_id=job_id,

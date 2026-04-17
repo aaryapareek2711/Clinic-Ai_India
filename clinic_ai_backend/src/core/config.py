@@ -51,6 +51,8 @@ class Settings:
     ]
     transcription_max_retries: int = int(os.getenv("TRANSCRIPTION_MAX_RETRIES", "3"))
     transcription_timeout_sec: int = int(os.getenv("TRANSCRIPTION_TIMEOUT_SEC", "120"))
+    transcription_worker_concurrency: int = int(os.getenv("TRANSCRIPTION_WORKER_CONCURRENCY", "2"))
+    transcription_worker_poll_interval_sec: float = float(os.getenv("TRANSCRIPTION_WORKER_POLL_INTERVAL_SEC", "1.0"))
     use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"
     local_audio_storage_path: str = os.getenv("LOCAL_AUDIO_STORAGE_PATH", "/tmp/clinic_audio")
     mongo_audio_bucket_name: str = os.getenv("MONGO_AUDIO_BUCKET_NAME", "audio_blobs")

@@ -15,6 +15,10 @@ from src.adapters.external.queue.consumer import TranscriptionQueueConsumer
 from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.core.config import get_settings
 
+_WHISPER_MODEL: Any | None = None
+_BACKGROUND_TASKS: list[asyncio.Task] = []
+_STOP_EVENT: asyncio.Event | None = None
+
 
 class TranscriptionWorker:
     """Worker that processes transcription queue jobs."""
@@ -163,7 +167,10 @@ class TranscriptionWorker:
             import whisper  # type: ignore
         except ImportError as exc:
             raise RuntimeError("openai-whisper is not installed") from exc
-        model = whisper.load_model(self.settings.whisper_model_size)
+        global _WHISPER_MODEL
+        if _WHISPER_MODEL is None:
+            _WHISPER_MODEL = whisper.load_model(self.settings.whisper_model_size)
+        model = _WHISPER_MODEL
         blob_path = str(audio_doc.get("blob_path", "") or "")
         audio_path = blob_path
         temp_path: str | None = None
@@ -240,3 +247,36 @@ class TranscriptionWorker:
         if speaker in {"attendant", "caregiver", "speaker_2"}:
             return "attendant"
         return "unknown"
+
+
+async def _worker_loop(worker_id: int, stop_event: asyncio.Event, poll_interval_sec: float) -> None:
+    worker = TranscriptionWorker()
+    while not stop_event.is_set():
+        processed = await worker.process_next_async()
+        if not processed:
+            await asyncio.sleep(poll_interval_sec)
+
+
+def start_background_workers() -> None:
+    """Start background transcription workers once per process."""
+    global _BACKGROUND_TASKS, _STOP_EVENT
+    if _BACKGROUND_TASKS:
+        return
+    settings = get_settings()
+    _STOP_EVENT = asyncio.Event()
+    concurrency = max(1, int(settings.transcription_worker_concurrency))
+    poll_interval = max(0.2, float(settings.transcription_worker_poll_interval_sec))
+    for i in range(concurrency):
+        _BACKGROUND_TASKS.append(asyncio.create_task(_worker_loop(i + 1, _STOP_EVENT, poll_interval)))
+
+
+async def stop_background_workers() -> None:
+    """Stop background transcription workers gracefully."""
+    global _BACKGROUND_TASKS, _STOP_EVENT
+    if not _BACKGROUND_TASKS:
+        return
+    if _STOP_EVENT is not None:
+        _STOP_EVENT.set()
+    await asyncio.gather(*_BACKGROUND_TASKS, return_exceptions=True)
+    _BACKGROUND_TASKS = []
+    _STOP_EVENT = None
