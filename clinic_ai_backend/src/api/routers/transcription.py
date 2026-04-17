@@ -22,6 +22,7 @@ from src.api.schemas.audio import (
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/notes", tags=["Transcription"])
+AZURE_REST_SUPPORTED_MIME_TYPES = {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp3"}
 
 
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
@@ -42,8 +43,17 @@ async def upload_transcription_audio(
     settings = get_settings()
     if not settings.azure_speech_key:
         raise HTTPException(status_code=503, detail="AZURE_SPEECH_KEY is not configured")
-    if audio_file.content_type not in settings.allowed_audio_mime_types:
+    content_type = str(audio_file.content_type or "").strip().lower()
+    if content_type not in settings.allowed_audio_mime_types:
         raise HTTPException(status_code=400, detail="Unsupported audio MIME type")
+    if content_type not in AZURE_REST_SUPPORTED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "For Azure realtime transcription, upload WAV or MP3 audio. "
+                f"Received MIME type: {content_type or 'unknown'}"
+            ),
+        )
 
     payload = await audio_file.read()
     if not payload:
@@ -60,7 +70,7 @@ async def upload_transcription_audio(
     storage_ref = storage.upload_audio(
         blob_path=blob_path,
         audio_bytes=payload,
-        mime_type=audio_file.content_type or "application/octet-stream",
+        mime_type=content_type or "application/octet-stream",
     )
     stored_blob_path = storage_ref
     stored_blob_url = storage_ref
@@ -75,7 +85,7 @@ async def upload_transcription_audio(
         blob_url=stored_blob_url,
         blob_path=stored_blob_path,
         container=settings.mongo_audio_bucket_name,
-        mime_type=audio_file.content_type or "application/octet-stream",
+        mime_type=content_type or "application/octet-stream",
         size_bytes=len(payload),
         sha256=digest,
         noise_environment=noise_environment,

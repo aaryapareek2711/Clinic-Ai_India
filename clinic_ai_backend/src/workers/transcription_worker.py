@@ -196,11 +196,14 @@ class TranscriptionWorker:
             ) from last_404
         if last_raw is not None:
             status = str(last_raw.get("RecognitionStatus", "unknown"))
+            mime_type = str(audio_doc.get("mime_type", "unknown") or "unknown")
             raise RuntimeError(
                 "NON_RETRIABLE_NO_TEXT: "
                 "Azure Speech returned no transcript text. "
                 f"RecognitionStatus={status}. "
-                "Possible reasons: unsupported audio codec/container, unclear/silent audio, or locale mismatch."
+                f"Input MIME={mime_type}. "
+                "Possible reasons: unsupported audio codec/container, unclear/silent audio, or locale mismatch. "
+                "Try WAV (PCM) or MP3 with clear speech."
             )
         raise RuntimeError("Azure Speech transcription failed without response")
 
