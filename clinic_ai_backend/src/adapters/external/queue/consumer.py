@@ -28,3 +28,7 @@ class TranscriptionQueueConsumer:
             return None
         self.queue.delete_one({"_id": doc["_id"]})
         return doc["job_id"]
+
+    def ack_last(self) -> None:
+        """No-op for local/mongo queue modes."""
+        return None

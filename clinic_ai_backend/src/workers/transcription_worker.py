@@ -40,6 +40,7 @@ class TranscriptionWorker:
 
         job = self.repo.get_job(job_id)
         if not job:
+            self.consumer.ack_last()
             return True
 
         if not self._has_previsit(job["patient_id"]):
@@ -48,6 +49,7 @@ class TranscriptionWorker:
                 error_code="PREVISIT_MISSING",
                 error_message="Pre-visit summary not found at processing time",
             )
+            self.consumer.ack_last()
             return True
 
         audio_doc = self.repo.get_audio_by_id(job["audio_id"])
@@ -57,6 +59,7 @@ class TranscriptionWorker:
                 error_code="AUDIO_MISSING",
                 error_message="Audio metadata not found for transcription job",
             )
+            self.consumer.ack_last()
             return True
 
         self.repo.mark_processing(job_id)
@@ -110,6 +113,8 @@ class TranscriptionWorker:
                 )
             else:
                 self.producer.enqueue(job_id)
+        finally:
+            self.consumer.ack_last()
         return True
 
     def _has_previsit(self, patient_id: str) -> bool:
