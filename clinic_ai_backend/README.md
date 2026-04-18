@@ -40,6 +40,12 @@ make dev
 | WHATSAPP_INTAKE_TEMPLATE_LANG_HI | No | Hindi template locale code | hi |
 | WHATSAPP_INTAKE_TEMPLATE_PARAM_COUNT | No | Number of body params in template | 1 |
 
+## Azure Speech and MP3 uploads
+Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants decode to “success” with an empty transcript. The worker **normalizes uploads with FFmpeg** to 16 kHz mono PCM WAV before calling Azure when `ffmpeg` is on `PATH`.
+
+- **Docker**: `deployments/docker/Dockerfile.api` and `Dockerfile.worker` install `ffmpeg`; rebuild and redeploy the image.
+- **Native Python on a host (e.g. Render without Docker)**: install `ffmpeg` in the environment (for example add a build step that installs it, or use a base image that includes it). If `ffmpeg` is missing, the worker falls back to the original bytes and MP3 failures are more likely.
+
 ## Endpoint Module Map
 - Health: `src/api/routers/health.py`
 - Patients: `src/api/routers/patients.py`

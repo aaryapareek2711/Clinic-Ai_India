@@ -22,7 +22,6 @@ from src.api.schemas.audio import (
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/notes", tags=["Transcription"])
-AZURE_REST_SUPPORTED_MIME_TYPES = {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp3"}
 
 
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
@@ -46,14 +45,6 @@ async def upload_transcription_audio(
     content_type = str(audio_file.content_type or "").strip().lower()
     if content_type not in settings.allowed_audio_mime_types:
         raise HTTPException(status_code=400, detail="Unsupported audio MIME type")
-    if content_type not in AZURE_REST_SUPPORTED_MIME_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "For Azure realtime transcription, upload WAV or MP3 audio. "
-                f"Received MIME type: {content_type or 'unknown'}"
-            ),
-        )
 
     payload = await audio_file.read()
     if not payload:

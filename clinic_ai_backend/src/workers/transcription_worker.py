@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 from typing import Any
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from src.adapters.db.mongo.client import get_database
@@ -167,28 +172,36 @@ class TranscriptionWorker:
         if not storage_ref:
             raise RuntimeError("Audio storage reference not found")
         audio_bytes = AzureBlobStorage().download_audio(storage_ref)
-        content_type = self._normalize_audio_content_type(str(audio_doc.get("mime_type", "") or "audio/wav"))
+        declared_mime = self._normalize_audio_content_type(str(audio_doc.get("mime_type", "") or "audio/wav"))
         last_404: HTTPError | None = None
         last_raw: dict | None = None
 
-        for locale in self._candidate_locales(primary_locale):
-            for endpoint in self._candidate_azure_speech_endpoints(locale):
-                try:
-                    req = Request(endpoint, data=audio_bytes, method="POST")
-                    req.add_header("Ocp-Apim-Subscription-Key", self.settings.azure_speech_key)
-                    req.add_header("Accept", "application/json;text/xml")
-                    req.add_header("Content-Type", content_type)
-                    with urlopen(req, timeout=self.settings.transcription_timeout_sec) as response:
-                        raw = json.loads(response.read().decode("utf-8"))
-                    normalized = self._normalize_azure_response(raw, locale)
-                    if normalized.get("segments"):
-                        return normalized
-                    last_raw = raw
-                except HTTPError as exc:
-                    if exc.code == 404:
-                        last_404 = exc
-                        continue
-                    raise
+        wav_bytes, transcode_error = self._try_transcode_to_wav_pcm16k_mono(audio_bytes, declared_mime)
+        for audio_payload, content_type in self._audio_payload_candidates(
+            audio_bytes, declared_mime, wav_bytes
+        ):
+            for locale in self._candidate_locales(primary_locale):
+                for endpoint in self._candidate_azure_speech_endpoints(locale):
+                    try:
+                        req = Request(endpoint, data=audio_payload, method="POST")
+                        req.add_header("Ocp-Apim-Subscription-Key", self.settings.azure_speech_key)
+                        req.add_header("Accept", "application/json;text/xml")
+                        req.add_header("Content-Type", content_type)
+                        with urlopen(req, timeout=self.settings.transcription_timeout_sec) as response:
+                            raw = json.loads(response.read().decode("utf-8"))
+                        if isinstance(raw, list):
+                            raw = next((item for item in raw if isinstance(item, dict)), {})
+                        if not isinstance(raw, dict):
+                            continue
+                        normalized = self._normalize_azure_response(raw, locale)
+                        if normalized.get("segments"):
+                            return normalized
+                        last_raw = raw if isinstance(raw, dict) else last_raw
+                    except HTTPError as exc:
+                        if exc.code == 404:
+                            last_404 = exc
+                            continue
+                        raise
 
         if last_404 is not None:
             raise RuntimeError(
@@ -197,15 +210,129 @@ class TranscriptionWorker:
         if last_raw is not None:
             status = str(last_raw.get("RecognitionStatus", "unknown"))
             mime_type = str(audio_doc.get("mime_type", "unknown") or "unknown")
+            if not shutil.which("ffmpeg"):
+                ffmpeg_hint = (
+                    "Install ffmpeg on the server (see deployments/docker/Dockerfile.api) so audio can be "
+                    "converted to 16 kHz mono PCM WAV before Azure recognition."
+                )
+            elif transcode_error:
+                ffmpeg_hint = (
+                    f"FFmpeg failed while normalizing audio ({transcode_error}). "
+                    "Fix the source file or install codecs; Azure then received the original bytes only."
+                )
+            else:
+                ffmpeg_hint = (
+                    "FFmpeg normalized WAV was tried first; if this persists, the source may be silent, "
+                    "not speech, or the language hint may not match the spoken language."
+                )
             raise RuntimeError(
                 "NON_RETRIABLE_NO_TEXT: "
                 "Azure Speech returned no transcript text. "
                 f"RecognitionStatus={status}. "
                 f"Input MIME={mime_type}. "
-                "Possible reasons: unsupported audio codec/container, unclear/silent audio, or locale mismatch. "
-                "Try WAV (PCM) or MP3 with clear speech."
+                "Azure treated the request as successful but found no words. "
+                "Common causes: silent/corrupt audio, wrong language vs speech, or compressed audio Azure could not decode. "
+                f"{ffmpeg_hint}"
             )
         raise RuntimeError("Azure Speech transcription failed without response")
+
+    def _audio_payload_candidates(
+        self, audio_bytes: bytes, declared_mime: str, wav_bytes: bytes | None
+    ) -> list[tuple[bytes, str]]:
+        """Prefer FFmpeg-normalized WAV for Azure REST compatibility, then original bytes."""
+        candidates: list[tuple[bytes, str]] = []
+        if wav_bytes:
+            candidates.append((wav_bytes, "audio/wav"))
+        candidates.append((audio_bytes, declared_mime))
+        deduped: list[tuple[bytes, str]] = []
+        seen: set[int] = set()
+        for payload, mime in candidates:
+            key = id(payload)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append((payload, mime))
+        return deduped
+
+    def _try_transcode_to_wav_pcm16k_mono(self, audio_bytes: bytes, declared_mime: str) -> tuple[bytes | None, str | None]:
+        if not shutil.which("ffmpeg"):
+            return None, None
+        suffix = self._suffix_for_mime(declared_mime)
+        in_path: str | None = None
+        out_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+                tmp_in.write(audio_bytes)
+                in_path = tmp_in.name
+            out_path = f"{in_path}.wav"
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                in_path,
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+                "-f",
+                "wav",
+                out_path,
+            ]
+            proc = subprocess.run(cmd, check=False, capture_output=True, timeout=120)
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout or b"").decode("utf-8", errors="replace").strip()
+                return None, err[:500] if err else f"exit code {proc.returncode}"
+            with open(out_path, "rb") as wav_file:
+                data = wav_file.read()
+            if not data:
+                return None, "empty WAV output"
+            return data, None
+        except subprocess.TimeoutExpired:
+            return None, "ffmpeg timed out"
+        except OSError as exc:
+            return None, str(exc)
+        finally:
+            for path in (in_path, out_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+    @staticmethod
+    def _suffix_for_mime(mime_type: str) -> str:
+        mime = str(mime_type or "").strip().lower()
+        if "wav" in mime:
+            return ".wav"
+        if "mpeg" in mime or "mp3" in mime:
+            return ".mp3"
+        if "mp4" in mime or "m4a" in mime:
+            return ".m4a"
+        if "webm" in mime:
+            return ".webm"
+        return ".bin"
+
+    def _speech_host_candidates(self) -> list[str]:
+        hosts: list[str] = []
+        configured = str(self.settings.azure_speech_endpoint or "").strip().rstrip("/")
+        if configured:
+            url = configured if "://" in configured else f"https://{configured}"
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").strip()
+            if host:
+                if ".api.cognitive.microsoft.com" in host:
+                    host = host.replace(".api.cognitive.microsoft.com", ".stt.speech.microsoft.com")
+                hosts.append(host)
+        if self.settings.azure_speech_region:
+            region_host = f"{self.settings.azure_speech_region}.stt.speech.microsoft.com"
+            if region_host not in hosts:
+                hosts.append(region_host)
+        return hosts
 
     @staticmethod
     def _language_hint_to_locale(language_mix: str) -> str:
@@ -221,42 +348,20 @@ class TranscriptionWorker:
         token = str(language_mix or "").strip().lower().split("-")[0]
         return mapping.get(token, "en-IN")
 
-    def _resolve_azure_speech_endpoint(self, locale: str) -> str:
-        configured = str(self.settings.azure_speech_endpoint or "").strip().rstrip("/")
-        if configured:
-            if ".api.cognitive.microsoft.com" in configured:
-                configured = configured.replace(".api.cognitive.microsoft.com", ".stt.speech.microsoft.com")
-            if "/speech/recognition/" in configured:
-                if "language=" in configured:
-                    return configured
-                separator = "&" if "?" in configured else "?"
-                return f"{configured}{separator}language={locale}&format=detailed"
-            return (
-                f"{configured}/speech/recognition/conversation/cognitiveservices/v1"
-                f"?language={locale}&format=detailed"
-            )
-        if not self.settings.azure_speech_region:
-            raise RuntimeError("Set AZURE_SPEECH_REGION or AZURE_SPEECH_ENDPOINT")
-        return (
-            f"https://{self.settings.azure_speech_region}.stt.speech.microsoft.com/"
-            f"speech/recognition/conversation/cognitiveservices/v1?language={locale}&format=detailed"
-        )
-
     def _candidate_azure_speech_endpoints(self, locale: str) -> list[str]:
-        candidates: list[str] = []
-        configured = str(self.settings.azure_speech_endpoint or "").strip().rstrip("/")
-        if configured:
-            candidates.append(self._resolve_azure_speech_endpoint(locale))
-        if self.settings.azure_speech_region:
-            region_endpoint = (
-                f"https://{self.settings.azure_speech_region}.stt.speech.microsoft.com/"
-                f"speech/recognition/conversation/cognitiveservices/v1?language={locale}&format=detailed"
-            )
-            if region_endpoint not in candidates:
-                candidates.append(region_endpoint)
-        if not candidates:
+        """Short-audio REST: try interactive then conversation on each Speech host."""
+        urls: list[str] = []
+        for host in self._speech_host_candidates():
+            for mode in ("interactive", "conversation"):
+                url = (
+                    f"https://{host}/speech/recognition/{mode}/cognitiveservices/v1"
+                    f"?language={locale}&format=detailed"
+                )
+                if url not in urls:
+                    urls.append(url)
+        if not urls:
             raise RuntimeError("Set AZURE_SPEECH_REGION or AZURE_SPEECH_ENDPOINT")
-        return candidates
+        return urls
 
     @staticmethod
     def _normalize_azure_response(raw: dict, locale: str) -> dict:
@@ -320,7 +425,43 @@ class TranscriptionWorker:
                         "needs_manual_review": False,
                     }
                 )
+
+        if not segments:
+            deep_texts = TranscriptionWorker._collect_recognition_strings(raw)
+            if deep_texts:
+                combined = " ".join(dict.fromkeys(deep_texts)).strip()
+                if combined:
+                    segments.append(
+                        {
+                            "start_ms": 0,
+                            "end_ms": 0,
+                            "speaker_label": "unknown",
+                            "text": combined,
+                            "confidence": 0.85,
+                            "needs_manual_review": False,
+                        }
+                    )
         return {"language_detected": locale, "segments": segments}
+
+    @staticmethod
+    def _collect_recognition_strings(node: Any, depth: int = 0) -> list[str]:
+        """Best-effort walk of Azure JSON for any human-readable recognition strings."""
+        if depth > 12:
+            return []
+        found: list[str] = []
+        if isinstance(node, dict):
+            for key, value in node.items():
+                lk = str(key).lower()
+                if lk in {"displaytext", "display", "lexical"} and isinstance(value, str):
+                    text = value.strip()
+                    if text:
+                        found.append(text)
+                else:
+                    found.extend(TranscriptionWorker._collect_recognition_strings(value, depth + 1))
+        elif isinstance(node, list):
+            for item in node:
+                found.extend(TranscriptionWorker._collect_recognition_strings(item, depth + 1))
+        return found
 
     @staticmethod
     def _normalize_audio_content_type(mime_type: str) -> str:
