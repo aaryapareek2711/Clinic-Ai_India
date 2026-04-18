@@ -47,6 +47,7 @@ class PreVisitSummaryResponse(BaseModel):
     """Pre-visit summary response payload."""
 
     patient_id: str
+    visit_id: str | None = None
     intake_session_id: str
     language: str
     status: str
@@ -57,6 +58,7 @@ class DoctorAppointmentViewResponse(BaseModel):
     """Doctor view with summary and vitals context."""
 
     patient_id: str
+    visit_id: str
     pre_visit_summary: PreVisitSummaryResponse | None
     latest_vitals_form: VitalsFormResponse | None
     latest_vitals: LatestVitalsResponse | None

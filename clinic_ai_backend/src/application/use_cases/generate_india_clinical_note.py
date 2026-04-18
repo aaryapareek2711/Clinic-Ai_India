@@ -35,7 +35,11 @@ class GenerateIndiaClinicalNoteUseCase:
         force_regenerate: bool = False,
     ) -> dict:
         """Generate India note and save as canonical default artifact."""
-        job = self._resolve_transcription_job(patient_id=patient_id, transcription_job_id=transcription_job_id)
+        job = self._resolve_transcription_job(
+            patient_id=patient_id,
+            visit_id=visit_id,
+            transcription_job_id=transcription_job_id,
+        )
         source_job_id = str(job.get("job_id"))
         if not force_regenerate:
             existing = self.note_repo.find_by_source_job(
@@ -64,28 +68,63 @@ class GenerateIndiaClinicalNoteUseCase:
         created.pop("_id", None)
         return created
 
-    def _resolve_transcription_job(self, *, patient_id: str, transcription_job_id: str | None) -> dict:
+    def _resolve_transcription_job(
+        self,
+        *,
+        patient_id: str,
+        visit_id: str | None,
+        transcription_job_id: str | None,
+    ) -> dict:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
         else:
+            query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
+            if visit_id:
+                query["visit_id"] = visit_id
             job = self.db.transcription_jobs.find_one(
-                {"patient_id": patient_id, "status": "completed"},
+                query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
         if not job:
             raise ValueError("No completed transcription job found")
         if str(job.get("patient_id")) != patient_id:
             raise ValueError("Transcription job does not belong to patient")
+        if visit_id and str(job.get("visit_id") or "") != str(visit_id):
+            raise ValueError("Transcription job does not belong to this visit")
         if job.get("status") != "completed":
             raise ValueError("Transcription job must be completed before note generation")
         return job
 
     def _build_context(self, *, patient_id: str, visit_id: str | None, job: dict) -> dict:
         transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
-        previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
-        intake = self.db.intake_sessions.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+        effective_visit = visit_id or job.get("visit_id")
+        if effective_visit:
+            previsit = (
+                self.db.pre_visit_summaries.find_one(
+                    {"patient_id": patient_id, "visit_id": effective_visit},
+                    sort=[("updated_at", -1)],
+                )
+                or {}
+            )
+            intake = (
+                self.db.intake_sessions.find_one(
+                    {"patient_id": patient_id, "visit_id": effective_visit},
+                    sort=[("updated_at", -1)],
+                )
+                or {}
+            )
+            vitals = (
+                self.db.patient_vitals.find_one(
+                    {"patient_id": patient_id, "visit_id": effective_visit},
+                    sort=[("submitted_at", -1)],
+                )
+                or {}
+            )
+        else:
+            previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+            intake = self.db.intake_sessions.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+            vitals = self.db.patient_vitals.find_one({"patient_id": patient_id}, sort=[("submitted_at", -1)]) or {}
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
-        vitals = self.db.patient_vitals.find_one({"patient_id": patient_id}, sort=[("submitted_at", -1)]) or {}
 
         medication_images = self._extract_medication_images(intake)
         data_gaps: list[str] = []

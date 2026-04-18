@@ -17,6 +17,7 @@ class PatientLookupResponse(BaseModel):
     """Lookup response with resolved patient."""
 
     patient_id: str
+    visit_id: str | None
     name: str
     phone_number: str
 
@@ -37,6 +38,7 @@ class VitalsFormResponse(BaseModel):
 
     form_id: str
     patient_id: str
+    visit_id: str | None = None
     needs_vitals: bool
     reason: str
     fields: list[VitalsField]
@@ -47,6 +49,7 @@ class VitalsSubmitRequest(BaseModel):
     """Vitals submission payload."""
 
     patient_id: str
+    visit_id: str
     form_id: str | None = None
     staff_name: str = Field(min_length=1, max_length=120)
     values: dict[str, str | int | float | bool | None]
@@ -57,6 +60,7 @@ class VitalsSubmitResponse(BaseModel):
 
     vitals_id: str
     patient_id: str
+    visit_id: str | None = None
     submitted_at: datetime
 
 
@@ -65,6 +69,7 @@ class LatestVitalsResponse(BaseModel):
 
     vitals_id: str
     patient_id: str
+    visit_id: str | None = None
     form_id: str | None = None
     staff_name: str
     submitted_at: datetime

@@ -23,16 +23,17 @@ class IntakeChatService:
         self.whatsapp = MetaWhatsAppClient()
         self.openai = OpenAIQuestionClient()
 
-    def start_intake(self, patient_id: str, to_number: str, language: str) -> None:
+    def start_intake(self, patient_id: str, visit_id: str, to_number: str, language: str) -> None:
         """Start intake with opening message; first clinical question comes after user reply."""
         normalized_to_number = self._normalize_phone_number(to_number)
         opening_message = self._opening_message(language)
 
         self.db.intake_sessions.update_one(
-            {"patient_id": patient_id},
+            {"visit_id": visit_id},
             {
                 "$set": {
                     "patient_id": patient_id,
+                    "visit_id": visit_id,
                     "to_number": normalized_to_number,
                     "language": language,
                     "status": "awaiting_conversation_start",
@@ -623,10 +624,11 @@ class IntakeChatService:
     @staticmethod
     def _auto_generate_pre_visit_summary(session: dict) -> None:
         patient_id = str(session.get("patient_id", "")).strip()
-        if not patient_id:
+        visit_id = str(session.get("visit_id", "")).strip()
+        if not patient_id or not visit_id:
             return
         try:
-            GeneratePreVisitSummaryUseCase().execute(patient_id=patient_id)
+            GeneratePreVisitSummaryUseCase().execute(patient_id=patient_id, visit_id=visit_id)
         except Exception:
             # Do not block intake completion on summary generation errors.
             return

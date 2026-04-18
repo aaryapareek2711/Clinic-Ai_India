@@ -41,7 +41,7 @@ def _iso_utc(value: datetime | None) -> str | None:
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
 async def upload_transcription_audio(
     patient_id: str = Form(...),
-    visit_id: str | None = Form(default=None),
+    visit_id: str = Form(...),
     audio_file: UploadFile = File(...),
     noise_environment: NoiseEnvironment = Form(default="quiet_clinic"),
     language_mix: str = Form(default="en"),
@@ -50,7 +50,10 @@ async def upload_transcription_audio(
 ) -> TranscriptionUploadAcceptedResponse:
     """Upload audio, create job and enqueue async processing (visit session when visit_id is set)."""
     db = get_database()
-    previsit = db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)])
+    previsit = db.pre_visit_summaries.find_one(
+        {"patient_id": patient_id, "visit_id": visit_id},
+        sort=[("updated_at", -1)],
+    )
     if not previsit:
         raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
 
@@ -71,7 +74,7 @@ async def upload_transcription_audio(
     now = datetime.now(timezone.utc)
     audio_id = str(uuid4())
     job_id = str(uuid4())
-    logical_name = f"{patient_id}/{visit_id or 'no-visit'}/{audio_id}_{audio_file.filename}"
+    logical_name = f"{patient_id}/{visit_id}/{audio_id}_{audio_file.filename}"
     storage_ref = TranscriptionAudioStore().upload_audio(
         blob_path=logical_name,
         audio_bytes=payload,
@@ -107,21 +110,16 @@ async def upload_transcription_audio(
     )
     TranscriptionQueueProducer().enqueue(job_id)
 
-    if visit_id:
-        VisitTranscriptionRepository().upsert_queued(
-            patient_id=patient_id,
-            visit_id=visit_id,
-            job_id=job_id,
-            audio_id=audio_id,
-            audio_file_path=storage_ref,
-            language_mix=effective_language,
-        )
-
-    poll_hint = (
-        f"/notes/transcribe/status/{patient_id}/{visit_id}"
-        if visit_id
-        else f"/notes/transcribe/jobs/{job_id}"
+    VisitTranscriptionRepository().upsert_queued(
+        patient_id=patient_id,
+        visit_id=visit_id,
+        job_id=job_id,
+        audio_id=audio_id,
+        audio_file_path=storage_ref,
+        language_mix=effective_language,
     )
+
+    poll_hint = f"/notes/transcribe/status/{patient_id}/{visit_id}"
     return TranscriptionUploadAcceptedResponse(
         job_id=job_id,
         message_id=job_id,

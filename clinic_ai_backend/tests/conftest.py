@@ -126,6 +126,8 @@ class InMemoryDatabase:
         self.pre_visit_summaries = InMemoryCollection()
         self.intake_sessions = InMemoryCollection()
         self.patients = InMemoryCollection()
+        self.visits = InMemoryCollection()
+        self.vitals_forms = InMemoryCollection()
         self.patient_vitals = InMemoryCollection()
         self.clinical_notes = InMemoryCollection()
         self.visit_transcription_sessions = InMemoryCollection()

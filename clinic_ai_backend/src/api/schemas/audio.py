@@ -17,7 +17,7 @@ class TranscriptionUploadAcceptedResponse(BaseModel):
     job_id: str
     message_id: str
     patient_id: str
-    visit_id: str | None
+    visit_id: str
     status: Literal["queued", "processing", "completed", "failed"]
     received_at: datetime
     message: str | None = None

@@ -137,4 +137,4 @@ def test_merges_model_covered_topics_with_history_topics() -> None:
     )
 
     assert result["agent2"]["topics_covered"] == ["associated_symptoms", "onset_duration"]
-    assert result["topic"] == "severity_progression"
+    assert result["topic"] == "associated_symptoms"

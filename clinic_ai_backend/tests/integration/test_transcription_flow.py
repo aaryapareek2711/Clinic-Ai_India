@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
+from src.core import config as config_module
 from src.workers.transcription_worker import TranscriptionWorker
+
+
+def _no_auto_openai_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid calling OpenAI during worker tests when OPENAI_API_KEY is set in the environment."""
+    monkeypatch.setattr(
+        "src.workers.transcription_worker.structure_dialogue_from_transcript_sync",
+        lambda **_kwargs: [],
+    )
 
 
 def _patch_upload_writes_temp_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -24,10 +33,11 @@ def _patch_upload_writes_temp_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     )
 
 
-def _insert_previsit(fake_db, patient_id: str) -> None:
+def _insert_previsit(fake_db, patient_id: str, visit_id: str = "v1") -> None:
     fake_db.pre_visit_summaries.insert_one(
         {
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "status": "generated",
             "updated_at": datetime.now(timezone.utc),
         }
@@ -163,7 +173,8 @@ def test_result_retrieval_completed(app_client, fake_db) -> None:
 def test_low_confidence_triggers_manual_review(
     fake_db, patched_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _insert_previsit(fake_db, "p3")
+    _no_auto_openai_structure(monkeypatch)
+    _insert_previsit(fake_db, "p3", "v3")
     audio_path = tmp_path / "a3.wav"
     audio_path.write_bytes(b"x")
     ref = f"file://{audio_path.as_posix()}"
@@ -326,7 +337,8 @@ def test_structure_dialogue_endpoint_persists(
 def test_worker_marks_visit_session_completed(
     app_client, fake_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _insert_previsit(fake_db, "p9")
+    _no_auto_openai_structure(monkeypatch)
+    _insert_previsit(fake_db, "p9", "v9")
     _patch_upload_writes_temp_file(monkeypatch, tmp_path)
     upload = app_client.post(
         "/notes/transcribe",
@@ -362,3 +374,102 @@ def test_worker_marks_visit_session_completed(
     assert session["transcription_status"] == "completed"
     assert "namaste" in (session.get("transcript") or "")
     assert session.get("structured_dialogue")
+
+
+def test_worker_visit_uses_openai_structure_when_segments_are_unknown(
+    fake_db,
+    patched_db,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Target 2: single unknown STT segment must not be the only dialogue — OpenAI fills Doctor/Patient."""
+    settings = config_module.get_settings()
+    settings.openai_api_key = "sk-test-not-called"
+    monkeypatch.setattr("src.core.config.get_settings", lambda: settings)
+
+    def _fake_structure(*, raw_transcript: str, language: str = "en") -> list[dict[str, str]]:
+        assert "throat" in raw_transcript.lower()
+        return [{"Doctor": "Tell me more."}, {"Patient": "My throat hurts."}]
+
+    monkeypatch.setattr(
+        "src.workers.transcription_worker.structure_dialogue_from_transcript_sync",
+        _fake_structure,
+    )
+
+    _insert_previsit(fake_db, "p10", "v10")
+    audio_path = tmp_path / "a10.wav"
+    audio_path.write_bytes(b"x")
+    ref = f"file://{audio_path.as_posix()}"
+    fake_db.audio_files.insert_one(
+        {
+            "audio_id": "a10",
+            "patient_id": "p10",
+            "visit_id": "v10",
+            "storage_ref": ref,
+            "blob_url": ref,
+            "blob_path": ref,
+            "mime_type": "audio/wav",
+        }
+    )
+    fake_db.transcription_jobs.insert_one(
+        {
+            "job_id": "j10",
+            "audio_id": "a10",
+            "patient_id": "p10",
+            "visit_id": "v10",
+            "status": "queued",
+            "language_mix": "en",
+            "retry_count": 0,
+            "max_retries": 2,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+    fake_db.transcription_queue.insert_one({"job_id": "j10", "queued_at": datetime.now(timezone.utc)})
+    now = datetime.now(timezone.utc)
+    fake_db.visit_transcription_sessions.insert_one(
+        {
+            "patient_id": "p10",
+            "visit_id": "v10",
+            "job_id": "j10",
+            "audio_id": "a10",
+            "audio_file_path": ref,
+            "language_mix": "en",
+            "transcription_status": "queued",
+            "transcript": None,
+            "structured_dialogue": None,
+            "enqueued_at": now,
+            "updated_at": now,
+        }
+    )
+
+    monkeypatch.setattr(
+        "src.workers.transcription_worker.TranscriptionWorker._call_azure_speech",
+        lambda self, **_kwargs: {
+            "language_detected": "en-IN",
+            "segments": [
+                {
+                    "start_ms": 0,
+                    "end_ms": 1200,
+                    "speaker_label": "unknown",
+                    "text": "Doctor, my throat hurts since yesterday.",
+                    "confidence": 0.9,
+                },
+            ],
+        },
+    )
+
+    worker = TranscriptionWorker()
+    worker.process_next()
+
+    session = fake_db.visit_transcription_sessions.find_one({"patient_id": "p10", "visit_id": "v10"})
+    assert session is not None
+    sd = session.get("structured_dialogue") or []
+    assert len(sd) >= 2
+    assert any("Doctor" in turn for turn in sd)
+    assert any("Patient" in turn for turn in sd)
+
+    result = fake_db.transcription_results.find_one({"job_id": "j10"})
+    assert result is not None
+    assert len(result.get("segments") or []) == 1
+    assert result["segments"][0]["speaker_label"] == "unknown"

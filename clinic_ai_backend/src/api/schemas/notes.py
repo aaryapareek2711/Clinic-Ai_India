@@ -76,7 +76,7 @@ class NoteGenerateRequest(BaseModel):
     """Generate/re-generate note request."""
 
     patient_id: str
-    visit_id: str | None = None
+    visit_id: str
     transcription_job_id: str | None = None
     note_type: NoteType | None = None
     preferred_language: str | None = None

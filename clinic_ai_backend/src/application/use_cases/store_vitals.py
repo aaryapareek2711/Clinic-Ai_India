@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from src.adapters.db.mongo.client import get_database
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
+from src.application.utils.patient_identity import stable_patient_id
 
 
 class StoreVitalsUseCase:
@@ -17,26 +18,36 @@ class StoreVitalsUseCase:
 
     def lookup_patient(self, name: str, phone_number: str) -> dict:
         """Find patient for entered name and phone number."""
-        patient = self.db.patients.find_one(
-            {
-                "name": {"$regex": f"^{name.strip()}$", "$options": "i"},
-                "phone_number": phone_number.strip(),
-            },
-            sort=[("created_at", -1)],
-        )
+        patient_id = stable_patient_id(name, phone_number)
+        patient = self.db.patients.find_one({"patient_id": patient_id})
         if not patient:
             raise ValueError("Patient not found for provided name and phone number")
+        visit = self.db.visits.find_one({"patient_id": patient_id}, sort=[("created_at", -1)])
+        latest_visit_id = str(visit["visit_id"]) if visit else None
         patient.pop("_id", None)
+        patient["latest_visit_id"] = latest_visit_id
         return patient
 
-    def generate_vitals_form(self, patient_id: str) -> dict:
+    def generate_vitals_form(self, patient_id: str, visit_id: str) -> dict:
         """Generate dynamic vitals requirements from intake + pre-visit summary."""
         patient = self.db.patients.find_one({"patient_id": patient_id})
         if not patient:
             raise ValueError("Patient not found")
 
-        intake = self.db.intake_sessions.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
-        pre_visit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+        intake = (
+            self.db.intake_sessions.find_one(
+                {"patient_id": patient_id, "visit_id": visit_id},
+                sort=[("updated_at", -1)],
+            )
+            or {}
+        )
+        pre_visit = (
+            self.db.pre_visit_summaries.find_one(
+                {"patient_id": patient_id, "visit_id": visit_id},
+                sort=[("updated_at", -1)],
+            )
+            or {}
+        )
 
         payload = {
             "patient": {
@@ -63,6 +74,7 @@ class StoreVitalsUseCase:
         form_doc = {
             "form_id": str(uuid4()),
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "needs_vitals": bool(result.get("needs_vitals", False)),
             "reason": str(result.get("reason", "No reason provided")),
             "fields": list(result.get("fields", [])),
@@ -72,7 +84,7 @@ class StoreVitalsUseCase:
         form_doc.pop("_id", None)
         return form_doc
 
-    def submit_vitals(self, patient_id: str, form_id: str | None, staff_name: str, values: dict) -> dict:
+    def submit_vitals(self, patient_id: str, visit_id: str, form_id: str | None, staff_name: str, values: dict) -> dict:
         """Store vitals form values for patient."""
         patient = self.db.patients.find_one({"patient_id": patient_id})
         if not patient:
@@ -81,6 +93,7 @@ class StoreVitalsUseCase:
         doc = {
             "vitals_id": str(uuid4()),
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "form_id": form_id,
             "staff_name": staff_name,
             "submitted_at": datetime.now(timezone.utc),
@@ -90,17 +103,23 @@ class StoreVitalsUseCase:
         doc.pop("_id", None)
         return doc
 
-    def get_latest_vitals(self, patient_id: str) -> dict | None:
+    def get_latest_vitals(self, patient_id: str, visit_id: str) -> dict | None:
         """Return latest submitted vitals."""
-        doc = self.db.patient_vitals.find_one({"patient_id": patient_id}, sort=[("submitted_at", -1)])
+        doc = self.db.patient_vitals.find_one(
+            {"patient_id": patient_id, "visit_id": visit_id},
+            sort=[("submitted_at", -1)],
+        )
         if not doc:
             return None
         doc.pop("_id", None)
         return doc
 
-    def get_latest_vitals_form(self, patient_id: str) -> dict | None:
+    def get_latest_vitals_form(self, patient_id: str, visit_id: str) -> dict | None:
         """Return latest generated vitals form decision."""
-        doc = self.db.vitals_forms.find_one({"patient_id": patient_id}, sort=[("generated_at", -1)])
+        doc = self.db.vitals_forms.find_one(
+            {"patient_id": patient_id, "visit_id": visit_id},
+            sort=[("generated_at", -1)],
+        )
         if not doc:
             return None
         doc.pop("_id", None)

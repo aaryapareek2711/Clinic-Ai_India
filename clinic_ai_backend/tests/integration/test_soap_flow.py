@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 
-def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1") -> None:
+def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1", visit_id: str = "v1") -> None:
     fake_db.patients.insert_one(
         {
             "patient_id": patient_id,
@@ -19,6 +19,7 @@ def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1") -> No
     fake_db.pre_visit_summaries.insert_one(
         {
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "status": "generated",
             "updated_at": datetime.now(timezone.utc),
             "sections": {
@@ -29,6 +30,7 @@ def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1") -> No
     fake_db.intake_sessions.insert_one(
         {
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "updated_at": datetime.now(timezone.utc),
             "answers": [{"question": "illness", "answer": "Fever and cough"}],
         }
@@ -38,7 +40,7 @@ def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1") -> No
             "job_id": job_id,
             "audio_id": "a1",
             "patient_id": patient_id,
-            "visit_id": "v1",
+            "visit_id": visit_id,
             "status": "completed",
             "created_at": datetime.now(timezone.utc),
             "completed_at": datetime.now(timezone.utc),
@@ -49,7 +51,7 @@ def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1") -> No
         {
             "job_id": job_id,
             "patient_id": patient_id,
-            "visit_id": "v1",
+            "visit_id": visit_id,
             "language_detected": "en",
             "overall_confidence": 0.9,
             "requires_manual_review": False,
@@ -79,7 +81,7 @@ def test_default_generate_prefers_india_note(app_client, fake_db, monkeypatch: p
     )
     response = app_client.post(
         "/notes/generate",
-        json={"patient_id": "p-note-1", "transcription_job_id": "job-note-1"},
+        json={"patient_id": "p-note-1", "visit_id": "v1", "transcription_job_id": "job-note-1"},
     )
     assert response.status_code == 200
     payload = response.json()
@@ -92,7 +94,7 @@ def test_soap_endpoint_remains_operational(app_client, fake_db) -> None:
     _insert_note_context(fake_db, patient_id="p-note-2", job_id="job-note-2")
     response = app_client.post(
         "/notes/soap",
-        json={"patient_id": "p-note-2", "transcription_job_id": "job-note-2"},
+        json={"patient_id": "p-note-2", "visit_id": "v1", "transcription_job_id": "job-note-2"},
     )
     assert response.status_code == 200
     payload = response.json()
@@ -141,7 +143,7 @@ def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monke
     )
     response = app_client.post(
         "/notes/post-visit-summary",
-        json={"patient_id": "p-note-3", "transcription_job_id": "job-note-3"},
+        json={"patient_id": "p-note-3", "visit_id": "v1", "transcription_job_id": "job-note-3"},
     )
     assert response.status_code == 200
     payload = response.json()
@@ -173,7 +175,12 @@ def test_post_visit_summary_uses_request_language_override(app_client, fake_db, 
     monkeypatch.setattr("src.adapters.external.ai.openai_client.OpenAIQuestionClient.generate_post_visit_summary", _fake_generate)
     response = app_client.post(
         "/notes/post-visit-summary",
-        json={"patient_id": "p-note-4", "transcription_job_id": "job-note-4", "preferred_language": "hi"},
+        json={
+            "patient_id": "p-note-4",
+            "visit_id": "v1",
+            "transcription_job_id": "job-note-4",
+            "preferred_language": "hi",
+        },
     )
     assert response.status_code == 200
     assert captured["language_name"] == "Hindi"
@@ -227,7 +234,7 @@ def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fa
     )
     response = app_client.post(
         "/notes/post-visit-summary",
-        json={"patient_id": "p-note-5"},
+        json={"patient_id": "p-note-5", "visit_id": "v5"},
     )
     assert response.status_code == 200
     payload = response.json()

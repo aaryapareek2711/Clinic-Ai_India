@@ -34,14 +34,29 @@ class GenerateSoapNoteUseCase:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
         else:
+            query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
+            if visit_id:
+                query["visit_id"] = visit_id
             job = self.db.transcription_jobs.find_one(
-                {"patient_id": patient_id, "status": "completed"},
+                query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
         if not job:
             raise ValueError("No completed transcription job found for SOAP generation")
+        if visit_id and str(job.get("visit_id") or "") != str(visit_id):
+            raise ValueError("Transcription job does not belong to this visit")
         transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
-        previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+        effective_visit = visit_id or job.get("visit_id")
+        if effective_visit:
+            previsit = (
+                self.db.pre_visit_summaries.find_one(
+                    {"patient_id": patient_id, "visit_id": effective_visit},
+                    sort=[("updated_at", -1)],
+                )
+                or {}
+            )
+        else:
+            previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
         chief = ((previsit.get("sections") or {}).get("chief_complaint") or {}).get("reason_for_visit")
         soap_payload = self.service.generate(
             transcript_text=str(transcript.get("full_transcript_text", "") or ""),

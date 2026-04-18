@@ -55,7 +55,11 @@ class GeneratePostVisitSummaryUseCase:
         job: dict | None = None
         transcript: dict = {}
         if transcription_job_id or not india_note:
-            job = self._resolve_transcription_job(patient_id=patient_id, transcription_job_id=transcription_job_id)
+            job = self._resolve_transcription_job(
+                patient_id=patient_id,
+                visit_id=visit_id,
+                transcription_job_id=transcription_job_id,
+            )
             transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
 
         if not india_note and not transcript:
@@ -83,18 +87,29 @@ class GeneratePostVisitSummaryUseCase:
         created.pop("_id", None)
         return created
 
-    def _resolve_transcription_job(self, *, patient_id: str, transcription_job_id: str | None) -> dict:
+    def _resolve_transcription_job(
+        self,
+        *,
+        patient_id: str,
+        visit_id: str | None,
+        transcription_job_id: str | None,
+    ) -> dict:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
         else:
+            query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
+            if visit_id:
+                query["visit_id"] = visit_id
             job = self.db.transcription_jobs.find_one(
-                {"patient_id": patient_id, "status": "completed"},
+                query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
         if not job:
             raise ValueError("No completed transcription job found")
         if str(job.get("patient_id")) != patient_id:
             raise ValueError("Transcription job does not belong to patient")
+        if visit_id and str(job.get("visit_id") or "") != str(visit_id):
+            raise ValueError("Transcription job does not belong to this visit")
         return job
 
     def _build_context(self, *, india_note: dict | None, transcript: dict) -> dict:

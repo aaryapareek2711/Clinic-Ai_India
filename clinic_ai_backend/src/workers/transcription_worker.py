@@ -18,6 +18,8 @@ from src.adapters.db.mongo.repositories.visit_transcription_repository import Vi
 from src.adapters.external.queue.consumer import TranscriptionQueueConsumer
 from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.adapters.external.storage.object_storage import TranscriptionAudioStore
+from src.application.services.dialogue_pii import scrub_dialogue_turns
+from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
 from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
 from src.application.utils.transcript_dialogue import (
     audio_duration_from_segments_ms,
@@ -65,7 +67,7 @@ class TranscriptionWorker:
             self.consumer.ack_last()
             return True
 
-        if not self._has_previsit(job["patient_id"]):
+        if not self._has_previsit(job):
             self.repo.mark_failed(
                 job_id,
                 error_code="PREVISIT_MISSING",
@@ -174,11 +176,13 @@ class TranscriptionWorker:
             # Do not fail transcription completion if note generation errors.
             return
 
-    def _has_previsit(self, patient_id: str) -> bool:
-        return (
-            self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)])
-            is not None
-        )
+    def _has_previsit(self, job: dict) -> bool:
+        patient_id = str(job.get("patient_id"))
+        visit_id = self._visit_id(job)
+        query: dict[str, object] = {"patient_id": patient_id}
+        if visit_id:
+            query["visit_id"] = visit_id
+        return self.db.pre_visit_summaries.find_one(query, sort=[("updated_at", -1)]) is not None
 
     @staticmethod
     def _visit_id(job: dict) -> str | None:
@@ -197,6 +201,38 @@ class TranscriptionWorker:
             visit_id=visit_id,
         )
 
+    def _visit_structured_dialogue(
+        self,
+        job: dict,
+        *,
+        full_text: str,
+        normalized: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        """
+        Visit dialogue for the API: prefer OpenAI Doctor/Patient turns when configured.
+
+        Short-audio Azure Speech REST (`/speech/recognition/.../v1`) typically returns one
+        `NBest` phrase with no speaker diarization — see `tests/fixtures/azure_speech_short_audio_success.json`.
+        `segments_to_structured_dialogue` then collapses unknown speakers to Patient-only turns.
+        When `OPENAI_API_KEY` is set, we restructure the full transcript so GET dialogue is useful.
+        """
+        baseline = segments_to_structured_dialogue(normalized)
+        if not (self.settings.openai_api_key or "").strip():
+            return baseline
+        if not (full_text or "").strip():
+            return baseline
+        try:
+            language_mix = str(job.get("language_mix") or "en")
+            structured = structure_dialogue_from_transcript_sync(
+                raw_transcript=full_text,
+                language=language_mix,
+            )
+            if structured:
+                return scrub_dialogue_turns(structured)
+        except Exception:
+            return baseline
+        return baseline
+
     def _sync_visit_completed(
         self,
         job: dict,
@@ -207,7 +243,7 @@ class TranscriptionWorker:
         visit_id = self._visit_id(job)
         if not visit_id:
             return
-        structured = segments_to_structured_dialogue(normalized)
+        structured = self._visit_structured_dialogue(job, full_text=full_text, normalized=normalized)
         duration = audio_duration_from_segments_ms(normalized)
         word_count = len(full_text.split()) if full_text else 0
         VisitTranscriptionRepository().mark_completed(
@@ -448,6 +484,8 @@ class TranscriptionWorker:
 
     @staticmethod
     def _normalize_azure_response(raw: dict, locale: str) -> dict:
+        # Typical short-audio JSON: RecognitionStatus, DisplayText, NBest[0] — no SpeakerId.
+        # Fixture: tests/fixtures/azure_speech_short_audio_success.json
         segments = []
         nbest = raw.get("NBest") or []
         best = nbest[0] if isinstance(nbest, list) and nbest else {}

@@ -30,4 +30,5 @@ class PatientRegisterResponse(BaseModel):
     """Response body for registration endpoint."""
 
     patient_id: str
+    visit_id: str
     whatsapp_triggered: bool

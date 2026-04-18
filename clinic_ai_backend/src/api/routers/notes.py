@@ -66,14 +66,12 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
 
 @router.get("/latest/by-context", response_model=NoteGenerateResponse)
 def get_latest_note(
-    patient_id: str = Query(default=""),
-    visit_id: str | None = Query(default=None),
+    patient_id: str = Query(min_length=1),
+    visit_id: str = Query(min_length=1),
     note_type: NoteType | None = Query(default=None),
 ) -> NoteGenerateResponse:
-    """Fetch latest note by optional patient/visit filters."""
-    if not patient_id and not visit_id:
-        raise HTTPException(status_code=400, detail="Provide patient_id or visit_id")
-    note = ClinicalNoteRepository().find_latest(patient_id=patient_id or None, visit_id=visit_id, note_type=note_type)
+    """Fetch latest note for a patient visit."""
+    note = ClinicalNoteRepository().find_latest(patient_id=patient_id, visit_id=visit_id, note_type=note_type)
     if not note:
         raise HTTPException(status_code=404, detail="No matching note found")
     note.pop("_id", None)

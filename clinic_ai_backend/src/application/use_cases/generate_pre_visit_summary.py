@@ -15,14 +15,14 @@ class GeneratePreVisitSummaryUseCase:
         self.db = get_database()
         self.openai = OpenAIQuestionClient()
 
-    def execute(self, patient_id: str) -> dict[str, Any]:
-        """Create pre-visit summary from latest intake session."""
+    def execute(self, patient_id: str, visit_id: str) -> dict[str, Any]:
+        """Create pre-visit summary from the intake session for this visit."""
         session = self.db.intake_sessions.find_one(
-            {"patient_id": patient_id},
+            {"patient_id": patient_id, "visit_id": visit_id},
             sort=[("updated_at", -1)],
         )
         if not session:
-            raise ValueError("No intake session found for patient")
+            raise ValueError("No intake session found for patient and visit")
 
         answers = session.get("answers", [])
         if not answers:
@@ -40,6 +40,7 @@ class GeneratePreVisitSummaryUseCase:
         now = datetime.now(timezone.utc)
         doc = {
             "patient_id": patient_id,
+            "visit_id": visit_id,
             "intake_session_id": str(session.get("_id")),
             "language": language,
             "status": session.get("status", "in_progress"),
@@ -47,7 +48,7 @@ class GeneratePreVisitSummaryUseCase:
             "updated_at": now,
         }
         self.db.pre_visit_summaries.update_one(
-            {"patient_id": patient_id, "intake_session_id": str(session.get("_id"))},
+            {"patient_id": patient_id, "visit_id": visit_id, "intake_session_id": str(session.get("_id"))},
             {"$set": doc, "$setOnInsert": {"created_at": now}},
             upsert=True,
         )
