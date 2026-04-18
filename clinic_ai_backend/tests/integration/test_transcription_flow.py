@@ -127,49 +127,6 @@ def test_worker_defensive_gate_fails_cleanly(fake_db, patched_db, tmp_path: Path
     assert job["error_code"] == "PREVISIT_MISSING"
 
 
-def test_result_retrieval_completed(app_client, fake_db) -> None:
-    fake_db.transcription_jobs.insert_one(
-        {
-            "job_id": "j2",
-            "patient_id": "p2",
-            "visit_id": "v2",
-            "status": "completed",
-            "created_at": datetime.now(timezone.utc),
-            "started_at": datetime.now(timezone.utc),
-            "completed_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-    )
-    fake_db.transcription_results.insert_one(
-        {
-            "job_id": "j2",
-            "patient_id": "p2",
-            "visit_id": "v2",
-            "language_detected": "hi-en",
-            "overall_confidence": 0.88,
-            "requires_manual_review": False,
-            "full_transcript_text": "hello",
-            "segments": [
-                {
-                    "segment_id": "seg_1",
-                    "start_ms": 0,
-                    "end_ms": 1000,
-                    "speaker_label": "doctor",
-                    "text": "hello",
-                    "confidence": 0.88,
-                    "needs_manual_review": False,
-                }
-            ],
-            "created_at": datetime.now(timezone.utc),
-        }
-    )
-    response = app_client.get("/notes/transcribe/jobs/j2/result")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["job_id"] == "j2"
-    assert payload["segments"][0]["speaker_label"] == "doctor"
-
-
 def test_low_confidence_triggers_manual_review(
     fake_db, patched_db, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

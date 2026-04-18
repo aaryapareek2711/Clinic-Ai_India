@@ -49,7 +49,17 @@ class Settings:
         if value.strip()
     ]
     transcription_max_retries: int = int(os.getenv("TRANSCRIPTION_MAX_RETRIES", "3"))
+    # HTTP read/write timeout for a single Azure short-audio REST POST (one chunk).
     transcription_timeout_sec: int = int(os.getenv("TRANSCRIPTION_TIMEOUT_SEC", "120"))
+    # Wall-clock cap for the whole job in the worker (download + ffmpeg + all chunks). Long visits need this >> single-chunk timeout.
+    transcription_job_timeout_sec: int = int(os.getenv("TRANSCRIPTION_JOB_TIMEOUT_SEC", "3600"))
+    # Azure "short audio" REST processes only the first ~60s; we split longer WAVs into chunks of this many seconds (requires ffmpeg).
+    transcription_short_audio_max_seconds: float = float(
+        os.getenv("TRANSCRIPTION_SHORT_AUDIO_MAX_SECONDS", "55")
+    )
+    transcription_chunk_seconds: float = float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "50"))
+    # Set to "1" / "true" to log byte sizes and chunk counts at INFO (one line per job).
+    transcription_debug_bytes: bool = os.getenv("TRANSCRIPTION_DEBUG_BYTES", "").lower() in {"1", "true", "yes"}
     transcription_worker_concurrency: int = int(os.getenv("TRANSCRIPTION_WORKER_CONCURRENCY", "2"))
     transcription_worker_poll_interval_sec: float = float(os.getenv("TRANSCRIPTION_WORKER_POLL_INTERVAL_SEC", "1.0"))
     use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"

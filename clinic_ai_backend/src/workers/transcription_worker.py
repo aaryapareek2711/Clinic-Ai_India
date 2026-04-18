@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlparse
@@ -26,6 +28,8 @@ from src.application.utils.transcript_dialogue import (
     segments_to_structured_dialogue,
 )
 from src.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _BACKGROUND_TASKS: list[asyncio.Task] = []
 _STOP_EVENT: asyncio.Event | None = None
@@ -94,7 +98,10 @@ class TranscriptionWorker:
         try:
             speech_response = await asyncio.wait_for(
                 asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
-                timeout=self.settings.transcription_timeout_sec,
+                timeout=max(
+                    float(self.settings.transcription_job_timeout_sec),
+                    float(self.settings.transcription_timeout_sec),
+                ),
             )
 
             normalized = self._normalize_segments(speech_response.get("segments", []))
@@ -283,45 +290,150 @@ class TranscriptionWorker:
         if ref:
             TranscriptionAudioStore().delete_by_ref(ref)
 
-    def _call_azure_speech(self, *, job: dict, audio_doc: dict) -> dict:
-        if not self.settings.azure_speech_key:
-            raise RuntimeError("AZURE_SPEECH_KEY is not configured")
-        primary_locale = self._language_hint_to_locale(str(job.get("language_mix", "") or "en"))
-        storage_ref = self._storage_ref_from_audio_doc(audio_doc)
-        if not storage_ref:
-            raise RuntimeError("Audio storage reference not found")
-        audio_bytes = TranscriptionAudioStore().download_audio(storage_ref)
-        declared_mime = self._normalize_audio_content_type(str(audio_doc.get("mime_type", "") or "audio/wav"))
+    @staticmethod
+    def _pcm_wav_duration_seconds(wav_bytes: bytes) -> float | None:
+        """Decode duration from a PCM RIFF/WAVE blob (e.g. ffmpeg 16 kHz mono output)."""
+        if len(wav_bytes) < 44 or wav_bytes[:4] != b"RIFF" or wav_bytes[8:12] != b"WAVE":
+            return None
+        pos = 12
+        byte_rate: int | None = None
+        while pos + 8 <= len(wav_bytes):
+            chunk_id = wav_bytes[pos : pos + 4]
+            chunk_size = int.from_bytes(wav_bytes[pos + 4 : pos + 8], "little")
+            chunk_start = pos + 8
+            if chunk_id == b"fmt " and chunk_size >= 16:
+                br_offset = chunk_start + 8
+                if br_offset + 4 <= len(wav_bytes):
+                    byte_rate = int.from_bytes(wav_bytes[br_offset : br_offset + 4], "little")
+            elif chunk_id == b"data" and byte_rate and byte_rate > 0:
+                return chunk_size / byte_rate
+            pos = chunk_start + chunk_size + (chunk_size % 2)
+        return None
+
+    @staticmethod
+    def _ffprobe_duration_seconds(path: str) -> float | None:
+        ffprobe = shutil.which("ffprobe")
+        if not ffprobe:
+            return None
+        try:
+            proc = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if proc.returncode != 0:
+                return None
+            val = float((proc.stdout or "").strip() or 0.0)
+            return val if val > 0 else None
+        except (ValueError, subprocess.TimeoutExpired):
+            return None
+
+    def _split_wav_into_time_chunks(self, wav_bytes: bytes, chunk_sec: float) -> list[bytes]:
+        """Split PCM WAV into <= chunk_sec pieces for Azure short-audio REST (≈60s max per request)."""
+        if chunk_sec < 10:
+            chunk_sec = 50.0
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            return [wav_bytes]
+        dur = self._pcm_wav_duration_seconds(wav_bytes)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.wav"
+            src.write_bytes(wav_bytes)
+            if dur is None:
+                dur = self._ffprobe_duration_seconds(str(src)) or 0.0
+            if dur <= chunk_sec + 0.1:
+                return [wav_bytes]
+            chunks: list[bytes] = []
+            start = 0.0
+            idx = 0
+            while start < dur - 0.05:
+                out = Path(tmp) / f"chunk_{idx:05d}.wav"
+                cmd = [
+                    ffmpeg_bin,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-i",
+                    str(src),
+                    "-t",
+                    f"{chunk_sec:.3f}",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(out),
+                ]
+                proc = subprocess.run(cmd, capture_output=True, timeout=900, check=False)
+                if proc.returncode != 0 or not out.is_file() or out.stat().st_size < 200:
+                    raise RuntimeError(
+                        "ffmpeg chunk split failed at "
+                        f"offset={start:.2f}s: "
+                        f"{(proc.stderr or b'').decode('utf-8', errors='replace')[:400]}"
+                    )
+                chunks.append(out.read_bytes())
+                start += chunk_sec
+                idx += 1
+            return chunks if chunks else [wav_bytes]
+
+    def _short_audio_recognize_one_payload(
+        self, *, audio_payload: bytes, content_type: str, primary_locale: str
+    ) -> tuple[dict | None, HTTPError | None, dict | None]:
+        """
+        One body POST to Azure short-audio REST; try locales/endpoints until text is returned.
+
+        Microsoft documents ~60s max audio per request for this API; see `_candidate_azure_speech_endpoints`.
+        """
         last_404: HTTPError | None = None
         last_raw: dict | None = None
+        http_timeout = max(30, int(self.settings.transcription_timeout_sec))
+        for locale in self._candidate_locales(primary_locale):
+            for endpoint in self._candidate_azure_speech_endpoints(locale):
+                try:
+                    req = Request(endpoint, data=audio_payload, method="POST")
+                    req.add_header("Ocp-Apim-Subscription-Key", self.settings.azure_speech_key)
+                    req.add_header("Accept", "application/json;text/xml")
+                    req.add_header("Content-Type", content_type)
+                    with urlopen(req, timeout=http_timeout) as response:
+                        raw = json.loads(response.read().decode("utf-8"))
+                    if isinstance(raw, list):
+                        raw = next((item for item in raw if isinstance(item, dict)), {})
+                    if not isinstance(raw, dict):
+                        continue
+                    normalized = self._normalize_azure_response(raw, locale)
+                    if normalized.get("segments"):
+                        return normalized, last_404, last_raw
+                    last_raw = raw if isinstance(raw, dict) else last_raw
+                except HTTPError as exc:
+                    if exc.code == 404:
+                        last_404 = exc
+                        continue
+                    raise
+        return None, last_404, last_raw
 
-        wav_bytes, transcode_error = self._try_transcode_to_wav_pcm16k_mono(audio_bytes, declared_mime)
-        for audio_payload, content_type in self._audio_payload_candidates(
-            audio_bytes, declared_mime, wav_bytes
-        ):
-            for locale in self._candidate_locales(primary_locale):
-                for endpoint in self._candidate_azure_speech_endpoints(locale):
-                    try:
-                        req = Request(endpoint, data=audio_payload, method="POST")
-                        req.add_header("Ocp-Apim-Subscription-Key", self.settings.azure_speech_key)
-                        req.add_header("Accept", "application/json;text/xml")
-                        req.add_header("Content-Type", content_type)
-                        with urlopen(req, timeout=self.settings.transcription_timeout_sec) as response:
-                            raw = json.loads(response.read().decode("utf-8"))
-                        if isinstance(raw, list):
-                            raw = next((item for item in raw if isinstance(item, dict)), {})
-                        if not isinstance(raw, dict):
-                            continue
-                        normalized = self._normalize_azure_response(raw, locale)
-                        if normalized.get("segments"):
-                            return normalized
-                        last_raw = raw if isinstance(raw, dict) else last_raw
-                    except HTTPError as exc:
-                        if exc.code == 404:
-                            last_404 = exc
-                            continue
-                        raise
-
+    def _raise_azure_recognition_failure(
+        self,
+        *,
+        last_404: HTTPError | None,
+        last_raw: dict | None,
+        audio_doc: dict,
+        transcode_error: str | None,
+    ) -> None:
         if last_404 is not None:
             raise RuntimeError(
                 "Azure Speech endpoint not found (404). Check AZURE_SPEECH_REGION/ENDPOINT and resource region."
@@ -354,6 +466,120 @@ class TranscriptionWorker:
                 f"{ffmpeg_hint}"
             )
         raise RuntimeError("Azure Speech transcription failed without response")
+
+    def _call_azure_speech(self, *, job: dict, audio_doc: dict) -> dict:
+        if not self.settings.azure_speech_key:
+            raise RuntimeError("AZURE_SPEECH_KEY is not configured")
+        primary_locale = self._language_hint_to_locale(str(job.get("language_mix", "") or "en"))
+        storage_ref = self._storage_ref_from_audio_doc(audio_doc)
+        if not storage_ref:
+            raise RuntimeError("Audio storage reference not found")
+        audio_bytes = TranscriptionAudioStore().download_audio(storage_ref)
+        declared_mime = self._normalize_audio_content_type(str(audio_doc.get("mime_type", "") or "audio/wav"))
+        meta_size = audio_doc.get("size_bytes")
+        wav_bytes, transcode_error = self._try_transcode_to_wav_pcm16k_mono(audio_bytes, declared_mime)
+        wav_duration = self._pcm_wav_duration_seconds(wav_bytes) if wav_bytes else None
+        max_short = float(self.settings.transcription_short_audio_max_seconds)
+        chunk_sec = float(self.settings.transcription_chunk_seconds)
+
+        if self.settings.transcription_debug_bytes:
+            logger.info(
+                "transcription_bytes job_id=%s audio_id=%s meta_size_bytes=%s download_bytes=%s "
+                "transcoded_wav_bytes=%s wav_duration_s=%s",
+                job.get("job_id"),
+                audio_doc.get("audio_id"),
+                meta_size,
+                len(audio_bytes),
+                len(wav_bytes) if wav_bytes else None,
+                wav_duration,
+            )
+
+        use_chunks = (
+            bool(wav_bytes)
+            and wav_duration is not None
+            and wav_duration > max_short
+            and shutil.which("ffmpeg") is not None
+        )
+        if bool(wav_bytes) and wav_duration is not None and wav_duration > max_short and not shutil.which("ffmpeg"):
+            logger.warning(
+                "Audio ~%.1fs exceeds Azure short-audio REST limit (~%ss) but ffmpeg is not installed; "
+                "only the first portion will be transcribed. Install ffmpeg for chunked transcription.",
+                wav_duration,
+                int(max_short),
+            )
+
+        merged_segments: list[dict[str, Any]] = []
+        merged_lang = primary_locale
+        chunk_base_ms = 0
+        last_404: HTTPError | None = None
+        last_raw: dict | None = None
+
+        if use_chunks:
+            wav_chunks = self._split_wav_into_time_chunks(wav_bytes, chunk_sec)
+            if self.settings.transcription_debug_bytes:
+                logger.info(
+                    "transcription_chunking job_id=%s chunk_count=%s chunk_sec=%s",
+                    job.get("job_id"),
+                    len(wav_chunks),
+                    chunk_sec,
+                )
+            for idx, chunk_bytes in enumerate(wav_chunks):
+                normalized, l404, lraw = self._short_audio_recognize_one_payload(
+                    audio_payload=chunk_bytes,
+                    content_type="audio/wav",
+                    primary_locale=primary_locale,
+                )
+                if l404:
+                    last_404 = l404
+                if lraw:
+                    last_raw = lraw
+                segs = (normalized or {}).get("segments") or []
+                merged_lang = (normalized or {}).get("language_detected") or merged_lang
+                local_end = 0
+                for seg in segs:
+                    merged_segments.append(
+                        {
+                            **seg,
+                            "start_ms": int(seg.get("start_ms", 0)) + chunk_base_ms,
+                            "end_ms": int(seg.get("end_ms", 0)) + chunk_base_ms,
+                        }
+                    )
+                    local_end = max(local_end, int(seg.get("end_ms", 0)))
+                if local_end > 0:
+                    chunk_base_ms += local_end
+                else:
+                    chunk_base_ms += int(chunk_sec * 1000)
+                if self.settings.transcription_debug_bytes:
+                    logger.info(
+                        "transcription_chunk job_id=%s index=%s chunk_bytes=%s segments=%s offset_next_ms=%s",
+                        job.get("job_id"),
+                        idx,
+                        len(chunk_bytes),
+                        len(segs),
+                        chunk_base_ms,
+                    )
+            if merged_segments:
+                return {"language_detected": merged_lang, "segments": merged_segments}
+            self._raise_azure_recognition_failure(
+                last_404=last_404, last_raw=last_raw, audio_doc=audio_doc, transcode_error=transcode_error
+            )
+
+        for audio_payload, content_type in self._audio_payload_candidates(audio_bytes, declared_mime, wav_bytes):
+            normalized, l404, lraw = self._short_audio_recognize_one_payload(
+                audio_payload=audio_payload,
+                content_type=content_type,
+                primary_locale=primary_locale,
+            )
+            if l404:
+                last_404 = l404
+            if lraw:
+                last_raw = lraw
+            if normalized and normalized.get("segments"):
+                return normalized
+
+        self._raise_azure_recognition_failure(
+            last_404=last_404, last_raw=last_raw, audio_doc=audio_doc, transcode_error=transcode_error
+        )
 
     def _audio_payload_candidates(
         self, audio_bytes: bytes, declared_mime: str, wav_bytes: bytes | None
@@ -468,7 +694,11 @@ class TranscriptionWorker:
         return mapping.get(token, "en-IN")
 
     def _candidate_azure_speech_endpoints(self, locale: str) -> list[str]:
-        """Short-audio REST: try interactive then conversation on each Speech host."""
+        """
+        Short-audio REST only (~60s max audio per POST; see Microsoft Learn "Speech to text REST API for short audio").
+
+        Longer files are split into WAV time segments in `_call_azure_speech` before calling this path.
+        """
         urls: list[str] = []
         for host in self._speech_host_candidates():
             for mode in ("interactive", "conversation"):

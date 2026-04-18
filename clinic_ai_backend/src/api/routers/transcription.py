@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import hashlib
 from datetime import datetime, timezone
 from urllib.parse import unquote
@@ -18,8 +19,6 @@ from src.adapters.external.storage.object_storage import TranscriptionAudioStore
 from src.api.schemas.audio import (
     NoiseEnvironment,
     SpeakerMode,
-    TranscriptionJobStatusResponse,
-    TranscriptionResultResponse,
     TranscriptionUploadAcceptedResponse,
 )
 from src.api.schemas.transcription_session import TranscriptionSessionResponse
@@ -28,6 +27,7 @@ from src.application.services.structure_dialogue import structure_dialogue_from_
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/notes", tags=["Transcription"])
+_upload_log = logging.getLogger(__name__)
 
 
 def _iso_utc(value: datetime | None) -> str | None:
@@ -69,6 +69,16 @@ async def upload_transcription_audio(
         raise HTTPException(status_code=400, detail="Audio file is empty")
     if len(payload) > settings.max_audio_size_mb * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio file exceeds max size")
+
+    if settings.transcription_debug_bytes:
+        _upload_log.info(
+            "transcription_upload_multipart patient_id=%s visit_id=%s filename=%s bytes=%s content_type=%s",
+            patient_id,
+            visit_id,
+            audio_file.filename,
+            len(payload),
+            content_type,
+        )
 
     digest = hashlib.sha256(payload).hexdigest()
     now = datetime.now(timezone.utc)
@@ -129,32 +139,6 @@ async def upload_transcription_audio(
         received_at=now,
         message=f"Transcription queued. Poll {poll_hint} for status.",
     )
-
-
-@router.get("/transcribe/jobs/{job_id}", response_model=TranscriptionJobStatusResponse)
-def get_transcription_job_status(job_id: str) -> TranscriptionJobStatusResponse:
-    """Get current status for a transcription job."""
-    job = AudioRepository().get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Transcription job not found")
-    job.pop("_id", None)
-    return TranscriptionJobStatusResponse(**job)
-
-
-@router.get("/transcribe/jobs/{job_id}/result", response_model=TranscriptionResultResponse)
-def get_transcription_result(job_id: str) -> TranscriptionResultResponse:
-    """Fetch final transcription result."""
-    repo = AudioRepository()
-    job = repo.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Transcription job not found")
-    if job["status"] != "completed":
-        raise HTTPException(status_code=409, detail=f"Result unavailable while status={job['status']}")
-    result = repo.get_result(job_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Transcription result not found")
-    result.pop("_id", None)
-    return TranscriptionResultResponse(**result)
 
 
 @router.get("/transcribe/status/{patient_id}/{visit_id}")
