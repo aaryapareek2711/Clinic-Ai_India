@@ -123,7 +123,9 @@ def _structure_one_chunk_openai(
         "Do NOT remove medication names, vitals, lab values, timelines, or clinical terms. "
         "Do NOT summarize away complaints, history, exam findings, counseling, or plan items — "
         "every clinically relevant phase in this fragment must appear as one or more turns. "
-        "Verbatim wording is preferred over paraphrase when in doubt. "
+        "Do NOT merge multiple distinct clinical sentences into one short turn; prefer more, shorter turns "
+        "so multi-step exams, medication lists, and counseling blocks stay complete. "
+        "Verbatim wording is strongly preferred over paraphrase; do not invent lines not in the fragment. "
         f"Write spoken text in {output_language}. "
         "Return ONLY valid JSON array, no markdown."
     )
@@ -143,7 +145,7 @@ def _structure_one_chunk_openai(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.1,
+        "temperature": 0.05,
     }
     req = request.Request(
         url="https://api.openai.com/v1/chat/completions",

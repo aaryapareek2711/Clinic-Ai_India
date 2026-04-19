@@ -1,10 +1,16 @@
-"""Send WhatsApp template reminders at T-3 days and T-24 hours before next visit."""
+"""Send WhatsApp template reminders at T-3 days and the calendar day before next visit."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
+from src.application.services.follow_up_whatsapp_templates import (
+    default_follow_up_body_line,
+    follow_up_template_body_values,
+    follow_up_template_language_code,
+    resolve_follow_up_template_name,
+)
 from src.core.config import get_settings
 
 
@@ -36,9 +42,7 @@ class ProcessFollowUpRemindersUseCase:
             skipped = len(list(db.follow_up_reminders.find({})))
             return {"sent_3d": 0, "sent_24h": 0, "skipped": skipped}
 
-        template_name = (self.settings.whatsapp_followup_template_name or "").strip()
-        if not template_name:
-            template_name = (self.settings.whatsapp_intake_template_name or "").strip()
+        template_name = resolve_follow_up_template_name(self.settings)
         if not template_name:
             skipped = len(list(db.follow_up_reminders.find({})))
             return {"sent_3d": 0, "sent_24h": 0, "skipped": skipped}
@@ -67,24 +71,21 @@ class ProcessFollowUpRemindersUseCase:
                 continue
 
             lang = str(doc.get("preferred_language") or "en").strip().lower()
-            language_code = (
-                self.settings.whatsapp_followup_template_lang_hi
-                if lang == "hi"
-                else self.settings.whatsapp_followup_template_lang_en
-            )
+            language_code = follow_up_template_language_code(self.settings, lang)
 
             t3 = nv - timedelta(days=3)
-            t24 = nv - timedelta(hours=24)
+            # Second ping: one calendar day before visit (same clock as next_visit_at), not only "24h" wall literal.
+            t1d = nv - timedelta(days=1)
             rid = doc.get("reminder_id")
 
             if doc.get("remind_3d_sent_at") is None and now_utc >= t3 and now_utc < nv:
-                body_values = self._template_body_values(
+                body_values = follow_up_template_body_values(
                     reminder_kind="3d",
                     next_visit_at=nv,
                     follow_up_text=str(doc.get("follow_up_text") or ""),
                 )
                 if param_count > 0 and not body_values:
-                    body_values = [self._default_body_line("3d", nv, doc)]
+                    body_values = [default_follow_up_body_line("3d", nv, doc)]
                 self.whatsapp.send_template(
                     to_number=to_number,
                     template_name=template_name,
@@ -98,14 +99,14 @@ class ProcessFollowUpRemindersUseCase:
                 sent_3d += 1
 
             fresh = db.follow_up_reminders.find_one({"reminder_id": rid}) or doc
-            if fresh.get("remind_24h_sent_at") is None and now_utc >= t24 and now_utc < nv:
-                body_values = self._template_body_values(
-                    reminder_kind="24h",
+            if fresh.get("remind_24h_sent_at") is None and now_utc >= t1d and now_utc < nv:
+                body_values = follow_up_template_body_values(
+                    reminder_kind="1d",
                     next_visit_at=nv,
                     follow_up_text=str(doc.get("follow_up_text") or ""),
                 )
                 if param_count > 0 and not body_values:
-                    body_values = [self._default_body_line("24h", nv, fresh)]
+                    body_values = [default_follow_up_body_line("1d", nv, fresh)]
                 self.whatsapp.send_template(
                     to_number=to_number,
                     template_name=template_name,
@@ -119,23 +120,3 @@ class ProcessFollowUpRemindersUseCase:
                 sent_24h += 1
 
         return {"sent_3d": sent_3d, "sent_24h": sent_24h, "skipped": skipped}
-
-    @staticmethod
-    def _default_body_line(kind: str, next_visit_at: datetime, doc: dict) -> str:
-        date_s = next_visit_at.strftime("%Y-%m-%d %H:%M UTC")
-        if kind == "24h":
-            return f"Reminder: your follow-up visit is in about 24 hours ({date_s}). {doc.get('follow_up_text', '')}".strip()
-        return f"Reminder: your follow-up visit is in 3 days ({date_s}). {doc.get('follow_up_text', '')}".strip()
-
-    @staticmethod
-    def _template_body_values(
-        *,
-        reminder_kind: str,
-        next_visit_at: datetime,
-        follow_up_text: str,
-    ) -> list[str]:
-        """Single-parameter templates (e.g. hello_world) receive one line of text."""
-        date_s = next_visit_at.strftime("%Y-%m-%d")
-        if reminder_kind == "24h":
-            return [f"Follow-up visit tomorrow ({date_s}). {follow_up_text}".strip()[:900]]
-        return [f"Follow-up visit in 3 days on {date_s}. {follow_up_text}".strip()[:900]]

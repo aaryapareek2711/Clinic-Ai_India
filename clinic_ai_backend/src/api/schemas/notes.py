@@ -70,6 +70,7 @@ class PostVisitSummaryPayload(BaseModel):
     self_care: list[str]
     warning_signs: list[str]
     follow_up: str
+    next_visit_date: str | None = Field(default=None, description="ISO YYYY-MM-DD when a return visit was scheduled")
 
 
 class NoteGenerateRequest(BaseModel):
@@ -80,6 +81,11 @@ class NoteGenerateRequest(BaseModel):
     transcription_job_id: str | None = None
     note_type: NoteType | None = None
     preferred_language: str | None = None
+    # Optional: staff-confirmed next visit (India note + post-visit scheduling). ISO date only.
+    follow_up_date: date | None = Field(
+        default=None,
+        description="When set, stored on India clinical note as follow_up_date and used for post-visit reminder scheduling.",
+    )
 
 
 class NoteGenerateResponse(BaseModel):

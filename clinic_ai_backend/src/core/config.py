@@ -39,6 +39,17 @@ class Settings:
     whatsapp_followup_template_param_count: int = int(os.getenv("WHATSAPP_FOLLOWUP_TEMPLATE_PARAM_COUNT", "1"))
     # If set, POST /workflow/follow-up-reminders/run requires header X-Cron-Secret with this value.
     follow_up_reminder_cron_secret: str = os.getenv("FOLLOW_UP_REMINDER_CRON_SECRET", "")
+    # Post-visit summary WhatsApp: template body = generated whatsapp_payload. Empty name falls back to intake template only.
+    whatsapp_post_visit_template_name: str = os.getenv("WHATSAPP_POST_VISIT_TEMPLATE_NAME", "")
+    whatsapp_post_visit_template_lang_en: str = os.getenv(
+        "WHATSAPP_POST_VISIT_TEMPLATE_LANG_EN",
+        os.getenv("WHATSAPP_FOLLOWUP_TEMPLATE_LANG_EN", os.getenv("WHATSAPP_INTAKE_TEMPLATE_LANG_EN", "en_US")),
+    )
+    whatsapp_post_visit_template_lang_hi: str = os.getenv(
+        "WHATSAPP_POST_VISIT_TEMPLATE_LANG_HI",
+        os.getenv("WHATSAPP_FOLLOWUP_TEMPLATE_LANG_HI", os.getenv("WHATSAPP_INTAKE_TEMPLATE_LANG_HI", "hi")),
+    )
+    whatsapp_post_visit_template_param_count: int = int(os.getenv("WHATSAPP_POST_VISIT_TEMPLATE_PARAM_COUNT", "1"))
     azure_speech_key: str = os.getenv("AZURE_SPEECH_KEY", "") or os.getenv(
         "AZURE_SPEECH_SUBSCRIPTION_KEY", ""
     )

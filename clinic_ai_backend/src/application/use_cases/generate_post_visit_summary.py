@@ -1,13 +1,17 @@
 """Generate post-visit summary use case."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.adapters.services.post_visit_summary_service import PostVisitSummaryService
+from src.application.services.post_visit_whatsapp import (
+    send_immediate_follow_up_template_whatsapp,
+    send_post_visit_summary_whatsapp,
+)
 from src.application.use_cases.schedule_follow_up_reminders import schedule_follow_up_after_post_visit
 from src.application.utils.follow_up_dates import parse_next_visit_at
 
@@ -39,6 +43,7 @@ class GeneratePostVisitSummaryUseCase:
         visit_id: str | None = None,
         transcription_job_id: str | None = None,
         preferred_language: str | None = None,
+        follow_up_date: date | None = None,
     ) -> dict:
         """Generate summary with India-note-first strategy and transcript fallback."""
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
@@ -70,6 +75,10 @@ class GeneratePostVisitSummaryUseCase:
         context = self._build_context(india_note=india_note, transcript=transcript)
         language_name = LANGUAGE_NAMES.get(resolved_language, resolved_language)
         payload = self._generate_payload(context=context, language_name=language_name)
+        if follow_up_date is not None:
+            parsed_staff = parse_next_visit_at(follow_up_date)
+            if parsed_staff:
+                payload["next_visit_date"] = parsed_staff.date().isoformat()
         whatsapp_payload = self._build_whatsapp_payload(payload=payload)
 
         version = self._next_version(patient_id=patient_id, visit_id=visit_id, note_type="post_visit_summary")
@@ -94,6 +103,12 @@ class GeneratePostVisitSummaryUseCase:
             note_id=str(created.get("note_id") or ""),
             payload=payload,
             patient=patient,
+            preferred_language=resolved_language,
+        )
+        send_post_visit_summary_whatsapp(patient=patient, whatsapp_payload=whatsapp_payload)
+        send_immediate_follow_up_template_whatsapp(
+            patient=patient,
+            payload=payload,
             preferred_language=resolved_language,
         )
         return created

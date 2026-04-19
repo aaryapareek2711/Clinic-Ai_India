@@ -29,6 +29,7 @@ def generate_india_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
         visit_id=request.visit_id,
         transcription_job_id=request.transcription_job_id,
         force_regenerate=True,
+        follow_up_date=request.follow_up_date,
     )
     return NoteGenerateResponse(**doc)
 
@@ -56,6 +57,7 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
             visit_id=request.visit_id,
             transcription_job_id=request.transcription_job_id,
             preferred_language=request.preferred_language,
+            follow_up_date=request.follow_up_date,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -98,7 +100,8 @@ def _generate_by_type(*, note_type: NoteType, request: NoteGenerateRequest) -> N
             patient_id=request.patient_id,
             visit_id=request.visit_id,
             transcription_job_id=request.transcription_job_id,
-            force_regenerate=False,
+            force_regenerate=request.follow_up_date is not None,
+            follow_up_date=request.follow_up_date,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

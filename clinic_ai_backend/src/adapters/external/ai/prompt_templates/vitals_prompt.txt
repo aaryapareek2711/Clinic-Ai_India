@@ -16,16 +16,16 @@ Rules:
    - fields (array)
 3) If needs_vitals is false, fields must be [] and reason must explain why.
 4) If needs_vitals is true:
-   - fields must be ONLY what this chief complaint and intake justify (usually 1–5 items, hard maximum 6).
-   - Do NOT default to a generic emergency panel (temperature_c, heart_rate, respiratory_rate, blood_pressure) unless the intake/pre-visit clearly supports needing most of those (e.g. explicit fever + systemic symptoms, sepsis concern, chest pain, severe dyspnoea).
-   - If only one measurement is needed, output exactly one field.
+   - The API always prepends two common vitals for every illness: body weight (kg) and blood pressure. Do NOT include body weight, weight_kg, or blood pressure in your "fields" array — they are added server-side.
+   - YOU choose which extra vitals matter for THIS patient and how many: your "fields" array may contain 0, 1, 2, or at most 3 items. Do not pad to three "just because" — fewer fields is correct when the story needs fewer. Never exceed three contextual fields.
+   - Each contextual field must be justified by chief complaint and intake (e.g. rash visit → different extras than cough visit). Do NOT default to a generic emergency panel (temperature_c, heart_rate, respiratory_rate) unless intake/pre-visit clearly supports those (e.g. explicit fever + systemic symptoms, sepsis concern, chest pain, severe dyspnoea).
    - Each field's "reason" must explicitly tie to a phrase or theme from intake or pre-visit (not generic boilerplate).
 5) Do not diagnose or prescribe treatment.
 6) field_type must be one of: number, text, boolean, select.
 7) Each field object must include: key (snake_case, unique), label, field_type, unit (string or null), required, reason.
-8) Prefer visit-specific keys (e.g. pain_score_0_10, rash_photo_url, weight_kg) when the story warrants them, instead of repeating the same four vitals for every patient.
+8) Prefer visit-specific keys (e.g. pain_score_0_10, rash_photo_url, spo2_percent) when the story warrants them — never duplicate weight or blood pressure (handled outside this list).
 
-Output example (illustrative only — do not copy fields unless they match this patient's story):
+Output example (illustrative only — do not copy fields unless they match this patient's story; weight/BP omitted here):
 {
   "needs_vitals": true,
   "reason": "Intake describes focal joint swelling after injury; staff should capture targeted measures.",

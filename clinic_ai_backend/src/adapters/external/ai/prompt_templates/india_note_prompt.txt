@@ -16,6 +16,7 @@ Return JSON only with exactly these keys:
 
 Rules:
 - Use exactly one of follow_up_in or follow_up_date.
+- If context JSON includes "staff_confirmed_follow_up_date" (ISO YYYY-MM-DD), you MUST set follow_up_date to that exact string and set follow_up_in to null.
 - Do not add extra top-level keys.
 - If any context is missing, include explicit entries in data_gaps.
 - Keep output concise and clinically safe.

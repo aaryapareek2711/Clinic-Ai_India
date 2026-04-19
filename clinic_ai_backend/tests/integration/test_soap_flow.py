@@ -108,6 +108,24 @@ def test_soap_endpoint_remains_operational(app_client, fake_db) -> None:
 
 
 def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    post_visit_sends: list[dict] = []
+
+    def _capture_post_visit_whatsapp(*, patient: dict, whatsapp_payload: str) -> None:
+        post_visit_sends.append({"patient": patient, "whatsapp_payload": whatsapp_payload})
+
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
+        _capture_post_visit_whatsapp,
+    )
+    follow_up_immediate: list[int] = []
+
+    def _capture_follow_up_immediate(*args, **kwargs) -> None:
+        follow_up_immediate.append(1)
+
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        _capture_follow_up_immediate,
+    )
     _insert_note_context(fake_db, patient_id="p-note-3", job_id="job-note-3")
     fake_db.clinical_notes.insert_one(
         {
@@ -163,6 +181,111 @@ def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monke
     assert reminder is not None
     assert reminder.get("to_number") == "919876543210"
     assert reminder.get("note_id") == payload.get("note_id")
+    assert len(post_visit_sends) == 1
+    assert "Post-visit summary" in post_visit_sends[0]["whatsapp_payload"]
+    assert len(follow_up_immediate) == 1
+
+
+def test_post_visit_summary_follow_up_date_overrides_next_visit(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        lambda **_: None,
+    )
+    _insert_note_context(fake_db, patient_id="p-note-fu-pv", job_id="job-note-fu-pv")
+    fake_db.clinical_notes.insert_one(
+        {
+            "note_id": "n-india-fu-pv",
+            "patient_id": "p-note-fu-pv",
+            "visit_id": "v1",
+            "note_type": "india_clinical",
+            "source_job_id": "job-note-fu-pv",
+            "status": "generated",
+            "version": 1,
+            "created_at": datetime.now(timezone.utc),
+            "payload": {
+                "assessment": "DM follow-up",
+                "plan": "Continue care",
+                "rx": [],
+                "investigations": [],
+                "red_flags": [],
+                "follow_up_in": "14 days",
+                "follow_up_date": None,
+                "doctor_notes": None,
+                "chief_complaint": "Diabetes",
+                "data_gaps": [],
+            },
+        }
+    )
+    monkeypatch.setattr(
+        "src.adapters.external.ai.openai_client.OpenAIQuestionClient.generate_post_visit_summary",
+        lambda self, context, language_name: {
+            "visit_reason": "Diabetes",
+            "what_doctor_found": "Stable.",
+            "medicines_to_take": [],
+            "tests_recommended": [],
+            "self_care": [],
+            "warning_signs": [],
+            "follow_up": "Return in 2 weeks",
+            "next_visit_date": "2030-06-20",
+        },
+    )
+    response = app_client.post(
+        "/notes/post-visit-summary",
+        json={
+            "patient_id": "p-note-fu-pv",
+            "visit_id": "v1",
+            "transcription_job_id": "job-note-fu-pv",
+            "follow_up_date": "2030-08-10",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["payload"]["next_visit_date"] == "2030-08-10"
+    reminder = fake_db.follow_up_reminders.find_one({"patient_id": "p-note-fu-pv", "visit_id": "v1"})
+    assert reminder is not None
+    assert reminder["next_visit_at"].date().isoformat() == "2030-08-10"
+
+
+def test_generate_india_with_follow_up_date_sets_payload_and_context(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    _insert_note_context(fake_db, patient_id="p-note-fu-in", job_id="job-note-fu-in")
+    captured: dict = {}
+
+    def _fake_generate(self, context: dict) -> dict:
+        captured["context"] = context
+        return {
+            "assessment": "Stable chronic illness.",
+            "plan": "Continue meds.",
+            "rx": [],
+            "investigations": [],
+            "red_flags": [],
+            "follow_up_in": "7 days",
+            "follow_up_date": None,
+            "doctor_notes": None,
+            "chief_complaint": "Diabetes",
+            "data_gaps": context.get("data_gaps", []),
+        }
+
+    monkeypatch.setattr(
+        "src.adapters.external.ai.openai_client.OpenAIQuestionClient.generate_india_clinical_note",
+        _fake_generate,
+    )
+    response = app_client.post(
+        "/notes/generate",
+        json={
+            "patient_id": "p-note-fu-in",
+            "visit_id": "v1",
+            "transcription_job_id": "job-note-fu-in",
+            "follow_up_date": "2030-11-01",
+        },
+    )
+    assert response.status_code == 200
+    assert captured["context"].get("staff_confirmed_follow_up_date") == "2030-11-01"
+    assert response.json()["payload"]["follow_up_date"] == "2030-11-01"
+    assert response.json()["payload"].get("follow_up_in") is None
 
 
 def test_follow_up_reminders_run_sends_meta_template(app_client, patched_db, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,6 +348,65 @@ def test_follow_up_reminders_run_sends_meta_template(app_client, patched_db, mon
     assert updated.get("remind_3d_sent_at") is not None
 
 
+def test_follow_up_reminders_run_sends_day_before_reminder(app_client, patched_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Second template fires once we are on the calendar day before next_visit_at (same 09:00 UTC anchor)."""
+    settings = config_module.get_settings()
+    settings.whatsapp_access_token = "test-token"
+    settings.whatsapp_phone_number_id = "test-phone-id"
+    settings.whatsapp_intake_template_name = "hello_world"
+    settings.whatsapp_followup_template_name = ""
+    monkeypatch.setattr("src.core.config.get_settings", lambda: settings)
+
+    sent: list[dict] = []
+
+    def _stub_send_template(_self, *, to_number: str, template_name: str, language_code: str, body_values=None) -> None:
+        sent.append(
+            {"to": to_number, "template_name": template_name, "language_code": language_code, "body_values": body_values}
+        )
+
+    monkeypatch.setattr(
+        "src.application.use_cases.process_follow_up_reminders.MetaWhatsAppClient.send_template",
+        _stub_send_template,
+    )
+
+    nv = datetime(2030, 6, 20, 9, 0, tzinfo=timezone.utc)
+    patched_db.follow_up_reminders.insert_one(
+        {
+            "reminder_id": "r-fu-2",
+            "patient_id": "p-fu-2",
+            "visit_id": "v-fu-2",
+            "note_id": "n-fu-2",
+            "next_visit_at": nv,
+            "to_number": "919876543210",
+            "preferred_language": "en",
+            "follow_up_text": "Bring BP log",
+            "remind_3d_sent_at": datetime(2030, 6, 17, 9, 0, tzinfo=timezone.utc),
+            "remind_24h_sent_at": None,
+            "created_at": nv - timedelta(days=10),
+            "updated_at": nv - timedelta(days=10),
+        }
+    )
+
+    fixed_now = datetime(2030, 6, 19, 10, 0, tzinfo=timezone.utc)
+    orig_execute = ProcessFollowUpRemindersUseCase.execute
+
+    def _execute_with_fixed_now(self, *, db, now=None):
+        return orig_execute(self, db=db, now=fixed_now)
+
+    monkeypatch.setattr(ProcessFollowUpRemindersUseCase, "execute", _execute_with_fixed_now)
+
+    response = app_client.post("/workflow/follow-up-reminders/run")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sent_3d"] == 0
+    assert body["sent_24h"] == 1
+    assert len(sent) == 1
+    assert "tomorrow" in (sent[0]["body_values"] or [""])[0].lower()
+
+    updated = patched_db.follow_up_reminders.find_one({"reminder_id": "r-fu-2"})
+    assert updated.get("remind_24h_sent_at") is not None
+
+
 def test_follow_up_reminders_run_requires_cron_secret_when_configured(
     app_client, patched_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -238,6 +420,14 @@ def test_follow_up_reminders_run_requires_cron_secret_when_configured(
 
 
 def test_post_visit_summary_uses_request_language_override(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        lambda **_: None,
+    )
     _insert_note_context(fake_db, patient_id="p-note-4", job_id="job-note-4")
     captured: dict = {}
 
@@ -269,6 +459,14 @@ def test_post_visit_summary_uses_request_language_override(app_client, fake_db, 
 
 
 def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        lambda **_: None,
+    )
     fake_db.patients.insert_one(
         {
             "patient_id": "p-note-5",

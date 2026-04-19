@@ -203,7 +203,8 @@ class OpenAIQuestionClient:
             prompt=prompt,
             system_role=(
                 "You decide if vitals are needed and output strict JSON only. "
-                "Never reuse a one-size-fits-all vitals list: each field must be justified by this patient's intake and pre-visit text."
+                "Body weight and blood pressure are always collected by the system when vitals are needed. "
+                "You choose zero to three additional fields only where intake/pre-visit justify them — do not pad to three."
             ),
         )
         result = json.loads(content)

@@ -33,6 +33,7 @@ class GenerateIndiaClinicalNoteUseCase:
         visit_id: str | None = None,
         transcription_job_id: str | None = None,
         force_regenerate: bool = False,
+        follow_up_date: date | None = None,
     ) -> dict:
         """Generate India note and save as canonical default artifact."""
         job = self._resolve_transcription_job(
@@ -51,7 +52,13 @@ class GenerateIndiaClinicalNoteUseCase:
                 return existing
 
         context = self._build_context(patient_id=patient_id, visit_id=visit_id, job=job)
+        if follow_up_date is not None:
+            context["staff_confirmed_follow_up_date"] = follow_up_date.isoformat()
         payload = self._generate_payload(context)
+        if follow_up_date is not None:
+            payload["follow_up_date"] = follow_up_date.isoformat()
+            payload["follow_up_in"] = None
+            payload = self._normalize_payload(payload, context=context)
         version = self._next_version(patient_id=patient_id, visit_id=visit_id, note_type="india_clinical")
         note_doc = {
             "note_id": str(uuid4()),

@@ -13,6 +13,28 @@ from src.application.utils.patient_identity import stable_patient_id
 _ALLOWED_FIELD_TYPES = frozenset({"number", "text", "boolean", "select"})
 _FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_VITAL_FIELDS = 8
+# Illness-specific vitals from the model (excluding weight/BP, which are always prepended when vitals are needed).
+_MAX_CONTEXTUAL_VITAL_FIELDS = 3
+
+# Normalized keys the model might return for weight/BP; these are dropped from contextual list (fixed fields used instead).
+_CONTEXTUAL_EXCLUDE_KEYS = frozenset(
+    {
+        "body_weight_kg",
+        "weight_kg",
+        "weight",
+        "body_weight",
+        "blood_pressure_mmhg",
+        "blood_pressure",
+        "bp_mmhg",
+        "bp",
+        "systolic_bp",
+        "diastolic_bp",
+        "blood_pressure_systolic",
+        "blood_pressure_diastolic",
+        "systolic_blood_pressure",
+        "diastolic_blood_pressure",
+    }
+)
 
 
 def _one_line_chief_complaint(intake: dict, pre_visit: dict) -> str:
@@ -65,6 +87,69 @@ class StoreVitalsUseCase:
             if not key or not _FIELD_KEY_RE.match(key):
                 continue
             if key in seen:
+                continue
+            seen.add(key)
+            ft = str(raw.get("field_type", "text")).strip().lower()
+            if ft not in _ALLOWED_FIELD_TYPES:
+                ft = "text"
+            label = str(raw.get("label", key)).strip() or key
+            unit = raw.get("unit")
+            unit_out: str | None
+            if unit in (None, ""):
+                unit_out = None
+            else:
+                unit_out = str(unit).strip()[:32] or None
+            out.append(
+                {
+                    "key": key,
+                    "label": label[:120],
+                    "field_type": ft,
+                    "unit": unit_out,
+                    "required": bool(raw.get("required", True)),
+                    "reason": str(raw.get("reason", "")).strip()[:400] or "Linked to visit intake context",
+                }
+            )
+        return out
+
+    @staticmethod
+    def _fixed_common_vitals_fields() -> list[dict[str, Any]]:
+        """Weight and BP are collected for every visit that needs a vitals form (prepended to contextual fields)."""
+        return [
+            {
+                "key": "body_weight_kg",
+                "label": "Body weight",
+                "field_type": "number",
+                "unit": "kg",
+                "required": True,
+                "reason": "Routine for all OPD visits; supports dosing and risk review.",
+            },
+            {
+                "key": "blood_pressure_mmhg",
+                "label": "Blood pressure",
+                "field_type": "text",
+                "unit": "mmHg",
+                "required": True,
+                "reason": "Routine cardiovascular screening for all visits (e.g. 120/80).",
+            },
+        ]
+
+    @staticmethod
+    def _sanitize_contextual_vitals_fields(fields: Any, *, max_count: int = _MAX_CONTEXTUAL_VITAL_FIELDS) -> list[dict[str, Any]]:
+        """Validated illness-specific vitals only; omits weight/BP (fixed separately); hard cap ``max_count``."""
+        if not isinstance(fields, list):
+            return []
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        cap = max(0, int(max_count))
+        for raw in fields:
+            if len(out) >= cap:
+                break
+            if not isinstance(raw, dict):
+                continue
+            key = str(raw.get("key", "")).strip().lower().replace(" ", "_").replace("-", "_")
+            if not key or not _FIELD_KEY_RE.match(key):
+                continue
+            if key in _CONTEXTUAL_EXCLUDE_KEYS or key in seen:
                 continue
             seen.add(key)
             ft = str(raw.get("field_type", "text")).strip().lower()
@@ -142,15 +227,21 @@ class StoreVitalsUseCase:
         except Exception:
             pass
 
-        fields = self._sanitize_vitals_fields(result.get("fields"))
-        if result.get("needs_vitals") and not fields:
+        if result.get("needs_vitals"):
+            contextual = self._sanitize_contextual_vitals_fields(
+                result.get("fields"),
+                max_count=_MAX_CONTEXTUAL_VITAL_FIELDS,
+            )
+            result["fields"] = self._fixed_common_vitals_fields() + contextual
+        else:
+            result["fields"] = []
+
+        if result.get("needs_vitals") and not result["fields"]:
             result = {
                 "needs_vitals": False,
-                "reason": "Model returned no valid vitals fields after validation; skipping vitals capture.",
+                "reason": "Model returned needs_vitals but no form fields could be built; skipping vitals capture.",
                 "fields": [],
             }
-        else:
-            result["fields"] = fields
 
         form_doc = {
             "form_id": str(uuid4()),
@@ -205,7 +296,7 @@ class StoreVitalsUseCase:
                 raise ValueError(
                     "Missing required vitals: "
                     + ", ".join(missing)
-                    + ". Submit one value per `key` from the form `fields` array (e.g. temperature_c, blood_pressure)."
+                    + ". Submit one value per `key` from the form `fields` array (e.g. body_weight_kg, blood_pressure_mmhg, temperature_c)."
                     f" Allowed keys: {', '.join(sorted(allowed))}."
                 )
             values_out = filtered
