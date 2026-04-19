@@ -52,3 +52,23 @@ def test_split_short_wav_returns_single_chunk() -> None:
     chunks = worker._split_wav_into_time_chunks(wav, chunk_sec=50.0)
     assert len(chunks) == 1
     assert chunks[0] == wav
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_long_silent_wav_chunks_cover_full_duration() -> None:
+    """Regression: multi-minute silent PCM must split so summed chunk durations ~= source (STT path coverage)."""
+    worker = TranscriptionWorker()
+    total_sec = 185.0
+    wav = _pcm_wav_bytes(total_sec)
+    chunk_sec = 50.0
+    chunks = worker._split_wav_into_time_chunks(wav, chunk_sec=chunk_sec)
+    assert len(chunks) >= 3
+    decoded_sum = 0.0
+    stt_bytes = 0
+    for piece in chunks:
+        stt_bytes += len(piece)
+        d = TranscriptionWorker._pcm_wav_duration_seconds(piece)
+        assert d is not None
+        decoded_sum += d
+    assert abs(decoded_sum - total_sec) < 2.0, "chunk WAV durations should cover the full visit length"
+    assert stt_bytes > len(wav) * 0.5, "each chunk is a full WAV file; total bytes sent to STT is sum of chunks"

@@ -467,6 +467,83 @@ class TranscriptionWorker:
             )
         raise RuntimeError("Azure Speech transcription failed without response")
 
+    def _log_transcription_pipeline_integrity(
+        self,
+        *,
+        job: dict,
+        audio_doc: dict,
+        download_bytes: int,
+        transcoded_wav_bytes: int | None,
+        wav_duration_s: float | None,
+        azure_post_count: int,
+        stt_request_bytes_total: int,
+        segment_count: int,
+        merged_segments: list[dict[str, Any]],
+        use_chunked_stt: bool,
+    ) -> None:
+        """
+        One INFO line per successful STT path: stored vs downloaded bytes, WAV duration, and STT wire volume.
+
+        STT bodies are usually **transcoded PCM WAV** (or original bytes for the short-audio fallback path),
+        so ``stt_request_bytes_total`` may legitimately differ from the upload when the doctor sent MP3/M4A.
+        """
+        raw_meta = audio_doc.get("size_bytes")
+        meta_int: int | None
+        try:
+            meta_int = int(raw_meta) if raw_meta is not None else None
+        except (TypeError, ValueError):
+            meta_int = None
+        stored_eq_download = meta_int is None or meta_int == download_bytes
+        if not stored_eq_download:
+            logger.error(
+                "transcription_byte_mismatch job_id=%s audio_id=%s stored_size_bytes=%s download_bytes=%s",
+                job.get("job_id"),
+                audio_doc.get("audio_id"),
+                raw_meta,
+                download_bytes,
+            )
+        max_end_ms = 0
+        for seg in merged_segments:
+            try:
+                max_end_ms = max(max_end_ms, int(seg.get("end_ms", 0) or 0))
+            except (TypeError, ValueError):
+                continue
+        max_end_s = max_end_ms / 1000.0 if max_end_ms else None
+        if wav_duration_s and max_end_s and wav_duration_s > 60:
+            drift = abs(max_end_s - wav_duration_s) / wav_duration_s
+            if drift > 0.15:
+                logger.warning(
+                    "transcription_segment_timeline_vs_wav job_id=%s wav_duration_s=%s max_segment_end_s=%s "
+                    "drift_pct=%.1f",
+                    job.get("job_id"),
+                    round(wav_duration_s, 2),
+                    round(max_end_s, 2),
+                    drift * 100.0,
+                )
+        if wav_duration_s and wav_duration_s >= 300 and self.settings.transcription_debug_bytes:
+            logger.info(
+                "transcription_long_visit_hint job_id=%s wav_duration_s=%s (expect minutes-scale for long visits)",
+                job.get("job_id"),
+                round(wav_duration_s, 1),
+            )
+        logger.info(
+            "transcription_pipeline_integrity job_id=%s audio_id=%s stored_bytes=%s download_bytes=%s "
+            "stored_eq_download=%s transcoded_wav_bytes=%s wav_duration_s=%s chunked_stt=%s azure_post_count=%s "
+            "stt_request_bytes_total=%s segments=%s max_segment_end_s=%s",
+            job.get("job_id"),
+            audio_doc.get("audio_id"),
+            meta_int if meta_int is not None else raw_meta,
+            download_bytes,
+            stored_eq_download,
+            transcoded_wav_bytes,
+            round(wav_duration_s, 3) if wav_duration_s is not None else None,
+            use_chunked_stt,
+            azure_post_count,
+            stt_request_bytes_total,
+            segment_count,
+            round(max_end_s, 3) if max_end_s else None,
+        )
+
     def _call_azure_speech(self, *, job: dict, audio_doc: dict) -> dict:
         if not self.settings.azure_speech_key:
             raise RuntimeError("AZURE_SPEECH_KEY is not configured")
@@ -510,12 +587,12 @@ class TranscriptionWorker:
 
         merged_segments: list[dict[str, Any]] = []
         merged_lang = primary_locale
-        chunk_base_ms = 0
         last_404: HTTPError | None = None
         last_raw: dict | None = None
 
         if use_chunks:
             wav_chunks = self._split_wav_into_time_chunks(wav_bytes, chunk_sec)
+            stt_total_bytes = sum(len(c) for c in wav_chunks)
             if self.settings.transcription_debug_bytes:
                 logger.info(
                     "transcription_chunking job_id=%s chunk_count=%s chunk_sec=%s",
@@ -524,6 +601,10 @@ class TranscriptionWorker:
                     chunk_sec,
                 )
             for idx, chunk_bytes in enumerate(wav_chunks):
+                # Offsets must follow wall-clock chunk placement in the file, not the last
+                # word end inside the chunk; otherwise long silent gaps collapse the timeline
+                # and `audio_duration_from_segments_ms` under-reports visit length.
+                chunk_offset_ms = int(round(idx * float(chunk_sec) * 1000.0))
                 normalized, l404, lraw = self._short_audio_recognize_one_payload(
                     audio_payload=chunk_bytes,
                     content_type="audio/wav",
@@ -535,30 +616,36 @@ class TranscriptionWorker:
                     last_raw = lraw
                 segs = (normalized or {}).get("segments") or []
                 merged_lang = (normalized or {}).get("language_detected") or merged_lang
-                local_end = 0
                 for seg in segs:
                     merged_segments.append(
                         {
                             **seg,
-                            "start_ms": int(seg.get("start_ms", 0)) + chunk_base_ms,
-                            "end_ms": int(seg.get("end_ms", 0)) + chunk_base_ms,
+                            "start_ms": int(seg.get("start_ms", 0)) + chunk_offset_ms,
+                            "end_ms": int(seg.get("end_ms", 0)) + chunk_offset_ms,
                         }
                     )
-                    local_end = max(local_end, int(seg.get("end_ms", 0)))
-                if local_end > 0:
-                    chunk_base_ms += local_end
-                else:
-                    chunk_base_ms += int(chunk_sec * 1000)
                 if self.settings.transcription_debug_bytes:
                     logger.info(
-                        "transcription_chunk job_id=%s index=%s chunk_bytes=%s segments=%s offset_next_ms=%s",
+                        "transcription_chunk job_id=%s index=%s chunk_bytes=%s segments=%s chunk_offset_ms=%s",
                         job.get("job_id"),
                         idx,
                         len(chunk_bytes),
                         len(segs),
-                        chunk_base_ms,
+                        chunk_offset_ms,
                     )
             if merged_segments:
+                self._log_transcription_pipeline_integrity(
+                    job=job,
+                    audio_doc=audio_doc,
+                    download_bytes=len(audio_bytes),
+                    transcoded_wav_bytes=len(wav_bytes) if wav_bytes else None,
+                    wav_duration_s=wav_duration,
+                    azure_post_count=len(wav_chunks),
+                    stt_request_bytes_total=stt_total_bytes,
+                    segment_count=len(merged_segments),
+                    merged_segments=merged_segments,
+                    use_chunked_stt=True,
+                )
                 return {"language_detected": merged_lang, "segments": merged_segments}
             self._raise_azure_recognition_failure(
                 last_404=last_404, last_raw=last_raw, audio_doc=audio_doc, transcode_error=transcode_error
@@ -575,6 +662,19 @@ class TranscriptionWorker:
             if lraw:
                 last_raw = lraw
             if normalized and normalized.get("segments"):
+                segs = normalized.get("segments") or []
+                self._log_transcription_pipeline_integrity(
+                    job=job,
+                    audio_doc=audio_doc,
+                    download_bytes=len(audio_bytes),
+                    transcoded_wav_bytes=len(wav_bytes) if wav_bytes else None,
+                    wav_duration_s=wav_duration,
+                    azure_post_count=1,
+                    stt_request_bytes_total=len(audio_payload),
+                    segment_count=len(segs),
+                    merged_segments=segs,
+                    use_chunked_stt=False,
+                )
                 return normalized
 
         self._raise_azure_recognition_failure(

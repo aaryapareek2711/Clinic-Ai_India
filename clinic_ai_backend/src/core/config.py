@@ -60,6 +60,8 @@ class Settings:
     transcription_chunk_seconds: float = float(os.getenv("TRANSCRIPTION_CHUNK_SECONDS", "50"))
     # Set to "1" / "true" to log byte sizes and chunk counts at INFO (one line per job).
     transcription_debug_bytes: bool = os.getenv("TRANSCRIPTION_DEBUG_BYTES", "").lower() in {"1", "true", "yes"}
+    # Raw transcript is split into contiguous slices <= this size before OpenAI structuring (ordered merge).
+    structure_dialogue_max_chunk_chars: int = int(os.getenv("STRUCTURE_DIALOGUE_MAX_CHUNK_CHARS", "12000"))
     transcription_worker_concurrency: int = int(os.getenv("TRANSCRIPTION_WORKER_CONCURRENCY", "2"))
     transcription_worker_poll_interval_sec: float = float(os.getenv("TRANSCRIPTION_WORKER_POLL_INTERVAL_SEC", "1.0"))
     use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"

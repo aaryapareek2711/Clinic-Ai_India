@@ -129,6 +129,35 @@ async def upload_transcription_audio(
         language_mix=effective_language,
     )
 
+    _upload_log.info(
+        "transcription_upload_accepted job_id=%s audio_id=%s multipart_bytes=%s",
+        job_id,
+        audio_id,
+        len(payload),
+    )
+    if settings.transcription_debug_bytes:
+        try:
+            roundtrip = len(TranscriptionAudioStore().download_audio(storage_ref))
+            if roundtrip != len(payload):
+                _upload_log.error(
+                    "transcription_upload_storage_mismatch audio_id=%s multipart_bytes=%s stored_read_bytes=%s",
+                    audio_id,
+                    len(payload),
+                    roundtrip,
+                )
+            else:
+                _upload_log.info(
+                    "transcription_upload_storage_roundtrip_ok audio_id=%s bytes=%s",
+                    audio_id,
+                    roundtrip,
+                )
+        except Exception as exc:  # noqa: BLE001
+            _upload_log.warning(
+                "transcription_upload_storage_verify_failed audio_id=%s error=%s",
+                audio_id,
+                exc,
+            )
+
     poll_hint = f"/notes/transcribe/status/{patient_id}/{visit_id}"
     return TranscriptionUploadAcceptedResponse(
         job_id=job_id,
