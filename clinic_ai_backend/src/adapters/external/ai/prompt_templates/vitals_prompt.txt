@@ -6,6 +6,8 @@ Decide whether a vitals form is needed for this patient and, if needed, generate
 Input:
 {{context_json}}
 
+Read the patient's name, age, gender, language, intake Q&A, chief-complaint text, and pre-visit sections. Every visit is different: your field list MUST follow the presenting problem (e.g. skin rash → morphology/area/itch scale; knee injury → weight-bearing pain, ROM, swelling; cough → SpO2 if hypoxia suggested, respiratory rate only if relevant; UTI → dysuria frequency, flank pain; headache → neuro red flags as yes/no, not a full vitals panel).
+
 Rules:
 1) Return only valid JSON object (no markdown).
 2) Include top-level keys exactly:
@@ -13,24 +15,28 @@ Rules:
    - reason (string)
    - fields (array)
 3) If needs_vitals is false, fields must be [] and reason must explain why.
-4) If needs_vitals is true, fields must contain only clinically relevant vitals for this case.
+4) If needs_vitals is true:
+   - fields must be ONLY what this chief complaint and intake justify (usually 1–5 items, hard maximum 6).
+   - Do NOT default to a generic emergency panel (temperature_c, heart_rate, respiratory_rate, blood_pressure) unless the intake/pre-visit clearly supports needing most of those (e.g. explicit fever + systemic symptoms, sepsis concern, chest pain, severe dyspnoea).
+   - If only one measurement is needed, output exactly one field.
+   - Each field's "reason" must explicitly tie to a phrase or theme from intake or pre-visit (not generic boilerplate).
 5) Do not diagnose or prescribe treatment.
-6) Keep form practical for hospital staff to fill quickly.
-7) field_type must be one of: number, text, boolean, select.
-8) Each field object must include: key, label, field_type, unit, required, reason.
+6) field_type must be one of: number, text, boolean, select.
+7) Each field object must include: key (snake_case, unique), label, field_type, unit (string or null), required, reason.
+8) Prefer visit-specific keys (e.g. pain_score_0_10, rash_photo_url, weight_kg) when the story warrants them, instead of repeating the same four vitals for every patient.
 
-Output example:
+Output example (illustrative only — do not copy fields unless they match this patient's story):
 {
   "needs_vitals": true,
-  "reason": "Symptoms suggest objective measurements are needed before consult.",
+  "reason": "Intake describes focal joint swelling after injury; staff should capture targeted measures.",
   "fields": [
     {
-      "key": "temperature_c",
-      "label": "Temperature",
+      "key": "pain_score_0_10",
+      "label": "Pain severity (0–10)",
       "field_type": "number",
-      "unit": "C",
+      "unit": null,
       "required": true,
-      "reason": "Fever-related complaint"
+      "reason": "Patient rated severe knee pain in intake"
     }
   ]
 }

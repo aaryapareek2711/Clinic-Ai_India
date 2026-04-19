@@ -48,7 +48,7 @@ def submit_vitals(payload: VitalsSubmitRequest) -> VitalsSubmitResponse:
             visit_id=payload.visit_id,
             form_id=payload.form_id,
             staff_name=payload.staff_name,
-            values=payload.values,
+            values=payload.values_as_dict(),
         )
         return VitalsSubmitResponse(
             vitals_id=doc["vitals_id"],
@@ -57,7 +57,9 @@ def submit_vitals(payload: VitalsSubmitRequest) -> VitalsSubmitResponse:
             submitted_at=doc["submitted_at"],
         )
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        detail = str(exc)
+        status = 422 if detail.startswith(("Missing required", "Vitals form not", "Stored vitals")) else 404
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 @router.get("/latest/{patient_id}/{visit_id}", response_model=LatestVitalsResponse)

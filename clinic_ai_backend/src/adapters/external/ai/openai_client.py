@@ -201,7 +201,10 @@ class OpenAIQuestionClient:
         prompt = template.replace("{{context_json}}", json.dumps(context, ensure_ascii=True))
         content = self._chat_completion(
             prompt=prompt,
-            system_role="You decide if vitals are needed and generate a safe structured vitals form.",
+            system_role=(
+                "You decide if vitals are needed and output strict JSON only. "
+                "Never reuse a one-size-fits-all vitals list: each field must be justified by this patient's intake and pre-visit text."
+            ),
         )
         result = json.loads(content)
         if not isinstance(result, dict):
