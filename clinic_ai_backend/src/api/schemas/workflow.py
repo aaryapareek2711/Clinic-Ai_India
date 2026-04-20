@@ -62,6 +62,7 @@ class FollowUpRemindersRunResponse(BaseModel):
     sent_24h: int
     skipped: int
     debug: dict[str, int] | None = None
+    last_error: str | None = None
 
 
 class DoctorAppointmentViewResponse(BaseModel):

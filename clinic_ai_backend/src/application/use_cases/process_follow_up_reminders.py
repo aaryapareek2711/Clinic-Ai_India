@@ -53,7 +53,7 @@ class ProcessFollowUpRemindersUseCase:
             )
         return normalized
 
-    def execute(self, *, db: Any, now: datetime | None = None) -> dict[str, int]:
+    def execute(self, *, db: Any, now: datetime | None = None) -> dict[str, Any]:
         now_utc = now or _utc_now()
         if now_utc.tzinfo is None:
             now_utc = now_utc.replace(tzinfo=timezone.utc)
@@ -73,6 +73,7 @@ class ProcessFollowUpRemindersUseCase:
             "send_failures": 0,
             "not_due": 0,
         }
+        last_error: str | None = None
 
         if not (self.settings.whatsapp_access_token or "").strip() or not (
             self.settings.whatsapp_phone_number_id or ""
@@ -123,6 +124,7 @@ class ProcessFollowUpRemindersUseCase:
             t1d = nv - timedelta(days=1)
             rid = doc.get("reminder_id")
             sent_any = False
+            due_any = False
 
             created_at = doc.get("created_at")
             created_at_utc: datetime | None = None
@@ -140,6 +142,7 @@ class ProcessFollowUpRemindersUseCase:
                 and (now_utc - created_at_utc) <= immediate_retry_window
             )
             if immediate_due:
+                due_any = True
                 body_values = follow_up_template_body_values(
                     reminder_kind="immediate",
                     next_visit_at=nv,
@@ -169,8 +172,11 @@ class ProcessFollowUpRemindersUseCase:
                     )
                     skipped += 1
                     debug["send_failures"] += 1
+                    if last_error is None:
+                        last_error = str(exc)[:300]
 
             if doc.get("remind_3d_sent_at") is None and now_utc >= t3 and now_utc < nv:
+                due_any = True
                 body_values = follow_up_template_body_values(
                     reminder_kind="3d",
                     next_visit_at=nv,
@@ -200,9 +206,12 @@ class ProcessFollowUpRemindersUseCase:
                     )
                     skipped += 1
                     debug["send_failures"] += 1
+                    if last_error is None:
+                        last_error = str(exc)[:300]
 
             fresh = db.follow_up_reminders.find_one({"reminder_id": rid}) or doc
             if fresh.get("remind_24h_sent_at") is None and now_utc >= t1d and now_utc < nv:
+                due_any = True
                 body_values = follow_up_template_body_values(
                     reminder_kind="1d",
                     next_visit_at=nv,
@@ -232,13 +241,18 @@ class ProcessFollowUpRemindersUseCase:
                     )
                     skipped += 1
                     debug["send_failures"] += 1
-            if not sent_any:
+                    if last_error is None:
+                        last_error = str(exc)[:300]
+            if not due_any:
                 debug["not_due"] += 1
 
-        return {
+        out: dict[str, Any] = {
             "sent_immediate": sent_immediate,
             "sent_3d": sent_3d,
             "sent_24h": sent_24h,
             "skipped": skipped,
             "debug": debug,
         }
+        if last_error:
+            out["last_error"] = last_error
+        return out
