@@ -30,6 +30,7 @@ from src.application.utils.transcript_dialogue import (
     dedupe_chunk_overlap_segments,
     segment_gap_audit,
     segments_to_structured_dialogue,
+    structured_dialogue_segment_coverage_ratio,
 )
 from src.core.config import get_settings
 
@@ -247,7 +248,19 @@ class TranscriptionWorker:
                 language=language_mix,
             )
             if structured:
-                return scrub_dialogue_turns(structured)
+                cleaned = scrub_dialogue_turns(structured)
+                coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
+                # If LLM omitted too many lines, keep complete baseline instead of a partial summary-like dialogue.
+                if coverage < 0.75:
+                    logger.warning(
+                        "structured_dialogue_low_coverage job_id=%s coverage=%.3f turns=%s segments=%s fallback=baseline",
+                        job.get("job_id"),
+                        coverage,
+                        len(cleaned),
+                        len(normalized),
+                    )
+                    return baseline
+                return cleaned
         except Exception:
             return baseline
         return baseline

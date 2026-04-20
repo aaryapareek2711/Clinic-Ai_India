@@ -5,6 +5,7 @@ from src.application.utils.transcript_dialogue import (
     align_segments_with_structured_dialogue,
     dedupe_chunk_overlap_segments,
     segment_gap_audit,
+    structured_dialogue_segment_coverage_ratio,
 )
 
 
@@ -94,3 +95,21 @@ def test_dedupe_chunk_overlap_removes_duplicate_time_text() -> None:
     ]
     out = dedupe_chunk_overlap_segments(segs)
     assert len(out) == 1
+
+
+def test_structured_dialogue_coverage_ratio_flags_sparse_dialogue() -> None:
+    segments = [
+        {"text": "history and exam line one"},
+        {"text": "medication counseling line two"},
+        {"text": "follow up and safety net line three"},
+        {"text": "procedure consent line four"},
+    ]
+    sparse = [{"Doctor": "history and exam line one"}, {"Patient": "line three"}]
+    rich = [
+        {"Doctor": "history and exam line one"},
+        {"Patient": "medication counseling line two"},
+        {"Doctor": "follow up and safety net line three"},
+        {"Patient": "procedure consent line four"},
+    ]
+    assert structured_dialogue_segment_coverage_ratio(segments, sparse) < 0.75
+    assert structured_dialogue_segment_coverage_ratio(segments, rich) >= 0.75

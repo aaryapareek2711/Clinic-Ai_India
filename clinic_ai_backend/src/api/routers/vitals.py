@@ -9,6 +9,7 @@ from src.api.schemas.vitals import (
     VitalsFormResponse,
     VitalsSubmitRequest,
     VitalsSubmitResponse,
+    VitalsSubmitTemplateResponse,
 )
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 
@@ -65,6 +66,22 @@ def submit_vitals(
     except ValueError as exc:
         detail = str(exc)
         status = 422 if detail.startswith(("Missing required", "Vitals form not", "Stored vitals")) else 404
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
+@router.get("/submit-template/{patient_id}/{visit_id}", response_model=VitalsSubmitTemplateResponse)
+def get_submit_template(patient_id: str, visit_id: str) -> VitalsSubmitTemplateResponse:
+    """
+    Build a submit template with exact keys from latest vitals form.
+
+    This avoids manual key editing in Swagger/UI. Staff only fill `staff_name` and `value`s.
+    """
+    try:
+        doc = StoreVitalsUseCase().build_submit_template(patient_id, visit_id)
+        return VitalsSubmitTemplateResponse(**doc)
+    except ValueError as exc:
+        detail = str(exc)
+        status = 422 if detail.startswith(("Vitals form not", "Stored vitals")) else 404
         raise HTTPException(status_code=status, detail=detail) from exc
 
 

@@ -335,3 +335,38 @@ class StoreVitalsUseCase:
             return None
         doc.pop("_id", None)
         return doc
+
+    def build_submit_template(self, patient_id: str, visit_id: str) -> dict:
+        """
+        Build a ready-to-submit payload template from latest form keys.
+
+        Values are prefilled from latest submitted vitals for the same visit when available;
+        otherwise values are returned as null for direct staff entry.
+        """
+        form = self.get_latest_vitals_form(patient_id, visit_id)
+        if not form:
+            raise ValueError("Vitals form not found for this patient and visit; call POST /vitals/generate-form first")
+        form_id = str(form.get("form_id") or "")
+        if not form_id:
+            raise ValueError("Latest vitals form is missing form_id")
+        fields = self._sanitize_vitals_fields(form.get("fields"))
+        if form.get("needs_vitals") and not fields:
+            raise ValueError("Stored vitals form has no valid fields; generate a new form.")
+
+        latest = self.get_latest_vitals(patient_id, visit_id) or {}
+        latest_values = latest.get("values") if isinstance(latest.get("values"), dict) else {}
+        source = "latest_vitals" if latest_values else "empty"
+        values: list[dict[str, Any]] = [{"key": f["key"], "value": latest_values.get(f["key"])} for f in fields]
+
+        if not values and not bool(form.get("needs_vitals", False)):
+            # No fields required for this visit.
+            source = "empty"
+
+        return {
+            "patient_id": patient_id,
+            "visit_id": visit_id,
+            "form_id": form_id,
+            "staff_name": "",
+            "values": values,
+            "source": source,
+        }

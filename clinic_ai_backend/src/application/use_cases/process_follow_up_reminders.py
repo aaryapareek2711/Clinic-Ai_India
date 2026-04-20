@@ -1,6 +1,7 @@
 """Send WhatsApp template reminders at T-3 days and the calendar day before next visit."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -12,6 +13,8 @@ from src.application.services.follow_up_whatsapp_templates import (
     resolve_follow_up_template_name,
 )
 from src.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -86,17 +89,26 @@ class ProcessFollowUpRemindersUseCase:
                 )
                 if param_count > 0 and not body_values:
                     body_values = [default_follow_up_body_line("3d", nv, doc)]
-                self.whatsapp.send_template(
-                    to_number=to_number,
-                    template_name=template_name,
-                    language_code=language_code,
-                    body_values=body_values[:param_count] if param_count else body_values,
-                )
-                db.follow_up_reminders.update_one(
-                    {"reminder_id": rid},
-                    {"$set": {"remind_3d_sent_at": now_utc, "updated_at": now_utc}},
-                )
-                sent_3d += 1
+                try:
+                    self.whatsapp.send_template(
+                        to_number=to_number,
+                        template_name=template_name,
+                        language_code=language_code,
+                        body_values=body_values[:param_count] if param_count else body_values,
+                    )
+                    db.follow_up_reminders.update_one(
+                        {"reminder_id": rid},
+                        {"$set": {"remind_3d_sent_at": now_utc, "updated_at": now_utc}},
+                    )
+                    sent_3d += 1
+                except Exception as exc:
+                    logger.warning(
+                        "follow_up_reminder_send_failed reminder_kind=3d reminder_id=%s to=%s error=%s",
+                        rid,
+                        to_number,
+                        exc,
+                    )
+                    skipped += 1
 
             fresh = db.follow_up_reminders.find_one({"reminder_id": rid}) or doc
             if fresh.get("remind_24h_sent_at") is None and now_utc >= t1d and now_utc < nv:
@@ -107,16 +119,25 @@ class ProcessFollowUpRemindersUseCase:
                 )
                 if param_count > 0 and not body_values:
                     body_values = [default_follow_up_body_line("1d", nv, fresh)]
-                self.whatsapp.send_template(
-                    to_number=to_number,
-                    template_name=template_name,
-                    language_code=language_code,
-                    body_values=body_values[:param_count] if param_count else body_values,
-                )
-                db.follow_up_reminders.update_one(
-                    {"reminder_id": rid},
-                    {"$set": {"remind_24h_sent_at": now_utc, "updated_at": now_utc}},
-                )
-                sent_24h += 1
+                try:
+                    self.whatsapp.send_template(
+                        to_number=to_number,
+                        template_name=template_name,
+                        language_code=language_code,
+                        body_values=body_values[:param_count] if param_count else body_values,
+                    )
+                    db.follow_up_reminders.update_one(
+                        {"reminder_id": rid},
+                        {"$set": {"remind_24h_sent_at": now_utc, "updated_at": now_utc}},
+                    )
+                    sent_24h += 1
+                except Exception as exc:
+                    logger.warning(
+                        "follow_up_reminder_send_failed reminder_kind=1d reminder_id=%s to=%s error=%s",
+                        rid,
+                        to_number,
+                        exc,
+                    )
+                    skipped += 1
 
         return {"sent_3d": sent_3d, "sent_24h": sent_24h, "skipped": skipped}

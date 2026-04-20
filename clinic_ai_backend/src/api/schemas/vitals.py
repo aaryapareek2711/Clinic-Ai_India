@@ -159,6 +159,19 @@ class VitalsSubmitResponse(BaseModel):
     submitted_at: datetime
 
 
+class VitalsSubmitTemplateResponse(BaseModel):
+    """Prebuilt submit payload template: exact keys from latest form + suggested values."""
+
+    patient_id: str
+    visit_id: str
+    form_id: str
+    staff_name: str
+    values: list[VitalsValueEntry]
+    source: str = Field(
+        description="`latest_vitals` when values were prefilled from prior submission; otherwise `empty`."
+    )
+
+
 class LatestVitalsResponse(BaseModel):
     """Latest submitted vitals."""
 

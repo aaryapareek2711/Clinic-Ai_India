@@ -70,6 +70,43 @@ def _flatten_structured_turns(structured_dialogue: list[dict[str, str]]) -> list
     return out
 
 
+def structured_dialogue_segment_coverage_ratio(
+    segments: list[dict[str, Any]],
+    structured_dialogue: list[dict[str, str]],
+    *,
+    min_overlap: float = 0.32,
+) -> float:
+    """
+    Fraction of non-empty STT segments represented in structured dialogue (0..1).
+
+    A segment is counted as covered when any structured turn overlaps its wording by at least
+    ``min_overlap`` using the same token-overlap logic as speaker alignment.
+    """
+    if not segments:
+        return 1.0
+    turns = _flatten_structured_turns(structured_dialogue)
+    if not turns:
+        return 0.0
+    turn_texts = [t[1] for t in turns]
+    considered = 0
+    covered = 0
+    for seg in segments:
+        seg_text = str(seg.get("text") or "").strip()
+        if not seg_text:
+            continue
+        considered += 1
+        best = 0.0
+        for t in turn_texts:
+            best = max(best, _word_overlap_ratio(seg_text, t))
+            if best >= min_overlap:
+                break
+        if best >= min_overlap:
+            covered += 1
+    if considered == 0:
+        return 1.0
+    return covered / considered
+
+
 def align_segments_with_structured_dialogue(
     segments: list[dict[str, Any]],
     structured_dialogue: list[dict[str, str]],
