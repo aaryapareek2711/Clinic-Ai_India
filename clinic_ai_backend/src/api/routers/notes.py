@@ -13,9 +13,9 @@ from src.core.config import get_settings
 router = APIRouter(prefix="/notes", tags=["Notes"])
 
 
-@router.post("/generate", response_model=NoteGenerateResponse)
-def generate_default_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
-    """Generate default note type (India clinical by default)."""
+@router.post("/clinical-note", response_model=NoteGenerateResponse)
+def generate_clinical_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
+    """Generate clinical note (default note type)."""
     default_type = get_settings().default_note_type
     note_type: NoteType = request.note_type or default_type
     return _generate_by_type(note_type=note_type, request=request)
@@ -64,26 +64,37 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
     return NoteGenerateResponse(**doc)
 
 
-@router.get("/latest/by-context", response_model=NoteGenerateResponse)
-def get_latest_note(
+@router.get("/clinical-note", response_model=NoteGenerateResponse)
+def get_latest_clinical_note(
     patient_id: str = Query(min_length=1),
     visit_id: str = Query(min_length=1),
-    note_type: NoteType | None = Query(default=None),
 ) -> NoteGenerateResponse:
-    """Fetch latest note for a patient visit."""
-    note = ClinicalNoteRepository().find_latest(patient_id=patient_id, visit_id=visit_id, note_type=note_type)
+    """Fetch latest clinical note for a patient visit."""
+    default_type = get_settings().default_note_type
+    note = ClinicalNoteRepository().find_latest(
+        patient_id=patient_id,
+        visit_id=visit_id,
+        note_type=default_type,
+    )
     if not note:
-        raise HTTPException(status_code=404, detail="No matching note found")
+        raise HTTPException(status_code=404, detail=f"No {default_type} note found")
     note.pop("_id", None)
     return NoteGenerateResponse(**note)
 
 
-@router.get("/{note_id}", response_model=NoteGenerateResponse)
-def get_note(note_id: str) -> NoteGenerateResponse:
-    """Fetch note by ID."""
-    note = ClinicalNoteRepository().find_by_note_id(note_id)
+@router.get("/post-visit-summary", response_model=NoteGenerateResponse)
+def get_latest_post_visit_summary(
+    patient_id: str = Query(min_length=1),
+    visit_id: str = Query(min_length=1),
+) -> NoteGenerateResponse:
+    """Fetch latest post-visit summary note for a patient visit."""
+    note = ClinicalNoteRepository().find_latest(
+        patient_id=patient_id,
+        visit_id=visit_id,
+        note_type="post_visit_summary",
+    )
     if not note:
-        raise HTTPException(status_code=404, detail="Clinical note not found")
+        raise HTTPException(status_code=404, detail="No post_visit_summary note found")
     note.pop("_id", None)
     return NoteGenerateResponse(**note)
 
