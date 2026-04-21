@@ -1,5 +1,0 @@
-services:
-  - type: web
-    name: clinic-ai-api
-    env: docker
-    dockerfilePath: deployments/docker/Dockerfile.api
