@@ -405,7 +405,6 @@ class APIClient {
     const response = await this.client.post('/api/patients/register', data);
     return response.data as {
       patient_id: string;
-      visit_id: string;
       whatsapp_triggered: boolean;
     };
   }
@@ -423,6 +422,7 @@ class APIClient {
       visit_id: string;
       status: string;
       scheduled_start?: string;
+      intake_triggered?: boolean;
     };
   }
 

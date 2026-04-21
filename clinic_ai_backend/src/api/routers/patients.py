@@ -52,9 +52,8 @@ def list_patients() -> list[PatientSummaryResponse]:
 
 @router.post("/register", response_model=PatientRegisterResponse)
 def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse:
-    """Register patient by hospital staff and trigger intake WhatsApp."""
+    """Register patient by hospital staff (visit workflow starts on New Visit creation)."""
     patient_id = stable_patient_id(payload.name, payload.phone_number)
-    visit_id = str(uuid4())
     now = datetime.now(timezone.utc)
     db = get_database()
     db.patients.update_one(
@@ -75,22 +74,8 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         },
         upsert=True,
     )
-    db.visits.insert_one(
-        {
-            "visit_id": visit_id,
-            "patient_id": patient_id,
-            "status": "open",
-            "created_at": now,
-        }
-    )
 
-    IntakeChatService().start_intake(
-        patient_id=patient_id,
-        visit_id=visit_id,
-        to_number=payload.phone_number,
-        language=payload.preferred_language,
-    )
-    return PatientRegisterResponse(patient_id=patient_id, visit_id=visit_id, whatsapp_triggered=True)
+    return PatientRegisterResponse(patient_id=patient_id, whatsapp_triggered=True)
 
 
 @router.post("/{patient_id}/visits", response_model=CreateVisitFromPatientResponse)
@@ -98,9 +83,12 @@ def create_visit_from_existing_patient(
     patient_id: str,
     payload: CreateVisitFromPatientRequest,
 ) -> CreateVisitFromPatientResponse:
-    """Create a new open visit for an existing patient and return visit_id."""
+    """Create a new open visit for an existing patient and trigger intake on this visit_id."""
     db = get_database()
-    patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0, "patient_id": 1})
+    patient = db.patients.find_one(
+        {"patient_id": patient_id},
+        {"_id": 0, "patient_id": 1, "phone_number": 1, "preferred_language": 1},
+    )
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
@@ -118,9 +106,21 @@ def create_visit_from_existing_patient(
         }
     )
 
+    intake_triggered = False
+    phone_number = str(patient.get("phone_number") or "").strip()
+    if phone_number:
+        IntakeChatService().start_intake(
+            patient_id=patient_id,
+            visit_id=visit_id,
+            to_number=phone_number,
+            language=str(patient.get("preferred_language") or "en"),
+        )
+        intake_triggered = True
+
     return CreateVisitFromPatientResponse(
         patient_id=patient_id,
         visit_id=visit_id,
         status="open",
         scheduled_start=payload.scheduled_start,
+        intake_triggered=intake_triggered,
     )

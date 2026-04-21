@@ -15,7 +15,7 @@ export default function RegisteredPatientsPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ patient_id: string; visit_id: string; whatsapp_triggered: boolean } | null>(null);
+  const [result, setResult] = useState<{ patient_id: string; whatsapp_triggered: boolean } | null>(null);
 
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -151,7 +151,6 @@ export default function RegisteredPatientsPage() {
           {result && (
             <div className="rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
               <p><strong>patient_id:</strong> {result.patient_id}</p>
-              <p><strong>visit_id:</strong> {result.visit_id}</p>
               <p><strong>whatsapp_triggered:</strong> {String(result.whatsapp_triggered)}</p>
             </div>
           )}

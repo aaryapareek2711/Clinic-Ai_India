@@ -30,7 +30,6 @@ class PatientRegisterResponse(BaseModel):
     """Response body for registration endpoint."""
 
     patient_id: str
-    visit_id: str
     whatsapp_triggered: bool
 
 
@@ -60,3 +59,4 @@ class CreateVisitFromPatientResponse(BaseModel):
     visit_id: str
     status: str
     scheduled_start: str | None = None
+    intake_triggered: bool = False
