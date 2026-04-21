@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -26,8 +26,10 @@ export default function NewVisitPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [showPatientList, setShowPatientList] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  const patientPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -39,6 +41,18 @@ export default function NewVisitPage() {
       loadPatients();
     }
   }, [isAuthenticated, user, router]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!patientPickerRef.current) return;
+      if (!patientPickerRef.current.contains(event.target as Node)) {
+        setShowPatientList(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadPatients = async () => {
     try {
@@ -63,6 +77,7 @@ export default function NewVisitPage() {
   const handlePatientSelect = (patient: Patient) => {
     setSelectedPatient(patient);
     setSearchTerm(`${patient.first_name} ${patient.last_name}`);
+    setShowPatientList(false);
   };
 
   const handleCreateVisit = async (e: React.FormEvent) => {
@@ -143,23 +158,28 @@ export default function NewVisitPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Patient *
               </label>
-              <div className="relative">
+              <div className="relative" ref={patientPickerRef}>
                 <Input
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
                     setSelectedPatient(null);
+                    setShowPatientList(true);
                   }}
+                  onFocus={() => setShowPatientList(true)}
                   placeholder="Search by name or MRN..."
                   className="w-full"
                 />
 
-                {searchTerm && filteredPatients.length > 0 && (
+                {showPatientList && searchTerm && filteredPatients.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {filteredPatients.map((patient) => (
                       <div
                         key={patient.id}
-                        onClick={() => handlePatientSelect(patient)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handlePatientSelect(patient);
+                        }}
                         className="p-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                       >
                         <div className="font-medium text-gray-900">
@@ -171,6 +191,12 @@ export default function NewVisitPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {showPatientList && searchTerm && filteredPatients.length === 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-sm text-gray-600">
+                    No patients found.
                   </div>
                 )}
 

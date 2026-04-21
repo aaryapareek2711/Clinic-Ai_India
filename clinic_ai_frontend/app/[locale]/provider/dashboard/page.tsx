@@ -32,6 +32,7 @@ interface ScheduledAppointment {
   careprepStatus: CareprepStatus;
   riskLevel: RiskLevel;
   careGapsCount: number;
+  workflowVisitId?: string;
 }
 
 interface PatientListItem {
@@ -39,6 +40,7 @@ interface PatientListItem {
   name: string;
   lastSeen: string;
   appointReadyStatus: AppointReadyStatus;
+  workflowVisitId?: string;
 }
 
 interface ProviderTask {
@@ -57,6 +59,8 @@ interface RecentVisit {
   soapStatus: 'completed' | 'in_progress' | 'pending';
   visitId: string;
 }
+
+const LOCAL_APPOINTMENTS_KEY = 'provider_local_appointments';
 
 const statusColorMap: Record<AppointReadyStatus, string> = {
   Ready: "bg-green-100 text-green-700",
@@ -89,23 +93,25 @@ export default function ProviderDashboardPage() {
   const [todaysSchedule, setTodaysSchedule] = useState<ScheduledAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [documentingAppointment, setDocumentingAppointment] = useState<string | null>(null);
+  const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([]);
 
   // Derived state
   const pendingSOAPNotes = 0; // TODO: Fetch from API
   const highRiskPatients = todaysSchedule.filter(a => a.riskLevel === 'high').length;
   const pendingTasks: ProviderTask[] = []; // TODO: Fetch from API
-  const recentVisits: RecentVisit[] = []; // TODO: Fetch from API
   const patientList: PatientListItem[] = todaysSchedule.map(appt => ({
     id: appt.patient.id,
     name: appt.patient.name,
     lastSeen: "Today",
-    appointReadyStatus: "Ready" // Mock
+    appointReadyStatus: "Ready", // Mock
+    workflowVisitId: appt.workflowVisitId,
   }));
 
   useEffect(() => {
     const fetchAppointments = async () => {
       if (!user?.id) return;
 
+      const mergedAppointments: ScheduledAppointment[] = [];
       try {
         const token = localStorage.getItem('access_token');
         // Fetch upcoming appointments instead of today's, to show seeded future data
@@ -128,19 +134,53 @@ export default function ProviderDashboardPage() {
             isNewPatient: appt.appointment_type === 'initial_consultation',
             careprepStatus: appt.previsit_completed ? 'completed' : 'not_sent', // Simple mapping
             riskLevel: 'medium', // Default
-            careGapsCount: 0 // Default
+            careGapsCount: 0, // Default
+            workflowVisitId: undefined,
           }));
-          setTodaysSchedule(mappedAppointments);
+          mergedAppointments.push(...mappedAppointments);
         }
       } catch (error) {
         console.error('Error fetching appointments:', error);
       } finally {
+        // Always merge locally created visits, even when upstream appointments API fails.
+        const localAppointments = JSON.parse(localStorage.getItem(LOCAL_APPOINTMENTS_KEY) || '[]');
+        const mappedLocal: ScheduledAppointment[] = localAppointments.map((item: any) => ({
+          id: item.id || item.visit_id,
+          patient: {
+            id: item.patient_id,
+            name: item.patient_name || 'Unknown Patient',
+          },
+          time: item.scheduled_start
+            ? new Date(item.scheduled_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '--:--',
+          reason: item.type || 'Visit',
+          isNewPatient: false,
+          careprepStatus: 'not_sent' as CareprepStatus,
+          riskLevel: 'medium' as RiskLevel,
+          careGapsCount: 0,
+          workflowVisitId: item.id || item.visit_id,
+        }));
+        mergedAppointments.push(...mappedLocal);
+        const deduped = Array.from(new Map(mergedAppointments.map((a) => [a.id, a])).values());
+        setTodaysSchedule(deduped);
         setLoading(false);
       }
     };
 
     fetchAppointments();
   }, [user?.id]);
+
+  useEffect(() => {
+    const mappedRecentVisits: RecentVisit[] = todaysSchedule.slice(0, 5).map((appt) => ({
+      id: appt.id,
+      patientName: appt.patient.name,
+      visitDate: 'Scheduled',
+      chiefComplaint: appt.reason || 'Visit',
+      soapStatus: 'pending',
+      visitId: appt.id,
+    }));
+    setRecentVisits(mappedRecentVisits);
+  }, [todaysSchedule]);
 
   const handleStartDocumentation = async (appointmentId: string) => {
     setDocumentingAppointment(appointmentId);
@@ -158,6 +198,14 @@ export default function ProviderDashboardPage() {
     } finally {
       setDocumentingAppointment(null);
     }
+  };
+
+  const handleOpenAppointment = (appointment: ScheduledAppointment) => {
+    if (appointment.workflowVisitId) {
+      router.push(`/provider/visits/${appointment.workflowVisitId}`);
+      return;
+    }
+    setSelectedAppointment(appointment);
   };
 
   return (
@@ -308,7 +356,7 @@ export default function ProviderDashboardPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Clickable patient name opens Pre-Visit Prep */}
                           <button
-                            onClick={() => setSelectedAppointment(appt)}
+                            onClick={() => handleOpenAppointment(appt)}
                             className="font-semibold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
                           >
                             {appt.patient.name}
@@ -334,6 +382,7 @@ export default function ProviderDashboardPage() {
                           )}
                         </div>
                         <p className="text-sm text-gray-600">{appt.reason}</p>
+                        <p className="text-xs text-gray-500">Visit ID: {appt.id}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -361,9 +410,9 @@ export default function ProviderDashboardPage() {
                         variant="outline"
                         size="sm"
                         disabled={documentingAppointment === appt.id}
-                        onClick={() => handleStartDocumentation(appt.id)}
+                        onClick={() => appt.workflowVisitId ? router.push(`/provider/visits/${appt.workflowVisitId}`) : handleStartDocumentation(appt.id)}
                       >
-                        {documentingAppointment === appt.id ? 'Starting...' : 'Document'}
+                        {documentingAppointment === appt.id ? 'Starting...' : appt.workflowVisitId ? 'Open Visit' : 'Document'}
                       </Button>
                     </div>
                   </li>
@@ -453,6 +502,13 @@ export default function ProviderDashboardPage() {
                       <p className="text-xs text-gray-500">Last seen: {p.lastSeen}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => p.workflowVisitId ? router.push(`/provider/visits/${p.workflowVisitId}`) : router.push('/provider/visits/new')}
+                      >
+                        {p.workflowVisitId ? 'Open Visit' : 'Next Step'}
+                      </Button>
                       <Link href={`/careprep/send/${p.id}`}>
                         <Button variant="ghost" size="sm" className="text-purple-600 hover:bg-purple-50 h-7 px-2">
                           <ClipboardList className="w-3.5 h-3.5" />

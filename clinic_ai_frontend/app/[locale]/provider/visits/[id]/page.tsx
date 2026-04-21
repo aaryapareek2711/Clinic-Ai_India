@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import SOAPNotesEditor from "@/components/visit/SOAPNotesEditor";
 import AIAssistantChat from "@/components/visit/AIAssistantChat";
 import QuickNotes from "@/components/visit/QuickNotes";
+import AudioTranscription from "@/components/visit/AudioTranscription";
 import TaskList from "@/components/provider/TaskList";
 import PatientContextCard from "@/components/appoint-ready/PatientContextCard";
 import RiskStratification from "@/components/appoint-ready/RiskStratification";
@@ -47,7 +48,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [activeTab, setActiveTab] = useState<'soap' | 'quick-notes' | 'tasks'>('soap');
+  const [activeTab, setActiveTab] = useState<'transcription' | 'soap' | 'quick-notes' | 'tasks'>('transcription');
   const [taskRefreshKey, setTaskRefreshKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeContextSection, setActiveContextSection] = useState<'patient' | 'risk' | 'gaps' | 'meds'>('patient');
@@ -225,6 +226,17 @@ export default function VisitPage({ params }: { params: { id: string } }) {
         <div className="border-b border-gray-200 mb-6">
           <nav className="-mb-px flex space-x-8">
             <button
+              onClick={() => setActiveTab('transcription')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                activeTab === 'transcription'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Transcript
+            </button>
+            <button
               onClick={() => setActiveTab('soap')}
               className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
                 activeTab === 'soap'
@@ -262,6 +274,10 @@ export default function VisitPage({ params }: { params: { id: string } }) {
 
         {/* Tab Content */}
         <div>
+          {activeTab === 'transcription' && (
+            <AudioTranscription visitId={params.id} />
+          )}
+
           {activeTab === 'soap' && (
             <SOAPNotesEditor
               visitId={params.id}

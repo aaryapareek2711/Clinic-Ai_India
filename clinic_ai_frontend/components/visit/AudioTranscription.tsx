@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Mic, StopCircle, Loader2, CheckCircle, XCircle, FileAudio } from 'lucide-react';
+import { Upload, Mic, Pause, Play, StopCircle, Loader2, CheckCircle, XCircle, FileAudio } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
 
@@ -25,6 +25,7 @@ interface AudioTranscriptionProps {
 export default function AudioTranscription({ visitId, onTranscriptionComplete }: AudioTranscriptionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [transcriptions, setTranscriptions] = useState<Transcription[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +107,7 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
 
       mediaRecorder.start();
       setIsRecording(true);
+      setIsPaused(false);
       toast.success('Recording started...');
     } catch (error) {
       console.error('Error starting recording:', error);
@@ -117,7 +119,26 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setIsPaused(false);
       toast.success('Recording stopped');
+    }
+  };
+
+  const pauseRecording = () => {
+    if (!mediaRecorderRef.current || !isRecording || isPaused) return;
+    if (mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.pause();
+      setIsPaused(true);
+      toast.success('Recording paused');
+    }
+  };
+
+  const resumeRecording = () => {
+    if (!mediaRecorderRef.current || !isRecording || !isPaused) return;
+    if (mediaRecorderRef.current.state === 'paused') {
+      mediaRecorderRef.current.resume();
+      setIsPaused(false);
+      toast.success('Recording resumed');
     }
   };
 
@@ -241,9 +262,24 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
               )}
             </div>
             {isRecording && (
-              <div className="flex items-center gap-2 text-sm text-red-600 animate-pulse">
-                <div className="h-2 w-2 bg-red-600 rounded-full" />
-                Recording in progress...
+              <div className="space-y-2">
+                <div className={`flex items-center gap-2 text-sm ${isPaused ? 'text-amber-600' : 'text-red-600 animate-pulse'}`}>
+                  <div className={`h-2 w-2 rounded-full ${isPaused ? 'bg-amber-500' : 'bg-red-600'}`} />
+                  {isPaused ? 'Recording paused' : 'Recording in progress...'}
+                </div>
+                <div className="flex gap-2">
+                  {!isPaused ? (
+                    <Button variant="outline" size="sm" onClick={pauseRecording}>
+                      <Pause className="mr-2 h-4 w-4" />
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={resumeRecording}>
+                      <Play className="mr-2 h-4 w-4" />
+                      Resume
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>
