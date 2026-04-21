@@ -1,3 +1,11 @@
 {
-  "/[locale]/page": "app/[locale]/page.js"
+  "/_not-found/page": "app/_not-found/page.js",
+  "/provider/calendar/page": "app/provider/calendar/page.js",
+  "/provider/registered-patients/page": "app/provider/registered-patients/page.js",
+  "/provider/dashboard/page": "app/provider/dashboard/page.js",
+  "/login/page": "app/login/page.js",
+  "/[locale]/login/page": "app/[locale]/login/page.js",
+  "/[locale]/provider/calendar/page": "app/[locale]/provider/calendar/page.js",
+  "/[locale]/provider/registered-patients/page": "app/[locale]/provider/registered-patients/page.js",
+  "/[locale]/provider/dashboard/page": "app/[locale]/provider/dashboard/page.js"
 }

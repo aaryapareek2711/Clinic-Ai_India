@@ -17,10 +17,19 @@ const intlMiddleware = createMiddleware({
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hasLocalePrefix = /^\/(en|hi|fr)(\/|$)/.test(pathname);
 
   // Skip locale middleware for API routes and static files
   if (pathname.startsWith('/api') || pathname.startsWith('/_next')) {
     return NextResponse.next();
+  }
+
+  // Ensure unprefixed role routes resolve through the default locale.
+  // Without this, direct URLs like /provider/dashboard can fall through to 404.
+  if (!hasLocalePrefix && /^(\/provider|\/patient|\/admin)(\/|$)/.test(pathname)) {
+    const localeUrl = request.nextUrl.clone();
+    localeUrl.pathname = `/${defaultLocale}${pathname}`;
+    return NextResponse.redirect(localeUrl);
   }
 
   // Handle locale routing first

@@ -393,6 +393,23 @@ class APIClient {
     return response.data;
   }
 
+  async registerPatient(data: {
+    name: string;
+    phone_number: string;
+    age: number;
+    gender: string;
+    preferred_language: 'en' | 'hi' | 'en_US';
+    travelled_recently: boolean;
+    constant: boolean;
+  }) {
+    const response = await this.client.post('/api/patients/register', data);
+    return response.data as {
+      patient_id: string;
+      visit_id: string;
+      whatsapp_triggered: boolean;
+    };
+  }
+
   async updatePatient(patientId: string, data: Record<string, any>) {
     const response = await this.client.put(`/api/patients/${patientId}`, data);
     return response.data;

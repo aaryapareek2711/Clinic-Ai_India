@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import apiClient from '@/lib/api/client';
+import Link from 'next/link';
 
 export default function ProviderCalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -153,10 +154,12 @@ export default function ProviderCalendarPage() {
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
           </Button>
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4 mr-2" />
-            New Appointment
-          </Button>
+          <Link href="/provider/registered-patients">
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="h-4 w-4 mr-2" />
+              New Appointment
+            </Button>
+          </Link>
         </div>
       </div>
 
