@@ -243,9 +243,11 @@ class TranscriptionWorker:
             return baseline
         try:
             language_mix = str(job.get("language_mix") or "en")
+            speaker_mode = str(job.get("speaker_mode") or "two_speakers")
             structured = structure_dialogue_from_transcript_sync(
                 raw_transcript=full_text,
                 language=language_mix,
+                speaker_mode=speaker_mode,
             )
             if structured:
                 cleaned = scrub_dialogue_turns(structured)

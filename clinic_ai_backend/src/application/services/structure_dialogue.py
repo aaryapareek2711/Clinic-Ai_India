@@ -113,12 +113,25 @@ def _structure_one_chunk_openai(
     chunk_index: int,
     chunk_total: int,
     output_language: str,
+    speaker_mode: str = "two_speakers",
 ) -> list[dict[str, str]]:
     settings = get_settings()
+    normalized_mode = str(speaker_mode or "two_speakers").strip().lower()
+    if normalized_mode == "three_speakers":
+        speaker_instruction = (
+            "The consultation uses three roles: Doctor, Patient, and Family Member. "
+            "Preserve Family Member turns when a caregiver/attendant speaks for or about the patient. "
+            "Do not collapse Family Member speech into Patient."
+        )
+    else:
+        speaker_instruction = (
+            "Use only Doctor and Patient roles for this consultation; map third-party caregiver lines to Patient."
+        )
     system = (
         "You are a medical dialogue analyst. Convert the raw consultation transcript into a JSON array. "
         "Each element must be a single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
         "or {\"Family Member\": \"text\"} when applicable. "
+        f"{speaker_instruction} "
         "Remove direct identifiers (names used as people, phone numbers, emails, SSN-style numbers). "
         "Do NOT remove medication names, vitals, lab values, timelines, or clinical terms. "
         "Do NOT summarize away complaints, history, exam findings, counseling, or plan items — "
@@ -165,7 +178,12 @@ def _structure_one_chunk_openai(
     return parsed
 
 
-def structure_dialogue_from_transcript_sync(*, raw_transcript: str, language: str = "en") -> list[dict[str, str]]:
+def structure_dialogue_from_transcript_sync(
+    *,
+    raw_transcript: str,
+    language: str = "en",
+    speaker_mode: str = "two_speakers",
+) -> list[dict[str, str]]:
     """
     Call OpenAI chat completions to produce [{Doctor: ...}, {Patient: ...}, ...].
 
@@ -201,6 +219,7 @@ def structure_dialogue_from_transcript_sync(*, raw_transcript: str, language: st
             chunk_index=idx,
             chunk_total=len(chunks),
             output_language=output_language,
+            speaker_mode=speaker_mode,
         )
         merged.extend(part)
 

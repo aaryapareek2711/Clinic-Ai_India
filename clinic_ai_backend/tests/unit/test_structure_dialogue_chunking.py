@@ -83,3 +83,43 @@ def test_structure_dialogue_calls_openai_per_chunk_ordered_merge(
     assert len(calls) == 3
     joined = " ".join(next(iter(t.values())) for t in out)
     assert "OPEN_CHUNK_1" in joined and "OPEN_CHUNK_2" in joined and "OPEN_CHUNK_3" in joined
+
+
+def test_structure_dialogue_three_speaker_mode_includes_family_member_instruction(
+    monkeypatch: pytest.MonkeyPatch, fake_settings: Any
+) -> None:
+    captured_system: list[str] = []
+
+    monkeypatch.setattr(sd, "chunk_transcript_for_structure", lambda text, max_chars: ["sample chunk"])
+
+    class _Resp:
+        def __init__(self) -> None:
+            self._body = json.dumps(
+                {"choices": [{"message": {"content": json.dumps([{"Family Member": "I am his daughter"}])}}]}
+            ).encode()
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def _urlopen(req: Any, timeout: int = 120) -> _Resp:
+        payload = json.loads(req.data.decode("utf-8"))
+        captured_system.append(str(payload["messages"][0]["content"]))
+        return _Resp()
+
+    with patch.object(sd.request, "urlopen", side_effect=_urlopen):
+        out = sd.structure_dialogue_from_transcript_sync(
+            raw_transcript="dummy",
+            language="en",
+            speaker_mode="three_speakers",
+        )
+
+    assert out == [{"Family Member": "I am his daughter"}]
+    assert captured_system
+    assert "Doctor, Patient, and Family Member" in captured_system[0]
+    assert "Do not collapse Family Member speech into Patient." in captured_system[0]
