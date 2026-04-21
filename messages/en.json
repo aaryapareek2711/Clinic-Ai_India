@@ -1,0 +1,442 @@
+{
+    "common": {
+        "appName": "MedGenie",
+        "tagline": "AI-Powered Healthcare Platform",
+        "loading": "Loading...",
+        "error": "An error occurred",
+        "retry": "Try again",
+        "save": "Save",
+        "cancel": "Cancel",
+        "submit": "Submit",
+        "next": "Next",
+        "back": "Back",
+        "close": "Close",
+        "search": "Search",
+        "filter": "Filter",
+        "noResults": "No results found",
+        "viewAll": "View all",
+        "startFreeTrial": "Start Free Trial",
+        "watchDemo": "Watch Demo",
+        "hipaaCompliant": "HIPAA Compliant",
+        "fhirCompatible": "FHIR Compatible",
+        "fhirR4Compatible": "FHIR R4 Compatible",
+        "dpdpCompliant": "DPDP Compliant",
+        "abdmReady": "ABDM Ready",
+        "pipedaCompliant": "PIPEDA Compliant",
+        "phipaCompliant": "PHIPA Compliant"
+    },
+    "compliance": {
+        "title": "Security & Compliance",
+        "subtitle": "Your data is protected by industry-leading security standards",
+        "hipaa": {
+            "name": "HIPAA Compliant",
+            "description": "Full compliance with Health Insurance Portability and Accountability Act"
+        },
+        "fhir": {
+            "name": "FHIR R4 Compatible",
+            "description": "HL7 FHIR R4 standard for healthcare data interoperability"
+        },
+        "dpdp": {
+            "name": "DPDP Compliant",
+            "description": "Compliant with India's Digital Personal Data Protection Act 2023"
+        },
+        "abdm": {
+            "name": "ABDM Ready",
+            "description": "Integrated with Ayushman Bharat Digital Mission for health ID"
+        },
+        "pipeda": {
+            "name": "PIPEDA Compliant",
+            "description": "Compliant with Personal Information Protection and Electronic Documents Act"
+        },
+        "phipa": {
+            "name": "PHIPA Compliant",
+            "description": "Compliant with Ontario's Personal Health Information Protection Act"
+        },
+        "dataResidency": {
+            "name": "In-Region Data",
+            "description": "Your data stays within your country's borders"
+        }
+    },
+    "nav": {
+        "home": "Home",
+        "features": "Features",
+        "pricingLabel": "Pricing",
+        "solutionsLabel": "Solutions",
+        "login": "Sign In",
+        "signup": "Get Started",
+        "dashboard": "Dashboard",
+        "patients": "Patients",
+        "appointments": "Appointments",
+        "settings": "Settings",
+        "logout": "Sign Out",
+        "product": "Product",
+        "community": "Community",
+        "resourcesLabel": "Resources",
+        "menu": {
+            "features": "Features",
+            "forClinicians": "For Clinicians",
+            "forOrganizations": "For Organizations",
+            "getStarted": "Get Started",
+            "platform": "Platform",
+            "transcribe": "Transcribe & Dictate",
+            "aiAssistant": "AI Assistant",
+            "patientContext": "Patient Context",
+            "smartTasks": "Smart Tasks",
+            "clinicalTemplates": "Clinical Templates",
+            "communityTemplates": "Community Templates",
+            "customization": "Customization",
+            "carePrep": "CarePrep",
+            "carePrepDesc": "Patient preparation & symptom analysis",
+            "contextAI": "ContextAI",
+            "contextAIDesc": "Real-time patient context & insights",
+            "standardizeQuality": "Standardize quality",
+            "scaleEfficiently": "Scale efficiently",
+            "patientLoyalty": "Patient loyalty",
+            "howItWorks": "How it works",
+            "changelog": "Changelog",
+            "guides": "Guides",
+            "roiCalculator": "ROI Calculator",
+            "integrations": "Integrations",
+            "security": "Security & Compliance"
+        },
+        "solutions": {
+            "title": "Solutions",
+            "byPracticeSize": "By Practice Size",
+            "bySpecialty": "By Specialty",
+            "soloProvider": "Solo Provider",
+            "soloProviderDesc": "Streamlined tools for independent practitioners",
+            "groupPractice": "Group Practice",
+            "groupPracticeDesc": "Collaborative features for small to medium practices",
+            "enterprise": "Enterprise",
+            "enterpriseDesc": "Scalable solutions for large healthcare organizations",
+            "primaryCare": "Primary Care",
+            "primaryCareDesc": "Comprehensive patient management tools",
+            "specialists": "Specialists",
+            "specialistsDesc": "Specialty-specific templates and workflows",
+            "urgentCare": "Urgent Care",
+            "urgentCareDesc": "Fast-paced documentation support",
+            "healthcareSystems": "Healthcare Systems",
+            "healthcareSystemsDesc": "Enterprise solutions",
+            "privatePractices": "Private Practices",
+            "privatePracticesDesc": "Small to medium clinics",
+            "patientLoyalty": "Patient Loyalty",
+            "patientLoyaltyDesc": "Engagement & retention"
+        },
+        "pricing": {
+            "title": "Pricing",
+            "plans": "Plans",
+            "starter": "Starter",
+            "starterDesc": "Perfect for solo practitioners",
+            "professional": "Professional",
+            "professionalDesc": "For growing practices",
+            "enterprisePlan": "Enterprise",
+            "enterprisePlanDesc": "Custom solutions for large organizations",
+            "compare": "Compare Plans",
+            "faq": "Pricing FAQ"
+        },
+        "resources": {
+            "title": "Resources",
+            "learn": "Learn",
+            "support": "Support",
+            "documentation": "Documentation",
+            "documentationDesc": "Guides and API references",
+            "blogUpdates": "Blog & Updates",
+            "blogUpdatesDesc": "Latest news and insights",
+            "caseStudies": "Case Studies",
+            "caseStudiesDesc": "See how others succeed",
+            "helpCenter": "Help Center",
+            "helpCenterDesc": "FAQs and troubleshooting",
+            "contactUs": "Contact Us",
+            "contactUsDesc": "Get in touch with our team",
+            "communityRes": "Community",
+            "communityResDesc": "Join our community"
+        }
+    },
+    "landing": {
+        "hero": {
+            "badge": "AI-Powered Clinical Documentation",
+            "headline": "Get Time Back.",
+            "headline2": "Focus on Care.",
+            "subheadline": "AI-powered documentation that works the way you do. Spend less time charting, more time with patients. Patient-centered, physician-driven.",
+            "title": "AI-Powered Clinical Documentation",
+            "subtitle": "Reduce documentation time by 70% with intelligent medical transcription and SOAP note generation",
+            "cta": "Start Free Trial",
+            "secondaryCta": "Watch Demo"
+        },
+        "features": {
+            "title": "Everything you need for efficient clinical care",
+            "transcription": {
+                "title": "Medical Transcription",
+                "description": "Real-time audio transcription with medical terminology accuracy"
+            },
+            "soapNotes": {
+                "title": "Smart SOAP Notes",
+                "description": "AI-generated clinical notes from patient conversations"
+            },
+            "carePrep": {
+                "title": "CarePrep",
+                "description": "Pre-visit patient questionnaires and symptom collection"
+            },
+            "contextAI": {
+                "title": "ContextAI",
+                "description": "Comprehensive patient context and care gap detection"
+            }
+        },
+        "stats": {
+            "stat1": "85%",
+            "stat1Label": "Reduction in Pre-Visit Admin Time",
+            "stat2": "4.2min",
+            "stat2Label": "Average Time Saved Per Appointment",
+            "stat3": "92%",
+            "stat3Label": "Patient Satisfaction Score",
+            "stat4": "50k+",
+            "stat4Label": "Successful Patient Visits"
+        },
+        "testimonials": {
+            "title": "Trusted by Healthcare Professionals"
+        },
+        "cta": {
+            "title": "Ready to Transform Your Healthcare Practice?",
+            "subtitle": "Join thousands of providers delivering better care with AI-powered preparation",
+            "button": "Start Free Trial",
+            "scheduleDemo": "Schedule Demo",
+            "disclaimer": "No credit card required • 14-day free trial • Cancel anytime"
+        }
+    },
+    "patient": {
+        "dashboard": {
+            "title": "My Health Dashboard",
+            "upcomingAppointments": "Upcoming Appointments",
+            "recentVisits": "Recent Visits",
+            "healthSummary": "Health Summary",
+            "noAppointments": "No upcoming appointments"
+        },
+        "appointment": {
+            "bookNew": "Book Appointment",
+            "reschedule": "Reschedule",
+            "cancel": "Cancel Appointment",
+            "confirmCancel": "Are you sure you want to cancel this appointment?",
+            "date": "Date",
+            "time": "Time",
+            "provider": "Provider",
+            "location": "Location",
+            "reason": "Reason for Visit",
+            "status": {
+                "scheduled": "Scheduled",
+                "confirmed": "Confirmed",
+                "completed": "Completed",
+                "cancelled": "Cancelled"
+            }
+        },
+        "questionnaire": {
+            "title": "Pre-Visit Questionnaire",
+            "subtitle": "Help us prepare for your visit",
+            "symptoms": "What symptoms are you experiencing?",
+            "duration": "How long have you had these symptoms?",
+            "severity": "How severe are your symptoms?",
+            "medications": "Are you currently taking any medications?",
+            "allergies": "Do you have any allergies?",
+            "complete": "Complete Questionnaire",
+            "thankYou": "Thank you for completing the questionnaire!"
+        },
+        "careprep": {
+            "title": "CarePrep - Pre-Visit Preparation",
+            "welcome": "Hello, {name}!",
+            "intro": "Please complete this questionnaire before your appointment. It takes about 5 minutes.",
+            "appointmentWith": "Appointment with {doctor}",
+            "appointmentOn": "Scheduled for {date}",
+            "sections": {
+                "medicalHistory": "Medical History",
+                "currentSymptoms": "Current Symptoms",
+                "review": "Review & Submit"
+            },
+            "medicalHistory": {
+                "title": "Medical History",
+                "subtitle": "Tell us about your health background",
+                "conditions": "Do you have any ongoing medical conditions?",
+                "conditionsPlaceholder": "e.g., Diabetes, Hypertension, Asthma",
+                "medications": "What medications are you currently taking?",
+                "medicationsPlaceholder": "List all medications including dosage",
+                "allergies": "Do you have any allergies?",
+                "allergiesPlaceholder": "e.g., Penicillin, Peanuts, Latex",
+                "surgeries": "Have you had any surgeries?",
+                "surgeriesPlaceholder": "List any past surgeries with approximate dates",
+                "familyHistory": "Any significant family health history?",
+                "familyHistoryPlaceholder": "e.g., Heart disease, Cancer, Diabetes in family"
+            },
+            "symptoms": {
+                "title": "Current Symptoms",
+                "subtitle": "Tell us why you're visiting today",
+                "chiefComplaint": "What is your main concern today?",
+                "chiefComplaintPlaceholder": "Describe your primary symptom or concern",
+                "symptomDetails": "Please describe your symptoms in detail",
+                "symptomDetailsPlaceholder": "When did it start? Is it constant or intermittent?",
+                "duration": "How long have you had these symptoms?",
+                "durationOptions": {
+                    "today": "Started today",
+                    "fewDays": "A few days",
+                    "week": "About a week",
+                    "weeks": "2-4 weeks",
+                    "month": "More than a month"
+                },
+                "severity": "How severe is the discomfort?",
+                "severityOptions": {
+                    "mild": "Mild - I can continue normal activities",
+                    "moderate": "Moderate - It affects some activities",
+                    "severe": "Severe - It significantly limits my activities"
+                },
+                "additionalNotes": "Anything else you'd like to tell your doctor?"
+            },
+            "review": {
+                "title": "Review Your Information",
+                "subtitle": "Please verify the information before submitting",
+                "edit": "Edit",
+                "submit": "Submit CarePrep",
+                "submitting": "Submitting...",
+                "consent": "I confirm this information is accurate to the best of my knowledge"
+            },
+            "success": {
+                "title": "Thank You!",
+                "message": "Your CarePrep questionnaire has been submitted successfully.",
+                "nextSteps": "Your doctor will review this information before your appointment.",
+                "appointmentReminder": "Don't forget your appointment on {date}!"
+            },
+            "errors": {
+                "expired": "This CarePrep link has expired. Please contact your clinic for a new link.",
+                "invalid": "Invalid or expired link. Please check the link and try again.",
+                "submitFailed": "Failed to submit. Please try again.",
+                "required": "This field is required"
+            }
+        },
+        "profile": {
+            "title": "My Profile",
+            "personalInfo": "Personal Information",
+            "contactInfo": "Contact Information",
+            "medicalHistory": "Medical History",
+            "insurance": "Insurance Information",
+            "emergencyContact": "Emergency Contact"
+        }
+    },
+    "provider": {
+        "dashboard": {
+            "title": "Provider Dashboard",
+            "welcome": "Welcome, Dr. {name}",
+            "todaySchedule": "Today's Schedule",
+            "patientsToday": "Patients Today",
+            "pendingTasks": "Pending Tasks",
+            "recentPatients": "Recent Patients",
+            "noAppointments": "No appointments scheduled",
+            "loadPatientContext": "Load Patient Context",
+            "enterPatientId": "Enter Patient ID",
+            "loadContext": "Load Context",
+            "noPatientLoaded": "No Patient Loaded",
+            "noPatientLoadedDesc": "Enter a patient ID above to view appointment context"
+        },
+        "visit": {
+            "startDocumentation": "Start Documentation",
+            "viewHistory": "View History",
+            "generateNote": "Generate SOAP Note",
+            "transcriptionActive": "Recording in progress...",
+            "completeVisit": "Complete Visit"
+        },
+        "careprep": {
+            "sendCarePrep": "Send CarePrep",
+            "sendViaWhatsApp": "Send via WhatsApp",
+            "sendViaEmail": "Send via Email",
+            "sendViaSMS": "Send via SMS",
+            "completed": "CarePrep Completed",
+            "pending": "CarePrep Pending",
+            "notStarted": "Not Started",
+            "viewResponses": "View Responses",
+            "resend": "Resend Link",
+            "sending": "Sending...",
+            "sent": "Sent!",
+            "sendSuccess": "CarePrep link sent successfully",
+            "sendFailed": "Failed to send CarePrep link"
+        },
+        "whatsapp": {
+            "send": "Send WhatsApp",
+            "sending": "Sending...",
+            "sent": "Sent!",
+            "failed": "Failed to send",
+            "noPhone": "No phone number",
+            "deliveryStatus": {
+                "sent": "Sent",
+                "delivered": "Delivered",
+                "read": "Read",
+                "failed": "Failed"
+            }
+        },
+        "actions": {
+            "myVisits": "My Visits",
+            "calendar": "Calendar",
+            "settings": "Settings",
+            "logout": "Logout"
+        },
+        "tabs": {
+            "overview": "Overview",
+            "medicalHistory": "Medical History",
+            "careGaps": "Care Gaps",
+            "riskScores": "Risk Scores"
+        },
+        "context": {
+            "patientSummary": "Patient Summary",
+            "alerts": "Alerts",
+            "keyHighlights": "Key Highlights",
+            "activeConditions": "Active Conditions",
+            "currentMedications": "Current Medications",
+            "allergies": "Allergies",
+            "noMedicalHistory": "No medical history available",
+            "identifiedCareGaps": "Identified Care Gaps",
+            "noCareGaps": "No care gaps identified",
+            "riskAssessment": "Risk Assessment Scores",
+            "noRiskScores": "No risk scores calculated",
+            "highPriority": "High Priority",
+            "mediumPriority": "Medium Priority",
+            "lowPriority": "Low Priority"
+        }
+    },
+    "auth": {
+        "login": {
+            "title": "Sign In",
+            "email": "Email Address",
+            "password": "Password",
+            "forgotPassword": "Forgot password?",
+            "noAccount": "Don't have an account?",
+            "signupLink": "Sign up"
+        },
+        "signup": {
+            "title": "Create Account",
+            "firstName": "First Name",
+            "lastName": "Last Name",
+            "email": "Email Address",
+            "password": "Password",
+            "confirmPassword": "Confirm Password",
+            "accountType": "I am a",
+            "patient": "Patient",
+            "provider": "Healthcare Provider",
+            "terms": "I agree to the Terms of Service and Privacy Policy",
+            "hasAccount": "Already have an account?",
+            "loginLink": "Sign in"
+        }
+    },
+    "footer": {
+        "company": "Company",
+        "about": "About Us",
+        "careers": "Careers",
+        "contact": "Contact",
+        "product": "Product",
+        "features": "Features",
+        "pricing": "Pricing",
+        "security": "Security",
+        "resources": "Resources",
+        "blog": "Blog",
+        "documentation": "Documentation",
+        "support": "Support",
+        "legal": "Legal",
+        "privacy": "Privacy Policy",
+        "terms": "Terms of Service",
+        "hipaa": "HIPAA Compliance",
+        "copyright": "© {year} MedGenie. All rights reserved."
+    }
+}
