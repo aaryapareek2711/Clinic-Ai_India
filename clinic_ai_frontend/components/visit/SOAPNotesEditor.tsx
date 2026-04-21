@@ -66,6 +66,12 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
   const localDraftKey = `soap_notes_draft_${visitId}`;
 
   useEffect(() => {
+    if (!transcriptId) return;
+    setCurrentTranscriptId(transcriptId);
+    setHasRecording(true);
+  }, [transcriptId]);
+
+  useEffect(() => {
     try {
       const cached = localStorage.getItem(localDraftKey);
       if (!cached) return;

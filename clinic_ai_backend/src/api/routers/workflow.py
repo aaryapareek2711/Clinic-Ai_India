@@ -13,7 +13,7 @@ from src.application.use_cases.process_follow_up_reminders import ProcessFollowU
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.core.config import get_settings
 
-router = APIRouter(prefix="/workflow", tags=["Workflow"])
+router = APIRouter(prefix="/api/workflow", tags=["Workflow"])
 
 
 @router.post("/follow-up-reminders/run", response_model=FollowUpRemindersRunResponse)

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import axios from "axios";
 import toast from 'react-hot-toast';
 import type { PatientData } from '@/lib/utils/templatePopulation';
+import { apiClient } from '@/lib/api/client';
 
 
 interface Visit {
@@ -48,10 +49,15 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [activeTab, setActiveTab] = useState<'transcription' | 'soap' | 'quick-notes' | 'tasks'>('transcription');
+  const [activeTab, setActiveTab] = useState<'previsit-summary' | 'transcription' | 'soap' | 'post-visit-summary' | 'quick-notes' | 'tasks'>('transcription');
   const [taskRefreshKey, setTaskRefreshKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeContextSection, setActiveContextSection] = useState<'patient' | 'risk' | 'gaps' | 'meds'>('patient');
+  const [transcriptJobId, setTranscriptJobId] = useState<string | undefined>(undefined);
+  const [previsitSummary, setPrevisitSummary] = useState<string>('');
+  const [postVisitSummary, setPostVisitSummary] = useState<string>('');
+  const [isGeneratingPrevisit, setIsGeneratingPrevisit] = useState(false);
+  const [isGeneratingPostVisit, setIsGeneratingPostVisit] = useState(false);
 
   useEffect(() => {
     fetchVisit();
@@ -140,6 +146,54 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     setActiveTab('tasks');
   };
 
+  const handleTranscriptionComplete = (transcription: any) => {
+    if (transcription?.id) {
+      setTranscriptJobId(String(transcription.id));
+    }
+  };
+
+  const handleGeneratePrevisitSummary = async () => {
+    setIsGeneratingPrevisit(true);
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await axios.post(
+        `/api/workflow/pre-visit-summary/${visit.patient_id}/${params.id}`,
+        {},
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+      );
+      const summaryText =
+        response?.data?.summary ||
+        response?.data?.patient_friendly_summary ||
+        JSON.stringify(response?.data, null, 2);
+      setPrevisitSummary(summaryText);
+      toast.success('Previsit summary generated');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to generate previsit summary');
+    } finally {
+      setIsGeneratingPrevisit(false);
+    }
+  };
+
+  const handleGeneratePostVisitSummary = async () => {
+    setIsGeneratingPostVisit(true);
+    try {
+      const response = await apiClient.generateClinicalNote({
+        patient_id: visit.patient_id,
+        visit_id: params.id,
+        transcription_job_id: transcriptJobId,
+        note_type: 'post_visit_summary',
+      });
+      const payload = response?.payload || {};
+      const text = payload?.doctor_notes || payload?.summary || JSON.stringify(payload, null, 2);
+      setPostVisitSummary(String(text));
+      toast.success('Post visit summary generated');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to generate post visit summary');
+    } finally {
+      setIsGeneratingPostVisit(false);
+    }
+  };
+
   const contextSections = [
     { id: 'patient', label: 'Patient Info', icon: Activity },
     { id: 'risk', label: 'Risk Score', icon: AlertTriangle },
@@ -226,6 +280,17 @@ export default function VisitPage({ params }: { params: { id: string } }) {
         <div className="border-b border-gray-200 mb-6">
           <nav className="-mb-px flex space-x-8">
             <button
+              onClick={() => setActiveTab('previsit-summary')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                activeTab === 'previsit-summary'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Previsit Summary
+            </button>
+            <button
               onClick={() => setActiveTab('transcription')}
               className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
                 activeTab === 'transcription'
@@ -246,6 +311,17 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             >
               <FileText className="w-4 h-4" />
               SOAP Notes
+            </button>
+            <button
+              onClick={() => setActiveTab('post-visit-summary')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                activeTab === 'post-visit-summary'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Post Visit Summary
             </button>
             <button
               onClick={() => setActiveTab('quick-notes')}
@@ -274,8 +350,28 @@ export default function VisitPage({ params }: { params: { id: string } }) {
 
         {/* Tab Content */}
         <div>
+          {activeTab === 'previsit-summary' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Previsit Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={handleGeneratePrevisitSummary} disabled={isGeneratingPrevisit}>
+                  {isGeneratingPrevisit ? 'Generating...' : 'Generate Previsit Summary'}
+                </Button>
+                <div className="rounded-lg border p-4 min-h-[160px] whitespace-pre-wrap text-sm text-gray-800">
+                  {previsitSummary || 'No previsit summary generated yet.'}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {activeTab === 'transcription' && (
-            <AudioTranscription visitId={params.id} />
+            <AudioTranscription
+              visitId={params.id}
+              patientId={visit.patient_id}
+              onTranscriptionComplete={handleTranscriptionComplete}
+            />
           )}
 
           {activeTab === 'soap' && (
@@ -293,7 +389,24 @@ export default function VisitPage({ params }: { params: { id: string } }) {
               }}
               patientData={buildPatientData()}
               patientId={visit.patient_id}
+              transcriptId={transcriptJobId}
             />
+          )}
+
+          {activeTab === 'post-visit-summary' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Post Visit Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button onClick={handleGeneratePostVisitSummary} disabled={isGeneratingPostVisit}>
+                  {isGeneratingPostVisit ? 'Generating...' : 'Generate Post Visit Summary'}
+                </Button>
+                <div className="rounded-lg border p-4 min-h-[160px] whitespace-pre-wrap text-sm text-gray-800">
+                  {postVisitSummary || 'No post visit summary generated yet.'}
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {activeTab === 'quick-notes' && (

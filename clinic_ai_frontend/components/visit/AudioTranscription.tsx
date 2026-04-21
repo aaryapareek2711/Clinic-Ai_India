@@ -19,10 +19,11 @@ interface Transcription {
 
 interface AudioTranscriptionProps {
   visitId: string;
+  patientId: string;
   onTranscriptionComplete?: (transcription: Transcription) => void;
 }
 
-export default function AudioTranscription({ visitId, onTranscriptionComplete }: AudioTranscriptionProps) {
+export default function AudioTranscription({ visitId, patientId, onTranscriptionComplete }: AudioTranscriptionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -36,9 +37,9 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
     const file = event.target.files?.[0];
     if (file) {
       // Check file type
-      const validTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/webm', 'audio/ogg'];
+      const validTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'];
       if (!validTypes.includes(file.type)) {
-        toast.error('Please select a valid audio file (WAV, MP3, WebM, OGG)');
+        toast.error('Please select a valid audio file (WAV, MP3, WebM, OGG, M4A)');
         return;
       }
 
@@ -58,19 +59,28 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
       toast.error('Please select an audio file first');
       return;
     }
+    if (!patientId) {
+      toast.error('Patient ID missing');
+      return;
+    }
 
     setIsUploading(true);
     try {
-      const response = await apiClient.uploadAudioTranscription(visitId, selectedFile);
-      const newTranscription = response.data;
-
+      const response = await apiClient.uploadVisitTranscription(patientId, visitId, selectedFile);
+      const newTranscription: Transcription = {
+        id: response?.job_id || response?.message_id || `job-${Date.now()}`,
+        transcription_text: '',
+        confidence_score: 0,
+        status: 'PROCESSING',
+        created_at: new Date().toISOString(),
+      };
       setTranscriptions(prev => [newTranscription, ...prev]);
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
 
-      toast.success('Audio uploaded and transcription started!');
+      toast.success('Audio uploaded to transcript route');
 
       if (onTranscriptionComplete) {
         onTranscriptionComplete(newTranscription);
@@ -175,7 +185,7 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
       case 'processing':
         return <Badge variant="info">Processing</Badge>;
       case 'failed':
-        return <Badge variant="destructive">Failed</Badge>;
+        return <Badge variant="danger">Failed</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -253,7 +263,7 @@ export default function AudioTranscription({ visitId, onTranscriptionComplete }:
               ) : (
                 <Button
                   onClick={stopRecording}
-                  variant="destructive"
+                  variant="danger"
                   className="flex-1"
                 >
                   <StopCircle className="mr-2 h-4 w-4" />
