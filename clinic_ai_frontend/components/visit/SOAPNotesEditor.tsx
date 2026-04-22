@@ -72,6 +72,23 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
   }, [transcriptId]);
 
   useEffect(() => {
+    const hydrateTranscriptContext = async () => {
+      if (!patientId || transcriptId) return;
+      try {
+        const status = await apiClient.getVisitTranscriptionStatus(patientId, visitId);
+        const normalized = String(status?.status || '').toLowerCase();
+        if (normalized === 'completed' && status?.transcription_id) {
+          setCurrentTranscriptId(String(status.transcription_id));
+          setHasRecording(true);
+        }
+      } catch {
+        // Keep manual flow if transcript status endpoint is unavailable.
+      }
+    };
+    hydrateTranscriptContext();
+  }, [patientId, visitId, transcriptId]);
+
+  useEffect(() => {
     try {
       const cached = localStorage.getItem(localDraftKey);
       if (!cached) return;

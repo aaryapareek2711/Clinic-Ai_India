@@ -4,10 +4,19 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
-from src.api.schemas.notes import NoteGenerateRequest, NoteGenerateResponse, NoteType
+from src.api.schemas.notes import (
+    NoteGenerateRequest,
+    NoteGenerateResponse,
+    NoteType,
+    PostVisitWhatsAppSendRequest,
+    PostVisitWhatsAppSendResponse,
+)
 from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
 from src.application.use_cases.generate_post_visit_summary import GeneratePostVisitSummaryUseCase
 from src.application.use_cases.generate_soap_note import GenerateSoapNoteUseCase
+from src.application.use_cases.send_post_visit_summary_whatsapp_to_patient import (
+    send_latest_post_visit_summary_whatsapp_to_patient,
+)
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
@@ -68,18 +77,49 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
 def get_latest_clinical_note(
     patient_id: str = Query(min_length=1),
     visit_id: str = Query(min_length=1),
+    note_type: NoteType | None = Query(
+        default=None,
+        description="When set, fetch latest note of this type (e.g. soap). Otherwise uses server default_note_type.",
+    ),
 ) -> NoteGenerateResponse:
     """Fetch latest clinical note for a patient visit."""
-    default_type = get_settings().default_note_type
+    resolved_type: NoteType = note_type or get_settings().default_note_type
     note = ClinicalNoteRepository().find_latest(
         patient_id=patient_id,
         visit_id=visit_id,
-        note_type=default_type,
+        note_type=resolved_type,
     )
     if not note:
-        raise HTTPException(status_code=404, detail=f"No {default_type} note found")
+        raise HTTPException(status_code=404, detail=f"No {resolved_type} note found")
     note.pop("_id", None)
     return NoteGenerateResponse(**note)
+
+
+@router.post(
+    "/post-visit-summary/send-whatsapp",
+    response_model=PostVisitWhatsAppSendResponse,
+    summary="Send stored post-visit summary to patient WhatsApp",
+)
+def send_post_visit_summary_whatsapp_route(
+    body: PostVisitWhatsAppSendRequest,
+) -> PostVisitWhatsAppSendResponse:
+    """Send latest saved post-visit summary template plus immediate Meta follow-up template."""
+    try:
+        result = send_latest_post_visit_summary_whatsapp_to_patient(
+            patient_id=body.patient_id,
+            visit_id=body.visit_id,
+            phone_number_override=body.phone_number,
+        )
+        return PostVisitWhatsAppSendResponse(**result)
+    except ValueError as exc:
+        detail = str(exc)
+        if "No post_visit_summary" in detail:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        if "Patient not found" in detail:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        if "no phone number" in detail.lower():
+            raise HTTPException(status_code=422, detail=detail) from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
 
 
 @router.get("/post-visit-summary", response_model=NoteGenerateResponse)

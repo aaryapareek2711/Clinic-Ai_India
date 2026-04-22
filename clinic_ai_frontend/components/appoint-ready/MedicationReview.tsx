@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 
 interface MedicationReviewProps {
   patientId: string;
+  visitId?: string;
 }
 
 interface Medication {
@@ -49,18 +50,18 @@ interface MedicationReviewResponse {
   severe_interaction_count: number;
 }
 
-export default function MedicationReview({ patientId }: MedicationReviewProps) {
+export default function MedicationReview({ patientId, visitId }: MedicationReviewProps) {
   const [medicationData, setMedicationData] = useState<MedicationReviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadMedicationReview();
-  }, [patientId]);
+  }, [patientId, visitId]);
 
   const loadMedicationReview = async () => {
     setIsLoading(true);
     try {
-      const data = await apiClient.getMedicationReview(patientId);
+      const data = await apiClient.getMedicationReview(patientId, visitId);
       setMedicationData(data);
     } catch (err: any) {
       console.error('Error loading medication review:', err);

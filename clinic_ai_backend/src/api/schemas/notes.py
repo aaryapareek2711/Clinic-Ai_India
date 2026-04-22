@@ -102,3 +102,24 @@ class NoteGenerateResponse(BaseModel):
     payload: IndiaClinicalNotePayload | PostVisitSummaryPayload
     whatsapp_payload: str | None = None
     legacy: bool = False
+
+
+class PostVisitWhatsAppSendRequest(BaseModel):
+    """Doctor-triggered send of stored post-visit summary to patient WhatsApp."""
+
+    patient_id: str = Field(..., min_length=1)
+    visit_id: str = Field(..., min_length=1)
+    phone_number: str | None = Field(
+        default=None,
+        description="Optional WhatsApp destination for this send only; otherwise uses patient.phone_number.",
+    )
+
+
+class PostVisitWhatsAppSendResponse(BaseModel):
+    """Outcome of Meta template sends for post-visit + follow-up."""
+
+    patient_id: str
+    visit_id: str
+    summary_template_sent: bool
+    follow_up_template_sent: bool
+    message: str

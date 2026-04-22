@@ -9,6 +9,7 @@ from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClie
 from src.application.services.intake_chat_service import IntakeChatService
 from src.application.services.follow_up_whatsapp_templates import (
     default_follow_up_body_line,
+    follow_up_meta_template_param_count,
     follow_up_template_body_values,
     follow_up_template_language_code,
     resolve_follow_up_template_name,
@@ -88,7 +89,7 @@ class ProcessFollowUpRemindersUseCase:
             debug["scanned"] = skipped
             return {"sent_immediate": 0, "sent_3d": 0, "sent_24h": 0, "skipped": skipped, "debug": debug}
 
-        param_count = max(0, int(self.settings.whatsapp_followup_template_param_count))
+        param_count = follow_up_meta_template_param_count(self.settings)
 
         for doc in list(db.follow_up_reminders.find({})):
             debug["scanned"] += 1

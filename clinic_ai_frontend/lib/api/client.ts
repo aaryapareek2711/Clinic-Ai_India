@@ -51,7 +51,7 @@ class APIClient {
 
   private getToken(): string | null {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('access_token');
+    return localStorage.getItem('access_token') || localStorage.getItem('token');
   }
 
   private setToken(token: string): void {
@@ -127,7 +127,7 @@ class APIClient {
     return response.data;
   }
 
-  async getUsers() {
+  async getAuthUsers() {
     const response = await this.client.get('/api/auth/users');
     return response.data;
   }
@@ -339,6 +339,7 @@ class APIClient {
   async getAppointmentContext(patientId: string, options?: {
     include_fhir?: boolean;
     include_previsit?: boolean;
+    visit_id?: string;
   }) {
     const params = new URLSearchParams();
     if (options?.include_fhir !== undefined) {
@@ -346,6 +347,9 @@ class APIClient {
     }
     if (options?.include_previsit !== undefined) {
       params.append('include_previsit', String(options.include_previsit));
+    }
+    if (options?.visit_id) {
+      params.append('visit_id', options.visit_id);
     }
 
     const response = await this.client.get(
@@ -369,8 +373,9 @@ class APIClient {
     return response.data;
   }
 
-  async getMedicationReview(patientId: string) {
-    const response = await this.client.get(`/api/contextai/medication-review/${patientId}`);
+  async getMedicationReview(patientId: string, visitId?: string) {
+    const suffix = visitId ? `?visit_id=${encodeURIComponent(visitId)}` : '';
+    const response = await this.client.get(`/api/contextai/medication-review/${patientId}${suffix}`);
     return response.data;
   }
 
@@ -574,10 +579,53 @@ class APIClient {
     return response.data;
   }
 
-  async getLatestClinicalNote(patientId: string, visitId: string) {
+  async getLatestClinicalNote(
+    patientId: string,
+    visitId: string,
+    noteType?: 'india_clinical' | 'soap' | 'post_visit_summary'
+  ) {
+    const params: Record<string, string> = { patient_id: patientId, visit_id: visitId };
+    if (noteType) params.note_type = noteType;
     const response = await this.client.get('/api/notes/clinical-note', {
-      params: { patient_id: patientId, visit_id: visitId },
+      params,
+      validateStatus: (status) => status === 200 || status === 404,
     });
+    if (response.status === 404) return null;
+    return response.data;
+  }
+
+  async getPreVisitSummary(patientId: string, visitId: string) {
+    const response = await this.client.get(
+      `/api/workflow/pre-visit-summary/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`,
+      { validateStatus: (status) => status === 200 || status === 404 }
+    );
+    if (response.status === 404) return null;
+    return response.data;
+  }
+
+  async getLatestPostVisitSummary(patientId: string, visitId: string) {
+    const response = await this.client.get('/api/notes/post-visit-summary', {
+      params: { patient_id: patientId, visit_id: visitId },
+      validateStatus: (status) => status === 200 || status === 404,
+    });
+    if (response.status === 404) return null;
+    return response.data;
+  }
+
+  async sendPostVisitSummaryWhatsapp(data: {
+    patient_id: string;
+    visit_id: string;
+    phone_number?: string;
+  }) {
+    const response = await this.client.post<
+      {
+        patient_id: string;
+        visit_id: string;
+        summary_template_sent: boolean;
+        follow_up_template_sent: boolean;
+        message: string;
+      }
+    >('/api/notes/post-visit-summary/send-whatsapp', data);
     return response.data;
   }
 

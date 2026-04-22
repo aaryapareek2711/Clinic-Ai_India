@@ -12,7 +12,8 @@ import CareGaps from "@/components/appoint-ready/CareGaps";
 import MedicationReview from "@/components/appoint-ready/MedicationReview";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, Bot, FileText, CheckSquare, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, Loader2, Bot, FileText, CheckSquare, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import axios from "axios";
@@ -42,7 +43,88 @@ interface Visit {
     last_name: string;
     date_of_birth: string;
     gender: string;
+    phone_number?: string | null;
   };
+}
+
+function formatPrevisitSummaryForDisplay(doc: any): string {
+  if (!doc) return '';
+  const s = doc.sections;
+  if (!s || typeof s !== 'object') {
+    return typeof doc === 'string' ? doc : JSON.stringify(doc, null, 2);
+  }
+  const parts: string[] = [];
+  const cc = s.chief_complaint;
+  if (cc && (cc.reason_for_visit || cc.symptom_duration_or_onset)) {
+    parts.push(
+      ['Chief complaint', cc.reason_for_visit, cc.symptom_duration_or_onset && `Onset / duration: ${cc.symptom_duration_or_onset}`]
+        .filter(Boolean)
+        .join('\n')
+    );
+  }
+  const hpi = s.hpi;
+  if (hpi) {
+    const assoc = Array.isArray(hpi.associated_symptoms) ? hpi.associated_symptoms.join(', ') : '';
+    const bits = [
+      assoc && `Associated symptoms: ${assoc}`,
+      hpi.symptom_severity_or_progression && `Severity / progression: ${hpi.symptom_severity_or_progression}`,
+      hpi.impact_on_daily_life && `Impact on daily life: ${hpi.impact_on_daily_life}`,
+    ].filter(Boolean);
+    if (bits.length) parts.push(['History of present illness', ...bits].join('\n'));
+  }
+  const cur = s.current_medication;
+  if (cur?.medications_or_home_remedies) {
+    parts.push(`Current medications / remedies\n${cur.medications_or_home_remedies}`);
+  }
+  const pmh = s.past_medical_history_allergies;
+  if (pmh) {
+    const b = [pmh.past_medical_history, pmh.allergies && `Allergies: ${pmh.allergies}`].filter(Boolean);
+    if (b.length) parts.push(`Past history & allergies\n${b.join('\n')}`);
+  }
+  if (Array.isArray(s.red_flag_indicators) && s.red_flag_indicators.length) {
+    parts.push(`Red flags\n${s.red_flag_indicators.map((x: string) => `- ${x}`).join('\n')}`);
+  }
+  return parts.join('\n\n').trim() || JSON.stringify(doc, null, 2);
+}
+
+function formatPostVisitNoteForDisplay(note: any): string {
+  const p = note?.payload;
+  if (!p) return '';
+  if (typeof p.visit_reason === 'string' || p.what_doctor_found !== undefined) {
+    const meds = Array.isArray(p.medicines_to_take) ? p.medicines_to_take.filter(Boolean).join('\n- ') : '';
+    const tests = Array.isArray(p.tests_recommended) ? p.tests_recommended.filter(Boolean).join('\n- ') : '';
+    const care = Array.isArray(p.self_care) ? p.self_care.filter(Boolean).join('\n- ') : '';
+    const warn = Array.isArray(p.warning_signs) ? p.warning_signs.filter(Boolean).join('\n- ') : '';
+    const lines = [
+      p.visit_reason && `Visit reason\n${p.visit_reason}`,
+      p.what_doctor_found && `What we found\n${p.what_doctor_found}`,
+      meds && `Medicines\n- ${meds}`,
+      tests && `Tests\n- ${tests}`,
+      care && `Self-care\n- ${care}`,
+      warn && `Warning signs\n- ${warn}`,
+      p.follow_up && `Follow-up\n${p.follow_up}`,
+      p.next_visit_date && `Next visit\n${p.next_visit_date}`,
+    ].filter(Boolean);
+    return lines.join('\n\n');
+  }
+  return String(p.doctor_notes || JSON.stringify(p, null, 2));
+}
+
+function soapVisitPatchFromStoredNote(visitBase: Visit, note: any): Partial<Visit> {
+  if (!note?.payload) return {};
+  const payload = note.payload;
+  const doctorNotes = String(payload.doctor_notes || '');
+  const subjectiveMatch = doctorNotes.match(/subjective:\s*([\s\S]*?)(?:\nobjective:|$)/i);
+  const objectiveMatch = doctorNotes.match(/objective:\s*([\s\S]*)$/i);
+  const subj = (subjectiveMatch?.[1] || '').trim();
+  const obj = (objectiveMatch?.[1] || '').trim();
+  const patch: Partial<Visit> = {};
+  if (subj) patch.subjective = subj;
+  if (obj) patch.objective = obj;
+  if (payload.assessment) patch.assessment = String(payload.assessment);
+  if (payload.plan) patch.plan = String(payload.plan);
+  if (!visitBase.chief_complaint && payload.chief_complaint) patch.chief_complaint = String(payload.chief_complaint);
+  return patch;
 }
 
 export default function VisitPage({ params }: { params: { id: string } }) {
@@ -59,6 +141,8 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [postVisitSummary, setPostVisitSummary] = useState<string>('');
   const [isGeneratingPrevisit, setIsGeneratingPrevisit] = useState(false);
   const [isGeneratingPostVisit, setIsGeneratingPostVisit] = useState(false);
+  const [postVisitWhatsappOverride, setPostVisitWhatsappOverride] = useState('');
+  const [isSendingPostVisitWhatsapp, setIsSendingPostVisitWhatsapp] = useState(false);
 
   useEffect(() => {
     fetchVisit();
@@ -82,7 +166,35 @@ export default function VisitPage({ params }: { params: { id: string } }) {
           Authorization: `Bearer ${token}`
         }
       });
-      setVisit(response.data);
+      const visitData = response.data as Visit;
+      const patientId = visitData.patient_id;
+      const visitId = params.id;
+
+      const [preDoc, postNote, soapNote] = await Promise.all([
+        apiClient.getPreVisitSummary(patientId, visitId).catch(() => null),
+        apiClient.getLatestPostVisitSummary(patientId, visitId).catch(() => null),
+        apiClient.getLatestClinicalNote(patientId, visitId, 'soap').catch(() => null),
+      ]);
+
+      let resolvedTranscriptId: string | undefined;
+      try {
+        const txStatus = await apiClient.getVisitTranscriptionStatus(patientId, visitId);
+        const normalized = String(txStatus?.status || '').toLowerCase();
+        if (normalized === 'completed' && txStatus?.transcription_id) {
+          resolvedTranscriptId = String(txStatus.transcription_id);
+        }
+      } catch {
+        // transcript status optional
+      }
+
+      const soapPatch = soapVisitPatchFromStoredNote(visitData, soapNote);
+      const chiefFromPrevisit = preDoc?.sections?.chief_complaint?.reason_for_visit;
+      const chiefPatch =
+        chiefFromPrevisit && !visitData.chief_complaint ? { chief_complaint: String(chiefFromPrevisit) } : {};
+      setVisit({ ...visitData, ...soapPatch, ...chiefPatch });
+      setPrevisitSummary(preDoc ? formatPrevisitSummaryForDisplay(preDoc) : '');
+      setPostVisitSummary(postNote ? formatPostVisitNoteForDisplay(postNote) : '');
+      setTranscriptJobId(resolvedTranscriptId);
     } catch (error: any) {
       console.error('Error fetching visit:', error);
 
@@ -153,6 +265,22 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     }
   };
 
+  const resolveCompletedTranscriptJobId = async (): Promise<string | null> => {
+    if (transcriptJobId) return transcriptJobId;
+    try {
+      const status = await apiClient.getVisitTranscriptionStatus(visit.patient_id, params.id);
+      const normalized = String(status?.status || '').toLowerCase();
+      const resolvedId = String(status?.transcription_id || '').trim();
+      if (normalized === 'completed' && resolvedId) {
+        setTranscriptJobId(resolvedId);
+        return resolvedId;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleGeneratePrevisitSummary = async () => {
     setIsGeneratingPrevisit(true);
     try {
@@ -162,10 +290,13 @@ export default function VisitPage({ params }: { params: { id: string } }) {
         {},
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
       );
+      const data = response?.data;
       const summaryText =
-        response?.data?.summary ||
-        response?.data?.patient_friendly_summary ||
-        JSON.stringify(response?.data, null, 2);
+        data?.sections
+          ? formatPrevisitSummaryForDisplay(data)
+          : data?.summary ||
+            data?.patient_friendly_summary ||
+            JSON.stringify(data, null, 2);
       setPrevisitSummary(summaryText);
       toast.success('Previsit summary generated');
     } catch (error: any) {
@@ -182,8 +313,36 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     }
   };
 
+  const handleSendPostVisitWhatsapp = async () => {
+    const onFile = visit.patient?.phone_number ? String(visit.patient.phone_number).trim() : '';
+    const override = postVisitWhatsappOverride.trim();
+    if (!onFile && !override) {
+      toast.error('Patient has no phone on file. Enter a WhatsApp number below.');
+      return;
+    }
+    setIsSendingPostVisitWhatsapp(true);
+    try {
+      const res = await apiClient.sendPostVisitSummaryWhatsapp({
+        patient_id: visit.patient_id,
+        visit_id: params.id,
+        phone_number: override || undefined,
+      });
+      if (res.summary_template_sent || res.follow_up_template_sent) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to send WhatsApp messages');
+    } finally {
+      setIsSendingPostVisitWhatsapp(false);
+    }
+  };
+
   const handleGeneratePostVisitSummary = async () => {
-    if (!transcriptJobId) {
+    const completedTranscriptId = await resolveCompletedTranscriptJobId();
+    if (!completedTranscriptId) {
       const msg = 'Post visit summary requires transcript. Please upload/record transcript first.';
       setPostVisitSummary(msg);
       toast.error(msg);
@@ -194,12 +353,15 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       const response = await apiClient.generateClinicalNote({
         patient_id: visit.patient_id,
         visit_id: params.id,
-        transcription_job_id: transcriptJobId,
+        transcription_job_id: completedTranscriptId,
         note_type: 'post_visit_summary',
       });
       const payload = response?.payload || {};
-      const text = payload?.doctor_notes || payload?.summary || JSON.stringify(payload, null, 2);
-      setPostVisitSummary(String(text));
+      const formatted = formatPostVisitNoteForDisplay({ payload }).trim();
+      const text =
+        formatted ||
+        String(payload?.doctor_notes || payload?.summary || JSON.stringify(payload, null, 2));
+      setPostVisitSummary(text);
       toast.success('Post visit summary generated');
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || 'Failed to generate post visit summary');
@@ -413,9 +575,58 @@ export default function VisitPage({ params }: { params: { id: string } }) {
                 <CardTitle>Post Visit Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button onClick={handleGeneratePostVisitSummary} disabled={isGeneratingPostVisit}>
-                  {isGeneratingPostVisit ? 'Generating...' : 'Generate Post Visit Summary'}
-                </Button>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Button onClick={handleGeneratePostVisitSummary} disabled={isGeneratingPostVisit}>
+                    {isGeneratingPostVisit ? 'Generating...' : 'Generate Post Visit Summary'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-green-600 text-green-700 hover:bg-green-50"
+                    onClick={handleSendPostVisitWhatsapp}
+                    disabled={isSendingPostVisitWhatsapp || isGeneratingPostVisit}
+                  >
+                    {isSendingPostVisitWhatsapp ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending…
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Send to patient (WhatsApp)
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Sends the saved post-visit summary via your Meta post-visit template, then the immediate follow-up
+                  reminder template (same as automated follow-up flow). Requires Meta credentials and template names in
+                  server settings.
+                </p>
+                <div className="space-y-2 max-w-md">
+                  <label className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-gray-500" />
+                    WhatsApp number (optional override)
+                  </label>
+                  <Input
+                    type="tel"
+                    inputMode="tel"
+                    placeholder={
+                      visit.patient?.phone_number
+                        ? `Default: ${visit.patient.phone_number}`
+                        : 'Enter number with country code (e.g. 919876543210)'
+                    }
+                    value={postVisitWhatsappOverride}
+                    onChange={(e) => setPostVisitWhatsappOverride(e.target.value)}
+                    className="text-gray-900"
+                  />
+                  {visit.patient?.phone_number && (
+                    <p className="text-xs text-gray-500">
+                      If left blank, the number on the patient file is used: {visit.patient.phone_number}
+                    </p>
+                  )}
+                </div>
                 <div className="rounded-lg border p-4 min-h-[160px] whitespace-pre-wrap text-sm text-gray-800">
                   {postVisitSummary || 'No post visit summary generated yet.'}
                 </div>
@@ -488,7 +699,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             {/* Context Content */}
             <div className="p-4">
               {activeContextSection === 'patient' && visit.patient_id && (
-                <PatientContextCard patientId={visit.patient_id} />
+                <PatientContextCard patientId={visit.patient_id} visitId={params.id} />
               )}
 
               {activeContextSection === 'risk' && visit.patient_id && (
@@ -500,7 +711,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
               )}
 
               {activeContextSection === 'meds' && visit.patient_id && (
-                <MedicationReview patientId={visit.patient_id} />
+                <MedicationReview patientId={visit.patient_id} visitId={params.id} />
               )}
             </div>
 

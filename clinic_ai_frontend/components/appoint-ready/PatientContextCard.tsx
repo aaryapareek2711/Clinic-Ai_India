@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 
 interface PatientContextProps {
   patientId: string;
+  visitId?: string;
 }
 
 interface PatientContext {
@@ -53,14 +54,14 @@ interface PatientContext {
   };
 }
 
-export default function PatientContextCard({ patientId }: PatientContextProps) {
+export default function PatientContextCard({ patientId, visitId }: PatientContextProps) {
   const [context, setContext] = useState<PatientContext | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPatientContext();
-  }, [patientId]);
+  }, [patientId, visitId]);
 
   const loadPatientContext = async () => {
     setIsLoading(true);
@@ -70,6 +71,7 @@ export default function PatientContextCard({ patientId }: PatientContextProps) {
       const data = await apiClient.getAppointmentContext(patientId, {
         include_fhir: true,
         include_previsit: true,
+        visit_id: visitId,
       });
       setContext(data);
     } catch (err: any) {

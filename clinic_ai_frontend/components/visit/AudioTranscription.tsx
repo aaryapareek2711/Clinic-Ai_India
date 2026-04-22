@@ -15,6 +15,7 @@ interface Transcription {
   status: string;
   created_at: string;
   audio_duration_seconds?: number;
+  diarized_turns?: Array<{ speaker: string; text: string }>;
 }
 
 interface AudioTranscriptionProps {
@@ -35,7 +36,22 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const normalizeTurns = (turns: any[]): Array<{ speaker: string; text: string }> => {
+    if (!Array.isArray(turns)) return [];
+    return turns
+      .map((turn) => {
+        const speakerRaw = turn?.speaker || turn?.role || turn?.speaker_label || turn?.name || 'Speaker';
+        const textRaw = turn?.utterance || turn?.text || turn?.content || turn?.message || '';
+        return {
+          speaker: String(speakerRaw || 'Speaker'),
+          text: String(textRaw || '').trim(),
+        };
+      })
+      .filter((turn) => turn.text.length > 0);
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isUploading || isProcessing || isRecording) return;
     const file = event.target.files?.[0];
     if (file) {
       // Check file type
@@ -170,7 +186,50 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
     do {
       const status = await apiClient.getVisitTranscriptionStatus(patientId, visitId);
       const normalized = String(status?.status || '').toLowerCase();
-      setProcessingMessage(String(status?.message || 'Transcription processing...'));
+      const message = String(status?.message || 'Transcription processing...');
+      setProcessingMessage(message);
+
+      // No active transcription yet — but dialogue may still exist (e.g. status lag). Try transcript fetch.
+      if (!waitUntilDone && (normalized === '' || normalized === 'pending' || normalized === 'not_started')) {
+        try {
+          const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
+          if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
+            const inferredId = String(
+              (dialogue.data as any)?.transcription_id ||
+                status?.transcription_id ||
+                fallbackId ||
+                `visit-${visitId}`
+            );
+            const base: Transcription = {
+              id: inferredId,
+              transcription_text: String(dialogue.data.transcript),
+              confidence_score: 0,
+              status: 'COMPLETED',
+              created_at: (dialogue.data as any)?.started_at || status?.started_at || new Date().toISOString(),
+              audio_duration_seconds: (dialogue.data as any)?.audio_duration_seconds ?? status?.audio_duration_seconds,
+            };
+            let diarizedTurns = normalizeTurns((dialogue.data as any)?.structured_dialogue || []);
+            if (!diarizedTurns.length) {
+              try {
+                const structured = await apiClient.structureVisitDialogue(patientId, visitId);
+                diarizedTurns = normalizeTurns(structured?.dialogue || []);
+              } catch {
+                // keep plain transcript
+              }
+            }
+            base.diarized_turns = diarizedTurns;
+            setTranscriptions([base]);
+            setIsProcessing(false);
+            if (onTranscriptionComplete) onTranscriptionComplete(base);
+            return;
+          }
+        } catch {
+          // fall through to empty state
+        }
+        setTranscriptions([]);
+        setIsProcessing(false);
+        return;
+      }
 
       const inferredId = String(status?.transcription_id || fallbackId || `job-${Date.now()}`);
       const base: Transcription = {
@@ -185,6 +244,16 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
       if (normalized === 'completed') {
         const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
         base.transcription_text = String(dialogue?.data?.transcript || '');
+        let diarizedTurns = normalizeTurns(dialogue?.data?.structured_dialogue || []);
+        if (!diarizedTurns.length) {
+          try {
+            const structured = await apiClient.structureVisitDialogue(patientId, visitId);
+            diarizedTurns = normalizeTurns(structured?.dialogue || []);
+          } catch {
+            // Non-blocking: keep plain transcript view when structuring is unavailable.
+          }
+        }
+        base.diarized_turns = diarizedTurns;
         setTranscriptions([base]);
         setIsProcessing(false);
         if (onTranscriptionComplete) onTranscriptionComplete(base);
@@ -198,7 +267,7 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
       }
 
       setTranscriptions([base]);
-      setIsProcessing(true);
+      setIsProcessing(['queued', 'processing', 'stale_processing', 'pending'].includes(normalized));
       if (!waitUntilDone) return;
       await new Promise((resolve) => setTimeout(resolve, 2500));
     } while (Date.now() - start < timeoutMs);
@@ -217,7 +286,7 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
 
   React.useEffect(() => {
     loadTranscriptions();
-  }, [visitId]);
+  }, [visitId, patientId]);
 
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
@@ -265,6 +334,7 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
                 type="file"
                 accept="audio/*"
                 onChange={handleFileSelect}
+                disabled={isUploading || isProcessing || isRecording}
                 className="flex-1 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
               <Button
@@ -390,9 +460,20 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
                       )}
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
-                      <p className="text-sm text-gray-900 whitespace-pre-wrap">
-                        {transcription.transcription_text}
-                      </p>
+                      {(transcription.diarized_turns || []).length > 0 ? (
+                        <div className="space-y-2">
+                          {(transcription.diarized_turns || []).map((turn, idx) => (
+                            <div key={`${transcription.id}-turn-${idx}`} className="text-sm text-gray-900">
+                              <span className="font-semibold text-blue-700 mr-2">{turn.speaker}:</span>
+                              <span className="whitespace-pre-wrap">{turn.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-900 whitespace-pre-wrap">
+                          {transcription.transcription_text}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

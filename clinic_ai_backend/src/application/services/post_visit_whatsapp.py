@@ -6,6 +6,7 @@ import logging
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
 from src.application.services.follow_up_whatsapp_templates import (
     default_follow_up_body_line,
+    follow_up_meta_template_param_count,
     follow_up_template_body_values,
     follow_up_template_language_code,
     resolve_follow_up_template_name,
@@ -22,8 +23,8 @@ def send_post_visit_summary_whatsapp(*, patient: dict, whatsapp_payload: str) ->
     Send the generated post-visit text (emoji summary line) on its own template channel.
 
     Uses WHATSAPP_POST_VISIT_TEMPLATE_NAME when set; otherwise WHATSAPP_INTAKE_TEMPLATE_NAME
-    for sandbox (e.g. opening_msg). Follow-up reminder wording uses WHATSAPP_FOLLOWUP_* only
-    via ``send_immediate_follow_up_template_whatsapp`` — not mixed into this call.
+    for sandbox (e.g. opening_msg). The separate follow-up ping uses the same intake template
+    (``opening_msg``) via ``send_immediate_follow_up_template_whatsapp`` — not mixed into this call.
     """
     settings = get_settings()
     if not (settings.whatsapp_access_token or "").strip() or not (settings.whatsapp_phone_number_id or "").strip():
@@ -83,7 +84,7 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
         logger.info("follow_up_immediate_whatsapp_skipped reason=no_patient_phone")
         return False
     language_code = follow_up_template_language_code(settings, preferred_language)
-    param_count = max(0, int(settings.whatsapp_followup_template_param_count))
+    param_count = follow_up_meta_template_param_count(settings)
     follow_up_text = str(payload.get("follow_up") or "").strip() or "Follow your doctor's advice."
     nv = parse_next_visit_at(payload.get("next_visit_date"))
     synthetic = {"follow_up_text": follow_up_text}
