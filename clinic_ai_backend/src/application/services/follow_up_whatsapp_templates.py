@@ -7,26 +7,25 @@ from src.core.config import Settings
 
 
 def resolve_follow_up_template_name(settings: Settings) -> str | None:
-    """
-    Follow-up / reminder Meta template.
-
-    For now we always use the same template as intake (default ``opening_msg`` / ``WHATSAPP_INTAKE_TEMPLATE_NAME``)
-    so sandbox and production stay aligned without a separate Meta-approved follow-up template.
-    """
+    """Follow-up/reminder Meta template name (default: ``follow_up_1``)."""
+    name = (settings.whatsapp_followup_template_name or "").strip()
+    if name:
+        return name
+    # Safety fallback for older deployments that only configured intake template.
     return (settings.whatsapp_intake_template_name or "").strip() or None
 
 
 def follow_up_template_language_code(settings: Settings, preferred_language: str) -> str:
-    """Language code for follow-up sends; must match the intake/opening_msg template locale in Meta."""
+    """Language code for follow-up sends (uses follow-up template language envs)."""
     lang = str(preferred_language or "en").strip().lower()
     if lang == "hi":
-        return settings.whatsapp_intake_template_lang_hi
-    return settings.whatsapp_intake_template_lang_en
+        return settings.whatsapp_followup_template_lang_hi
+    return settings.whatsapp_followup_template_lang_en
 
 
 def follow_up_meta_template_param_count(settings: Settings) -> int:
-    """Body parameter count for follow-up template (same as intake / opening_msg)."""
-    return max(0, int(settings.whatsapp_intake_template_param_count))
+    """Body parameter count for follow-up template (uses follow-up template env)."""
+    return max(0, int(settings.whatsapp_followup_template_param_count))
 
 
 def follow_up_template_body_values(

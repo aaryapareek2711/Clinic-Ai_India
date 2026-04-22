@@ -84,6 +84,21 @@ class GenerateIndiaClinicalNoteUseCase:
     ) -> dict:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
+            if not job:
+                session = self.db.visit_transcription_sessions.find_one(
+                    {"patient_id": patient_id, "visit_id": visit_id},
+                    sort=[("updated_at", -1)],
+                )
+                if session and str(session.get("transcription_status") or "").lower() == "completed":
+                    session_job_id = str(session.get("job_id") or "").strip()
+                    if session_job_id:
+                        job = {
+                            "job_id": session_job_id,
+                            "patient_id": patient_id,
+                            "visit_id": visit_id,
+                            "status": "completed",
+                            "_session_transcript": str(session.get("transcript") or ""),
+                        }
         else:
             query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
             if visit_id:
@@ -92,6 +107,21 @@ class GenerateIndiaClinicalNoteUseCase:
                 query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
+            if not job:
+                session = self.db.visit_transcription_sessions.find_one(
+                    {"patient_id": patient_id, "visit_id": visit_id},
+                    sort=[("updated_at", -1)],
+                )
+                if session and str(session.get("transcription_status") or "").lower() == "completed":
+                    session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
+                    if session_job_id:
+                        job = {
+                            "job_id": session_job_id,
+                            "patient_id": patient_id,
+                            "visit_id": visit_id,
+                            "status": "completed",
+                            "_session_transcript": str(session.get("transcript") or ""),
+                        }
         if not job:
             raise ValueError("No completed transcription job found")
         if str(job.get("patient_id")) != patient_id:
@@ -104,6 +134,8 @@ class GenerateIndiaClinicalNoteUseCase:
 
     def _build_context(self, *, patient_id: str, visit_id: str | None, job: dict) -> dict:
         transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
+        if not transcript and str(job.get("_session_transcript") or "").strip():
+            transcript = {"full_transcript_text": str(job.get("_session_transcript") or "")}
         effective_visit = visit_id or job.get("visit_id")
         if effective_visit:
             previsit = (
@@ -198,6 +230,42 @@ class GenerateIndiaClinicalNoteUseCase:
         payload.setdefault("red_flags", [])
         payload.setdefault("doctor_notes", None)
         payload.setdefault("chief_complaint", self._chief_complaint(context=context))
+
+        normalized_rx = []
+        for item in payload.get("rx") or []:
+            if not isinstance(item, dict):
+                continue
+            normalized_rx.append(
+                {
+                    "medicine_name": str(item.get("medicine_name") or "<medicine_name>"),
+                    "dose": str(item.get("dose") or "<dose>"),
+                    "frequency": str(item.get("frequency") or "<frequency>"),
+                    "duration": str(item.get("duration") or "<duration>"),
+                    "route": str(item.get("route") or "<route>"),
+                    "food_instruction": str(item.get("food_instruction") or "<food_instruction>"),
+                    "generic_available": item.get("generic_available") if isinstance(item.get("generic_available"), bool) else None,
+                }
+            )
+        payload["rx"] = normalized_rx
+
+        normalized_investigations = []
+        for item in payload.get("investigations") or []:
+            if not isinstance(item, dict):
+                continue
+            urgency = str(item.get("urgency") or "routine").strip().lower()
+            if urgency not in {"routine", "urgent", "stat"}:
+                urgency = "routine"
+            normalized_investigations.append(
+                {
+                    "test_name": str(item.get("test_name") or "<test_name>"),
+                    "urgency": urgency,
+                    "preparation_instructions": str(item.get("preparation_instructions") or "") or None,
+                    "routing_note": str(item.get("routing_note") or "") or None,
+                }
+            )
+        payload["investigations"] = normalized_investigations
+
+        payload["red_flags"] = [str(x).strip() for x in (payload.get("red_flags") or []) if str(x).strip()]
         payload["data_gaps"] = sorted(
             set([*(payload.get("data_gaps") or []), *(context.get("data_gaps") or [])])
         )

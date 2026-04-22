@@ -3,31 +3,34 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Sparkles, Loader2, Save, Edit3, Check, X, FileText, Bookmark } from 'lucide-react';
+import { Sparkles, Loader2, Save, Edit3, X, FileText, Bookmark } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
-import TemplateBrowserModal from '@/components/templates/TemplateBrowserModal';
 import SaveTemplateModal from '@/components/templates/SaveTemplateModal';
 import RecordingControls from './RecordingControls';
-import { populateTemplate, type PatientData } from '@/lib/utils/templatePopulation';
-import type { SOAPTemplate } from '@/lib/types/templates';
+import type { PatientData } from '@/lib/utils/templatePopulation';
 
 interface SOAPNotes {
-  subjective: string;
-  objective: string;
+  doctor_notes: string;
+  chief_complaint: string;
   assessment: string;
   plan: string;
-  diagnoses?: string[];
   medications?: Array<{
     name: string;
     dosage: string;
     frequency: string;
     duration: string;
+    route?: string;
+    food_instruction?: string;
+  }>;
+  investigations?: Array<{
+    name: string;
+    urgency?: string;
+    preparation_instructions?: string;
   }>;
   follow_up?: string;
   red_flags?: string[];
-  vitals?: Record<string, any>;
+  data_gaps?: string[];
 }
 
 interface SOAPNotesEditorProps {
@@ -41,15 +44,15 @@ interface SOAPNotesEditorProps {
 
 export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, onSave, patientData, patientId }: SOAPNotesEditorProps) {
   const [soapNotes, setSOAPNotes] = useState<SOAPNotes>({
-    subjective: initialNotes?.subjective || '',
-    objective: initialNotes?.objective || '',
+    doctor_notes: initialNotes?.doctor_notes || '',
+    chief_complaint: initialNotes?.chief_complaint || '',
     assessment: initialNotes?.assessment || '',
     plan: initialNotes?.plan || '',
-    diagnoses: initialNotes?.diagnoses || [],
     medications: initialNotes?.medications || [],
+    investigations: initialNotes?.investigations || [],
     follow_up: initialNotes?.follow_up || '',
     red_flags: initialNotes?.red_flags || [],
-    vitals: initialNotes?.vitals || {},
+    data_gaps: initialNotes?.data_gaps || [],
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -57,10 +60,8 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [refinementInstructions, setRefinementInstructions] = useState('');
   const [isRefining, setIsRefining] = useState(false);
-  const [showTemplateBrowser, setShowTemplateBrowser] = useState(false);
+  const [isInsertingTemplate, setIsInsertingTemplate] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
-  const [templates, setTemplates] = useState<SOAPTemplate[]>([]);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [currentTranscriptId, setCurrentTranscriptId] = useState<string | undefined>(transcriptId);
   const [hasRecording, setHasRecording] = useState(false);
   const localDraftKey = `soap_notes_draft_${visitId}`;
@@ -79,6 +80,13 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         const normalized = String(status?.status || '').toLowerCase();
         if (normalized === 'completed' && status?.transcription_id) {
           setCurrentTranscriptId(String(status.transcription_id));
+          setHasRecording(true);
+          return;
+        }
+        const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
+        if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
+          const inferred = String((dialogue?.data as any)?.transcription_id || status?.transcription_id || '').trim();
+          if (inferred) setCurrentTranscriptId(inferred);
           setHasRecording(true);
         }
       } catch {
@@ -99,59 +107,10 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
     }
   }, [localDraftKey]);
 
-  // Fetch templates when modal opens
-  useEffect(() => {
-    if (showTemplateBrowser && templates.length === 0) {
-      fetchTemplates();
-    }
-  }, [showTemplateBrowser]);
-
-  const fetchTemplates = async () => {
-    setIsLoadingTemplates(true);
-    try {
-      const response = await apiClient.listTemplates({ page_size: 100 });
-
-      // Convert API response to SOAPTemplate format
-      const formattedTemplates: SOAPTemplate[] = response.items.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description || '',
-        type: item.type as 'personal' | 'practice' | 'community',
-        category: item.category,
-        specialty: item.specialty,
-        content: {
-          subjective: item.content.subjective || '',
-          objective: item.content.objective || '',
-          assessment: item.content.assessment || '',
-          plan: item.content.plan || '',
-        },
-        metadata: {
-          tags: item.tags || [],
-          appointmentTypes: item.appointment_types || [],
-          usageCount: item.usage_count || 0,
-          isFavorite: item.is_favorite || false,
-          lastUsed: item.last_used,
-          createdAt: item.created_at,
-          updatedAt: item.updated_at,
-          version: item.version || '1.0',
-          authorName: item.author_name,
-          authorId: item.author_id,
-        },
-      }));
-
-      setTemplates(formattedTemplates);
-    } catch (error: any) {
-      console.error('Error fetching templates:', error);
-      toast.error('Failed to load templates');
-    } finally {
-      setIsLoadingTemplates(false);
-    }
-  };
-
-  const handleTranscriptionComplete = (transcriptionId: string, transcriptionText: string) => {
+  const handleTranscriptionComplete = (transcriptionId: string) => {
     setCurrentTranscriptId(transcriptionId);
     setHasRecording(true);
-    toast.success('Transcription ready! You can now generate SOAP notes.');
+    toast.success('Transcription ready! You can now generate clinical note.');
   };
 
   const handleGenerateSOAP = async () => {
@@ -165,40 +124,62 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         patient_id: patientId,
         visit_id: visitId,
         transcription_job_id: currentTranscriptId,
-        note_type: 'soap',
+        note_type: 'india_clinical',
       });
       const payload = response?.payload || {};
       const doctorNotes = String(payload?.doctor_notes || '');
       const subjectiveMatch = doctorNotes.match(/subjective:\s*([\s\S]*?)(?:\nobjective:|$)/i);
       const objectiveMatch = doctorNotes.match(/objective:\s*([\s\S]*)$/i);
       const generatedNotes = {
-        subjective: (subjectiveMatch?.[1] || '').trim(),
-        objective: (objectiveMatch?.[1] || '').trim(),
+        doctor_notes: doctorNotes.trim() || [subjectiveMatch?.[1], objectiveMatch?.[1]].filter(Boolean).join('\n\n').trim(),
+        chief_complaint: String(payload?.chief_complaint || '').trim(),
         assessment: String(payload?.assessment || '').trim(),
-        plan: String(payload?.plan || '').trim(),
-        diagnoses: [],
-        medications: [],
+        plan: [
+          String(payload?.plan || '').trim(),
+          Array.isArray(payload?.investigations) && payload.investigations.length > 0
+            ? `Investigations: ${payload.investigations.map((i: any) => i?.test_name).filter(Boolean).join(', ')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        medications: Array.isArray(payload?.rx)
+          ? payload.rx.map((item: any) => ({
+              name: String(item?.medicine_name || '').trim() || 'Medication',
+              dosage: String(item?.dose || '').trim() || '-',
+              frequency: String(item?.frequency || '').trim() || '-',
+              duration: String(item?.duration || '').trim() || '-',
+              route: String(item?.route || '').trim(),
+              food_instruction: String(item?.food_instruction || '').trim(),
+            }))
+          : [],
+        investigations: Array.isArray(payload?.investigations)
+          ? payload.investigations.map((item: any) => ({
+              name: String(item?.test_name || '').trim() || 'Investigation',
+              urgency: String(item?.urgency || '').trim(),
+              preparation_instructions: String(item?.preparation_instructions || '').trim(),
+            }))
+          : [],
         follow_up: String(payload?.follow_up_in || payload?.follow_up_date || '').trim(),
         red_flags: Array.isArray(payload?.red_flags) ? payload.red_flags : [],
-        vitals: {},
+        data_gaps: Array.isArray(payload?.data_gaps) ? payload.data_gaps : [],
       };
 
       setSOAPNotes({
-        subjective: generatedNotes.subjective || '',
-        objective: generatedNotes.objective || '',
+        doctor_notes: generatedNotes.doctor_notes || '',
+        chief_complaint: generatedNotes.chief_complaint || '',
         assessment: generatedNotes.assessment || '',
         plan: generatedNotes.plan || '',
-        diagnoses: generatedNotes.diagnoses || [],
         medications: generatedNotes.medications || [],
+        investigations: generatedNotes.investigations || [],
         follow_up: generatedNotes.follow_up || '',
         red_flags: generatedNotes.red_flags || [],
-        vitals: generatedNotes.vitals || {},
+        data_gaps: generatedNotes.data_gaps || [],
       });
 
-      toast.success('SOAP notes generated successfully!');
+      toast.success('Clinical note generated successfully!');
     } catch (error: any) {
-      console.error('Error generating SOAP notes:', error);
-      toast.error(error.response?.data?.detail || 'Failed to generate SOAP notes');
+      console.error('Error generating clinical note:', error);
+      toast.error(error.response?.data?.detail || 'Failed to generate clinical note');
     } finally {
       setIsGenerating(false);
     }
@@ -229,7 +210,7 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
     setIsSaving(true);
     try {
       localStorage.setItem(localDraftKey, JSON.stringify(soapNotes));
-      toast.success('SOAP draft saved');
+      toast.success('Clinical note draft saved');
 
       if (onSave) {
         onSave(soapNotes);
@@ -239,29 +220,55 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
     }
   };
 
-  const handleInsertTemplate = async (template: SOAPTemplate) => {
-    // Populate template with patient data
-    const populatedContent = populateTemplate(template, patientData || {});
-
-    // Insert the populated template into SOAP notes
-    setSOAPNotes(prev => ({
-      ...prev,
-      subjective: prev.subjective + (prev.subjective ? '\n\n' : '') + populatedContent.subjective,
-      objective: prev.objective + (prev.objective ? '\n\n' : '') + populatedContent.objective,
-      assessment: prev.assessment + (prev.assessment ? '\n\n' : '') + populatedContent.assessment,
-      plan: prev.plan + (prev.plan ? '\n\n' : '') + populatedContent.plan,
-    }));
-
-    // Record template usage
+  const handleInsertTemplate = async () => {
+    setIsInsertingTemplate(true);
     try {
-      await apiClient.recordTemplateUsage(template.id, visitId, patientId);
-    } catch (error) {
-      console.error('Error recording template usage:', error);
-      // Don't show error to user, this is just analytics
+      const template = await apiClient.getClinicalNoteTemplate({
+        doctor_type: 'Allopathic',
+        language_style: 'English clinical',
+        region: 'India OPD',
+      });
+      setSOAPNotes((prev) => ({
+        ...prev,
+        doctor_notes:
+          prev.doctor_notes + (prev.doctor_notes ? '\n\n' : '') + String(template.doctor_notes || ''),
+        chief_complaint: prev.chief_complaint || String(template.chief_complaint || ''),
+        assessment: prev.assessment + (prev.assessment ? '\n\n' : '') + String(template.assessment || ''),
+        plan: prev.plan + (prev.plan ? '\n\n' : '') + String(template.plan || ''),
+        medications: Array.isArray(template.rx)
+          ? template.rx.map((item) => ({
+              name: String(item.medicine_name || ''),
+              dosage: String(item.dose || ''),
+              frequency: String(item.frequency || ''),
+              duration: String(item.duration || ''),
+              route: String(item.route || ''),
+              food_instruction: String(item.food_instruction || ''),
+            }))
+          : prev.medications,
+        investigations: Array.isArray(template.investigations)
+          ? template.investigations.map((item) => ({
+              name: String(item.test_name || ''),
+              urgency: String(item.urgency || ''),
+              preparation_instructions: String(item.preparation_instructions || ''),
+            }))
+          : prev.investigations,
+        follow_up: prev.follow_up || String(template.follow_up_in || template.follow_up_date || ''),
+        red_flags:
+          Array.isArray(template.red_flags) && template.red_flags.length > 0
+            ? Array.from(new Set([...(prev.red_flags || []), ...template.red_flags.map(String)]))
+            : prev.red_flags,
+        data_gaps:
+          Array.isArray(template.data_gaps) && template.data_gaps.length > 0
+            ? Array.from(new Set([...(prev.data_gaps || []), ...template.data_gaps.map(String)]))
+            : prev.data_gaps,
+      }));
+      toast.success('Clinical note template inserted');
+    } catch (error: any) {
+      console.error('Error loading clinical note template:', error);
+      toast.error(error?.response?.data?.detail || 'Failed to load clinical note template');
+    } finally {
+      setIsInsertingTemplate(false);
     }
-
-    setShowTemplateBrowser(false);
-    toast.success(`Template "${template.name}" inserted successfully!`);
   };
 
   const handleSaveAsTemplate = () => {
@@ -277,8 +284,8 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         specialty: templateData.specialty,
         type: templateData.type,
         content: {
-          subjective: soapNotes.subjective,
-          objective: soapNotes.objective,
+          subjective: soapNotes.doctor_notes,
+          objective: '',
           assessment: soapNotes.assessment,
           plan: soapNotes.plan,
         },
@@ -289,10 +296,7 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
       toast.success('Template saved successfully!');
       setShowSaveTemplateModal(false);
 
-      // Refresh templates list if browser was opened before
-      if (templates.length > 0) {
-        fetchTemplates();
-      }
+      // no-op
     } catch (error: any) {
       console.error('Error saving template:', error);
       toast.error(error.response?.data?.detail || 'Failed to save template');
@@ -385,7 +389,7 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle>SOAP Notes</CardTitle>
+              <CardTitle>Clinical Note</CardTitle>
               <CardDescription>
                 Generate and edit structured clinical documentation
               </CardDescription>
@@ -406,18 +410,28 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
               {/* Secondary Actions */}
               <div className="flex gap-2 flex-wrap ml-auto">
                 <Button
-                  onClick={() => setShowTemplateBrowser(true)}
+                  onClick={handleInsertTemplate}
                   variant="outline"
                   size="sm"
+                  disabled={isInsertingTemplate}
                 >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Insert Template
+                  {isInsertingTemplate ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Inserting...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Insert Template
+                    </>
+                  )}
                 </Button>
                 <Button
                   onClick={handleSaveAsTemplate}
                   variant="outline"
                   size="sm"
-                  disabled={!soapNotes.subjective && !soapNotes.objective && !soapNotes.assessment && !soapNotes.plan}
+                  disabled={!soapNotes.doctor_notes && !soapNotes.assessment && !soapNotes.plan}
                 >
                   <Bookmark className="mr-2 h-4 w-4" />
                   Save as Template
@@ -435,7 +449,7 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
                   ) : (
                     <>
                       <Sparkles className="mr-2 h-4 w-4" />
-                      Generate from Transcription
+                      Generate Clinical Note
                     </>
                   )}
                 </Button>
@@ -462,32 +476,16 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         </CardContent>
       </Card>
 
-      {/* SOAP Sections */}
+      {/* Clinical Note Sections */}
       <div className="space-y-4">
-        {renderSection('subjective', 'Subjective', "Patient's symptoms and concerns in their own words")}
-        {renderSection('objective', 'Objective', 'Clinical findings, vital signs, and examination results')}
+        {renderSection('doctor_notes', 'Doctor Notes', 'Narrative notes generated from transcript')}
+        {renderSection('chief_complaint', 'Chief Complaint', 'Primary concern for this visit')}
         {renderSection('assessment', 'Assessment', 'Medical diagnoses and clinical interpretation')}
-        {renderSection('plan', 'Plan', 'Treatment plan, medications, and follow-up')}
+        {renderSection('plan', 'Plan', 'Treatment plan and recommendations')}
+        {renderSection('follow_up', 'Follow Up', 'Follow-up timeline/date')}
       </div>
 
       {/* Additional Information */}
-      {(soapNotes.diagnoses && soapNotes.diagnoses.length > 0) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Diagnoses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {soapNotes.diagnoses.map((diagnosis, index) => (
-                <Badge key={index} variant="secondary">
-                  {diagnosis}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {(soapNotes.medications && soapNotes.medications.length > 0) && (
         <Card>
           <CardHeader>
@@ -502,7 +500,34 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
                     <p className="text-sm text-gray-600">
                       {med.dosage} • {med.frequency} • {med.duration}
                     </p>
+                    {(med.route || med.food_instruction) && (
+                      <p className="text-xs text-gray-500">
+                        {[med.route, med.food_instruction].filter(Boolean).join(' • ')}
+                      </p>
+                    )}
                   </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(soapNotes.investigations && soapNotes.investigations.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Investigations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {soapNotes.investigations.map((investigation, index) => (
+                <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                  <p className="font-medium text-gray-900">{investigation.name}</p>
+                  {(investigation.urgency || investigation.preparation_instructions) && (
+                    <p className="text-sm text-gray-600">
+                      {[investigation.urgency, investigation.preparation_instructions].filter(Boolean).join(' • ')}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -527,42 +552,29 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
         </Card>
       )}
 
-      {soapNotes.vitals && Object.keys(soapNotes.vitals).length > 0 && (
+      {soapNotes.data_gaps && soapNotes.data_gaps.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Vital Signs</CardTitle>
+            <CardTitle>Data Gaps</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(soapNotes.vitals).map(([key, value]) => (
-                <div key={key} className="space-y-1">
-                  <span className="text-sm text-gray-600 capitalize">
-                    {key.replace(/_/g, ' ')}
-                  </span>
-                  <p className="font-medium text-gray-900">{value}</p>
-                </div>
+            <ul className="list-disc list-inside space-y-1">
+              {soapNotes.data_gaps.map((gap, index) => (
+                <li key={index} className="text-gray-700">
+                  {String(gap).replace(/_/g, ' ')}
+                </li>
               ))}
-            </div>
+            </ul>
           </CardContent>
         </Card>
-      )}
-
-      {/* Template Browser Modal */}
-      {showTemplateBrowser && (
-        <TemplateBrowserModal
-          templates={templates}
-          onClose={() => setShowTemplateBrowser(false)}
-          onSelectTemplate={handleInsertTemplate}
-          activeTab="personal"
-        />
       )}
 
       {/* Save Template Modal */}
       {showSaveTemplateModal && (
         <SaveTemplateModal
           soapNotes={{
-            subjective: soapNotes.subjective,
-            objective: soapNotes.objective,
+            subjective: soapNotes.doctor_notes,
+            objective: '',
             assessment: soapNotes.assessment,
             plan: soapNotes.plan,
           }}

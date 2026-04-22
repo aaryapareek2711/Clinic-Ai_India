@@ -612,6 +612,38 @@ class APIClient {
     return response.data;
   }
 
+  async getClinicalNoteTemplate(data: {
+    doctor_type: string;
+    language_style: string;
+    region: string;
+    optional_preferences?: string;
+  }) {
+    const response = await this.client.post('/api/notes/clinical-note-template', data);
+    return response.data as {
+      assessment: string;
+      plan: string;
+      rx: Array<{
+        medicine_name: string;
+        dose: string;
+        frequency: string;
+        duration: string;
+        route?: string;
+        food_instruction?: string;
+      }>;
+      investigations: Array<{
+        test_name: string;
+        urgency?: string;
+        preparation_instructions?: string;
+      }>;
+      red_flags: string[];
+      follow_up_in: string | null;
+      follow_up_date: string | null;
+      doctor_notes: string | null;
+      chief_complaint: string | null;
+      data_gaps: string[];
+    };
+  }
+
   async sendPostVisitSummaryWhatsapp(data: {
     patient_id: string;
     visit_id: string;

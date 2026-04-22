@@ -123,3 +123,12 @@ class PostVisitWhatsAppSendResponse(BaseModel):
     summary_template_sent: bool
     follow_up_template_sent: bool
     message: str
+
+
+class ClinicalNoteTemplateRequest(BaseModel):
+    """Request payload for generating reusable clinical note template."""
+
+    doctor_type: str = Field(..., min_length=1, description="Ayurvedic | Allopathic | Homeopathic")
+    language_style: str = Field(..., min_length=1, description="e.g., English clinical, Hinglish OPD")
+    region: str = Field(..., min_length=1, description="e.g., India OPD")
+    optional_preferences: str | None = Field(default=None, description="Optional custom instructions")

@@ -127,55 +127,6 @@ class ProcessFollowUpRemindersUseCase:
             sent_any = False
             due_any = False
 
-            created_at = doc.get("created_at")
-            created_at_utc: datetime | None = None
-            if isinstance(created_at, datetime):
-                created_at_utc = (
-                    created_at.replace(tzinfo=timezone.utc)
-                    if created_at.tzinfo is None
-                    else created_at.astimezone(timezone.utc)
-                )
-            immediate_retry_window = timedelta(hours=12)
-            immediate_due = (
-                doc.get("remind_immediate_sent_at") is None
-                and now_utc < nv
-                and created_at_utc is not None
-                and (now_utc - created_at_utc) <= immediate_retry_window
-            )
-            if immediate_due:
-                due_any = True
-                body_values = follow_up_template_body_values(
-                    reminder_kind="immediate",
-                    next_visit_at=nv,
-                    follow_up_text=str(doc.get("follow_up_text") or ""),
-                )
-                if param_count > 0 and not body_values:
-                    body_values = [default_follow_up_body_line("immediate", nv, doc)]
-                try:
-                    self.whatsapp.send_template(
-                        to_number=to_number,
-                        template_name=template_name,
-                        language_code=language_code,
-                        body_values=body_values[:param_count] if param_count else body_values,
-                    )
-                    db.follow_up_reminders.update_one(
-                        {"reminder_id": rid},
-                        {"$set": {"remind_immediate_sent_at": now_utc, "updated_at": now_utc}},
-                    )
-                    sent_immediate += 1
-                    sent_any = True
-                except Exception as exc:
-                    logger.warning(
-                        "follow_up_reminder_send_failed reminder_kind=immediate reminder_id=%s to=%s error=%s",
-                        rid,
-                        to_number,
-                        exc,
-                    )
-                    skipped += 1
-                    debug["send_failures"] += 1
-                    if last_error is None:
-                        last_error = str(exc)[:300]
-
             if doc.get("remind_3d_sent_at") is None and now_utc >= t3 and now_utc < nv:
                 due_any = True
                 body_values = follow_up_template_body_values(

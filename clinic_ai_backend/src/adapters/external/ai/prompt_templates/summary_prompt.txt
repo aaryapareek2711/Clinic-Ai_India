@@ -13,7 +13,7 @@ Rules:
    - chief_complaint
    - hpi
    - current_medication
-   - past_medical_history_allergies
+   - past_medical_history_allergies_family
    - red_flag_indicators
 3) Do NOT include vitals.
 4) If data is missing, write "Not provided".
@@ -37,6 +37,7 @@ Required nested structure:
   "past_medical_history_allergies": {
     "past_medical_history": "...",
     "allergies": "..."
+    "family_history":"..."
   },
   "red_flag_indicators": ["..."]
 }

@@ -40,6 +40,16 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
     if (!Array.isArray(turns)) return [];
     return turns
       .map((turn) => {
+        // Handles diarization rows like { "Doctor": "..." } or { "Patient": "..." }
+        if (turn && typeof turn === 'object' && !Array.isArray(turn)) {
+          const keys = Object.keys(turn);
+          if (keys.length === 1 && typeof (turn as any)[keys[0]] === 'string') {
+            return {
+              speaker: String(keys[0] || 'Speaker'),
+              text: String((turn as any)[keys[0]] || '').trim(),
+            };
+          }
+        }
         const speakerRaw = turn?.speaker || turn?.role || turn?.speaker_label || turn?.name || 'Speaker';
         const textRaw = turn?.utterance || turn?.text || turn?.content || turn?.message || '';
         return {

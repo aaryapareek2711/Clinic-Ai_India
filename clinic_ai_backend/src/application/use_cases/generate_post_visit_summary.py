@@ -8,10 +8,6 @@ from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.adapters.services.post_visit_summary_service import PostVisitSummaryService
-from src.application.services.post_visit_whatsapp import (
-    send_immediate_follow_up_template_whatsapp,
-    send_post_visit_summary_whatsapp,
-)
 from src.application.use_cases.schedule_follow_up_reminders import schedule_follow_up_after_post_visit
 from src.application.utils.follow_up_dates import parse_next_visit_at
 
@@ -68,6 +64,8 @@ class GeneratePostVisitSummaryUseCase:
                 transcription_job_id=transcription_job_id,
             )
             transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
+            if not transcript and str(job.get("_session_transcript") or "").strip():
+                transcript = {"full_transcript_text": str(job.get("_session_transcript") or "")}
 
         if not india_note and not transcript:
             raise ValueError("No India clinical note or completed transcription available")
@@ -105,20 +103,6 @@ class GeneratePostVisitSummaryUseCase:
             patient=patient,
             preferred_language=resolved_language,
         )
-        send_post_visit_summary_whatsapp(patient=patient, whatsapp_payload=whatsapp_payload)
-        immediate_ok = send_immediate_follow_up_template_whatsapp(
-            patient=patient,
-            payload=payload,
-            preferred_language=resolved_language,
-        )
-        if immediate_ok:
-            self.db.follow_up_reminders.update_one(
-                {
-                    "patient_id": patient_id,
-                    "visit_id": str(created.get("visit_id") or ""),
-                },
-                {"$set": {"remind_immediate_sent_at": _utc_now()}},
-            )
         return created
 
     def _resolve_transcription_job(
@@ -130,6 +114,21 @@ class GeneratePostVisitSummaryUseCase:
     ) -> dict:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
+            if not job:
+                session = self.db.visit_transcription_sessions.find_one(
+                    {"patient_id": patient_id, "visit_id": visit_id},
+                    sort=[("updated_at", -1)],
+                )
+                if session and str(session.get("transcription_status") or "").lower() == "completed":
+                    session_job_id = str(session.get("job_id") or "").strip()
+                    if session_job_id:
+                        job = {
+                            "job_id": session_job_id,
+                            "patient_id": patient_id,
+                            "visit_id": visit_id,
+                            "status": "completed",
+                            "_session_transcript": str(session.get("transcript") or ""),
+                        }
         else:
             query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
             if visit_id:
@@ -138,6 +137,21 @@ class GeneratePostVisitSummaryUseCase:
                 query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
+            if not job:
+                session = self.db.visit_transcription_sessions.find_one(
+                    {"patient_id": patient_id, "visit_id": visit_id},
+                    sort=[("updated_at", -1)],
+                )
+                if session and str(session.get("transcription_status") or "").lower() == "completed":
+                    session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
+                    if session_job_id:
+                        job = {
+                            "job_id": session_job_id,
+                            "patient_id": patient_id,
+                            "visit_id": visit_id,
+                            "status": "completed",
+                            "_session_transcript": str(session.get("transcript") or ""),
+                        }
         if not job:
             raise ValueError("No completed transcription job found")
         if str(job.get("patient_id")) != patient_id:

@@ -1,10 +1,13 @@
 """Clinical notes routes module."""
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.api.schemas.notes import (
+    ClinicalNoteTemplateRequest,
     NoteGenerateRequest,
     NoteGenerateResponse,
     NoteType,
@@ -20,6 +23,77 @@ from src.application.use_cases.send_post_visit_summary_whatsapp_to_patient impor
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
+
+
+def _build_clinical_note_template(*, doctor_type: str, language_style: str, region: str, optional_preferences: str | None) -> dict[str, Any]:
+    dt = str(doctor_type or '').strip().lower()
+    style = str(language_style or '').strip()
+    reg = str(region or '').strip()
+    pref = str(optional_preferences or '').strip()
+
+    if dt == 'ayurvedic':
+        assessment = '<dosha_agni_ama_prakriti_based_assessment>'
+        plan = '<pathya_apathya_lifestyle_and_balancing_plan>'
+        medicine_name = '<ayurvedic_formulation_name_churna_vati_kwath_taila_ghrita>'
+        note_hint = '<ayurvedic_clinical_narrative_with_holistic_language>'
+    elif dt == 'homeopathic':
+        assessment = '<constitutional_homeopathic_assessment>'
+        plan = '<remedy_selection_with_potency_and_repetition_plan>'
+        medicine_name = '<homeopathic_remedy_name>'
+        note_hint = '<homeopathic_case_narrative_with_constitutional_symptoms>'
+    else:
+        assessment = '<clinical_assessment_summary>'
+        plan = '<evidence_based_management_plan>'
+        medicine_name = '<allopathic_medicine_name>'
+        note_hint = '<clinical_narrative_in_standard_medical_tone>'
+
+    if style:
+        note_hint = f'{note_hint} | style={style}'
+    if reg:
+        note_hint = f'{note_hint} | region={reg}'
+    if pref:
+        note_hint = f'{note_hint} | preferences={pref}'
+
+    return {
+        'assessment': assessment,
+        'plan': plan,
+        'rx': [
+            {
+                'medicine_name': medicine_name,
+                'dose': '<dose>',
+                'frequency': '<frequency>',
+                'duration': '<duration>',
+                'route': '<route>',
+                'food_instruction': '<food_instruction>',
+                'generic_available': '<true_or_false>',
+            }
+        ],
+        'investigations': [
+            {
+                'test_name': '<test_name>',
+                'urgency': '<routine_or_urgent_or_stat>',
+                'preparation_instructions': '<preparation_instructions_or_na>',
+                'routing_note': '<routing_note>',
+            }
+        ],
+        'red_flags': ['<red_flag_1>', '<red_flag_2>'],
+        'follow_up_in': '<follow_up_interval>',
+        'follow_up_date': '<yyyy-mm-dd_or_null>',
+        'doctor_notes': note_hint,
+        'chief_complaint': '<chief_complaint>',
+        'data_gaps': ['<missing_info_1>', '<missing_info_2>'],
+    }
+
+
+@router.post('/clinical-note-template')
+def get_clinical_note_template(body: ClinicalNoteTemplateRequest) -> dict[str, Any]:
+    """Return reusable clinical note template adapted by doctor type/style/region."""
+    return _build_clinical_note_template(
+        doctor_type=body.doctor_type,
+        language_style=body.language_style,
+        region=body.region,
+        optional_preferences=body.optional_preferences,
+    )
 
 
 @router.post("/clinical-note", response_model=NoteGenerateResponse)

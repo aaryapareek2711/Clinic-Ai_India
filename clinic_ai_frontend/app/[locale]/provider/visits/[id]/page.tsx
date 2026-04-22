@@ -3,9 +3,7 @@
 import { useState, useEffect } from 'react';
 import SOAPNotesEditor from "@/components/visit/SOAPNotesEditor";
 import AIAssistantChat from "@/components/visit/AIAssistantChat";
-import QuickNotes from "@/components/visit/QuickNotes";
 import AudioTranscription from "@/components/visit/AudioTranscription";
-import TaskList from "@/components/provider/TaskList";
 import PatientContextCard from "@/components/appoint-ready/PatientContextCard";
 import RiskStratification from "@/components/appoint-ready/RiskStratification";
 import CareGaps from "@/components/appoint-ready/CareGaps";
@@ -13,7 +11,7 @@ import MedicationReview from "@/components/appoint-ready/MedicationReview";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Bot, FileText, CheckSquare, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Bot, FileText, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import axios from "axios";
@@ -110,13 +108,13 @@ function formatPostVisitNoteForDisplay(note: any): string {
   return String(p.doctor_notes || JSON.stringify(p, null, 2));
 }
 
-function soapVisitPatchFromStoredNote(visitBase: Visit, note: any): Partial<Visit> {
+function clinicalVisitPatchFromStoredNote(visitBase: Visit, note: any): Partial<Visit> {
   if (!note?.payload) return {};
   const payload = note.payload;
   const doctorNotes = String(payload.doctor_notes || '');
   const subjectiveMatch = doctorNotes.match(/subjective:\s*([\s\S]*?)(?:\nobjective:|$)/i);
   const objectiveMatch = doctorNotes.match(/objective:\s*([\s\S]*)$/i);
-  const subj = (subjectiveMatch?.[1] || '').trim();
+  const subj = (subjectiveMatch?.[1] || '').trim() || doctorNotes.trim();
   const obj = (objectiveMatch?.[1] || '').trim();
   const patch: Partial<Visit> = {};
   if (subj) patch.subjective = subj;
@@ -132,8 +130,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [activeTab, setActiveTab] = useState<'previsit-summary' | 'transcription' | 'soap' | 'post-visit-summary' | 'quick-notes' | 'tasks'>('transcription');
-  const [taskRefreshKey, setTaskRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'previsit-summary' | 'transcription' | 'soap' | 'post-visit-summary'>('transcription');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeContextSection, setActiveContextSection] = useState<'patient' | 'risk' | 'gaps' | 'meds'>('patient');
   const [transcriptJobId, setTranscriptJobId] = useState<string | undefined>(undefined);
@@ -141,6 +138,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [postVisitSummary, setPostVisitSummary] = useState<string>('');
   const [isGeneratingPrevisit, setIsGeneratingPrevisit] = useState(false);
   const [isGeneratingPostVisit, setIsGeneratingPostVisit] = useState(false);
+  const [postVisitFollowUpDate, setPostVisitFollowUpDate] = useState('');
   const [postVisitWhatsappOverride, setPostVisitWhatsappOverride] = useState('');
   const [isSendingPostVisitWhatsapp, setIsSendingPostVisitWhatsapp] = useState(false);
 
@@ -170,10 +168,10 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       const patientId = visitData.patient_id;
       const visitId = params.id;
 
-      const [preDoc, postNote, soapNote] = await Promise.all([
+      const [preDoc, postNote, clinicalNote] = await Promise.all([
         apiClient.getPreVisitSummary(patientId, visitId).catch(() => null),
         apiClient.getLatestPostVisitSummary(patientId, visitId).catch(() => null),
-        apiClient.getLatestClinicalNote(patientId, visitId, 'soap').catch(() => null),
+        apiClient.getLatestClinicalNote(patientId, visitId, 'india_clinical').catch(() => null),
       ]);
 
       let resolvedTranscriptId: string | undefined;
@@ -182,18 +180,25 @@ export default function VisitPage({ params }: { params: { id: string } }) {
         const normalized = String(txStatus?.status || '').toLowerCase();
         if (normalized === 'completed' && txStatus?.transcription_id) {
           resolvedTranscriptId = String(txStatus.transcription_id);
+        } else {
+          const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
+          if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
+            const inferred = String((dialogue?.data as any)?.transcription_id || txStatus?.transcription_id || '').trim();
+            if (inferred) resolvedTranscriptId = inferred;
+          }
         }
       } catch {
         // transcript status optional
       }
 
-      const soapPatch = soapVisitPatchFromStoredNote(visitData, soapNote);
+      const soapPatch = clinicalVisitPatchFromStoredNote(visitData, clinicalNote);
       const chiefFromPrevisit = preDoc?.sections?.chief_complaint?.reason_for_visit;
       const chiefPatch =
         chiefFromPrevisit && !visitData.chief_complaint ? { chief_complaint: String(chiefFromPrevisit) } : {};
       setVisit({ ...visitData, ...soapPatch, ...chiefPatch });
       setPrevisitSummary(preDoc ? formatPrevisitSummaryForDisplay(preDoc) : '');
       setPostVisitSummary(postNote ? formatPostVisitNoteForDisplay(postNote) : '');
+      setPostVisitFollowUpDate(String(postNote?.payload?.next_visit_date || ''));
       setTranscriptJobId(resolvedTranscriptId);
     } catch (error: any) {
       console.error('Error fetching visit:', error);
@@ -253,12 +258,6 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     return status?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Unknown';
   };
 
-  const handleTasksCreated = (tasks: any[]) => {
-    toast.success(`${tasks.length} task${tasks.length > 1 ? 's' : ''} created!`);
-    setTaskRefreshKey(prev => prev + 1);
-    setActiveTab('tasks');
-  };
-
   const handleTranscriptionComplete = (transcription: any) => {
     if (transcription?.id) {
       setTranscriptJobId(String(transcription.id));
@@ -274,6 +273,16 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       if (normalized === 'completed' && resolvedId) {
         setTranscriptJobId(resolvedId);
         return resolvedId;
+      }
+      const dialogue = await apiClient.getVisitDialogue(visit.patient_id, params.id);
+      if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
+        const inferred = String((dialogue?.data as any)?.transcription_id || resolvedId || '').trim();
+        if (inferred) {
+          setTranscriptJobId(inferred);
+          return inferred;
+        }
+        // Transcript exists but no stable job id exposed; backend can resolve by patient+visit.
+        return '';
       }
       return null;
     } catch {
@@ -342,7 +351,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
 
   const handleGeneratePostVisitSummary = async () => {
     const completedTranscriptId = await resolveCompletedTranscriptJobId();
-    if (!completedTranscriptId) {
+    if (completedTranscriptId === null) {
       const msg = 'Post visit summary requires transcript. Please upload/record transcript first.';
       setPostVisitSummary(msg);
       toast.error(msg);
@@ -353,8 +362,9 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       const response = await apiClient.generateClinicalNote({
         patient_id: visit.patient_id,
         visit_id: params.id,
-        transcription_job_id: completedTranscriptId,
+        transcription_job_id: completedTranscriptId || undefined,
         note_type: 'post_visit_summary',
+        follow_up_date: postVisitFollowUpDate || undefined,
       });
       const payload = response?.payload || {};
       const formatted = formatPostVisitNoteForDisplay({ payload }).trim();
@@ -486,7 +496,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
               }`}
             >
               <FileText className="w-4 h-4" />
-              SOAP Notes
+              Clinical Note
             </button>
             <button
               onClick={() => setActiveTab('post-visit-summary')}
@@ -498,28 +508,6 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             >
               <FileText className="w-4 h-4" />
               Post Visit Summary
-            </button>
-            <button
-              onClick={() => setActiveTab('quick-notes')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'quick-notes'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Quick Notes
-            </button>
-            <button
-              onClick={() => setActiveTab('tasks')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'tasks'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <CheckSquare className="w-4 h-4" />
-              Tasks
             </button>
           </nav>
         </div>
@@ -554,13 +542,13 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             <SOAPNotesEditor
               visitId={params.id}
               initialNotes={{
-                subjective: visit.subjective || '',
-                objective: visit.objective || '',
+                doctor_notes: [visit.subjective, visit.objective].filter(Boolean).join('\n\n'),
+                chief_complaint: visit.chief_complaint || '',
                 assessment: visit.assessment || '',
                 plan: visit.plan || '',
               }}
               onSave={(notes) => {
-                console.log('SOAP notes saved:', notes);
+                console.log('Clinical note saved:', notes);
                 toast.success('Visit documentation updated');
               }}
               patientData={buildPatientData()}
@@ -600,10 +588,23 @@ export default function VisitPage({ params }: { params: { id: string } }) {
                   </Button>
                 </div>
                 <p className="text-xs text-gray-600">
-                  Sends the saved post-visit summary via your Meta post-visit template, then the immediate follow-up
-                  reminder template (same as automated follow-up flow). Requires Meta credentials and template names in
-                  server settings.
+                  Generate saves summary + reminder schedule. WhatsApp is sent only when you click "Send to patient".
+                  Follow-up reminders are then sent at T-3 days and T-24 hours based on follow-up date.
                 </p>
+                <div className="space-y-2 max-w-md">
+                  <label className="text-sm font-medium text-gray-900">
+                    Follow-up visit date (manual by doctor)
+                  </label>
+                  <Input
+                    type="date"
+                    value={postVisitFollowUpDate}
+                    onChange={(e) => setPostVisitFollowUpDate(e.target.value)}
+                    className="text-gray-900"
+                  />
+                  <p className="text-xs text-gray-500">
+                    This date is used for reminder scheduling: immediate (on send), 3 days before, and 24 hours before.
+                  </p>
+                </div>
                 <div className="space-y-2 max-w-md">
                   <label className="text-sm font-medium text-gray-900 flex items-center gap-2">
                     <Phone className="h-4 w-4 text-gray-500" />
@@ -634,22 +635,6 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             </Card>
           )}
 
-          {activeTab === 'quick-notes' && (
-            <QuickNotes
-              visitId={params.id}
-              onTasksCreated={handleTasksCreated}
-            />
-          )}
-
-          {activeTab === 'tasks' && (
-            <TaskList
-              key={taskRefreshKey}
-              patientId={visit.patient_id}
-              visitId={params.id}
-              showFilters={true}
-              maxHeight="600px"
-            />
-          )}
         </div>
       </div>
 
