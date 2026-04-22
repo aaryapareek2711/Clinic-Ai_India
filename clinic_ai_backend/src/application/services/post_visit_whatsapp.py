@@ -52,19 +52,14 @@ def send_post_visit_summary_whatsapp(*, patient: dict, whatsapp_payload: str) ->
     """
     Send the generated post-visit text (emoji summary line) on its own template channel.
 
-    Uses WHATSAPP_POST_VISIT_TEMPLATE_NAME when set; otherwise WHATSAPP_INTAKE_TEMPLATE_NAME
-    for sandbox (e.g. opening_msg). The separate follow-up ping uses the same intake template
-    (``opening_msg``) via ``send_immediate_follow_up_template_whatsapp`` — not mixed into this call.
+    Uses WHATSAPP_POST_VISIT_TEMPLATE_NAME only. If template delivery fails, falls back to
+    plain text message delivery with the generated summary payload.
     """
     settings = get_settings()
     if not (settings.whatsapp_access_token or "").strip() or not (settings.whatsapp_phone_number_id or "").strip():
         logger.info("post_visit_whatsapp_skipped reason=no_meta_credentials")
         return False
     primary_template = (settings.whatsapp_post_visit_template_name or "").strip()
-    fallback_template = (settings.whatsapp_intake_template_name or "").strip()
-    if not primary_template and not fallback_template:
-        logger.info("post_visit_whatsapp_skipped reason=no_template_configured")
-        return False
     raw_phone = str(patient.get("phone_number") or "").strip()
     to_number = IntakeChatService._normalize_phone_number(raw_phone)
     if not to_number:
@@ -94,34 +89,45 @@ def send_post_visit_summary_whatsapp(*, patient: dict, whatsapp_payload: str) ->
     candidate_templates: list[str] = []
     if primary_template:
         candidate_templates.append(primary_template)
-    if fallback_template and fallback_template not in candidate_templates:
-        candidate_templates.append(fallback_template)
 
     body_variants: list[list[str]] = [body_values]
     if body_values:
         # Some templates don't define body params; retry without params.
         body_variants.append([])
 
-    for template_name in candidate_templates:
-        for lang_code in language_codes:
-            for body_variant in body_variants:
-                try:
-                    MetaWhatsAppClient().send_template(
-                        to_number=to_number,
-                        template_name=template_name,
-                        language_code=lang_code,
-                        body_values=body_variant,
-                    )
-                    return True
-                except Exception as exc:
-                    logger.warning(
-                        "post_visit_whatsapp_failed template=%s lang=%s params=%d error=%s",
-                        template_name,
-                        lang_code,
-                        len(body_variant),
-                        exc,
-                    )
-    return False
+    if candidate_templates:
+        for template_name in candidate_templates:
+            for lang_code in language_codes:
+                for body_variant in body_variants:
+                    try:
+                        MetaWhatsAppClient().send_template(
+                            to_number=to_number,
+                            template_name=template_name,
+                            language_code=lang_code,
+                            body_values=body_variant,
+                        )
+                        return True
+                    except Exception as exc:
+                        logger.warning(
+                            "post_visit_whatsapp_failed template=%s lang=%s params=%d error=%s",
+                            template_name,
+                            lang_code,
+                            len(body_variant),
+                            exc,
+                        )
+
+    # Never fall back to intake/opening_msg template here.
+    # If post-visit template isn't configured or fails, send plain text summary directly.
+    text_payload = (whatsapp_payload or "").strip()
+    if not text_payload:
+        logger.info("post_visit_whatsapp_skipped reason=empty_summary_payload")
+        return False
+    try:
+        MetaWhatsAppClient().send_text(to_number=to_number, message=text_payload[:3500])
+        return True
+    except Exception as exc:
+        logger.warning("post_visit_whatsapp_text_fallback_failed error=%s", exc)
+        return False
 
 
 def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, preferred_language: str) -> bool:

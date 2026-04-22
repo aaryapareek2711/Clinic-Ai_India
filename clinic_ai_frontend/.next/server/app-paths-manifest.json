@@ -1,10 +1,8 @@
 {
   "/provider/dashboard/page": "app/provider/dashboard/page.js",
-  "/provider/visits/new/page": "app/provider/visits/new/page.js",
-  "/favicon.ico/route": "app/favicon.ico/route.js",
-  "/login/page": "app/login/page.js",
+  "/provider/calendar/page": "app/provider/calendar/page.js",
   "/provider/registered-patients/page": "app/provider/registered-patients/page.js",
-  "/[locale]/login/page": "app/[locale]/login/page.js",
+  "/provider/visits/[id]/page": "app/provider/visits/[id]/page.js",
   "/[locale]/provider/dashboard/page": "app/[locale]/provider/dashboard/page.js",
   "/[locale]/provider/visits/[id]/page": "app/[locale]/provider/visits/[id]/page.js",
   "/[locale]/provider/calendar/page": "app/[locale]/provider/calendar/page.js",
