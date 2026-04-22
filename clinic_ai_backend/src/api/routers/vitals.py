@@ -14,7 +14,7 @@ from src.api.schemas.vitals import (
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 
-router = APIRouter(prefix="/vitals", tags=["Workflow"])
+router = APIRouter(prefix="/api/vitals", tags=["Workflow"])
 
 
 @router.post("/lookup-patient", response_model=PatientLookupResponse)
