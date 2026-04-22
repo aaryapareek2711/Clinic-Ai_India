@@ -1,11 +1,12 @@
 """Intake chat orchestration service module."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from src.adapters.db.mongo.client import get_database
-from src.adapters.external.ai.openai_client import OpenAIQuestionClient
+from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuestionClient
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
 from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 from src.core.config import get_settings
@@ -13,6 +14,7 @@ from src.core.config import get_settings
 
 STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "bas"}
 MIN_FOLLOW_UP_QUESTIONS = 3
+logger = logging.getLogger(__name__)
 
 
 class IntakeChatService:
@@ -221,19 +223,57 @@ class IntakeChatService:
 
     def _generate_and_send_next_turn(self, session: dict) -> None:
         language = session.get("language", "en")
-        fallback_question = self._fallback_questions(language)[0]
+        fallback_topic = self._planner_fallback_topic(session)
+        planner_fallback_question = self.openai._topic_message(fallback_topic, language)
         try:
             if self._should_ask_final_question(session):
+                final_qn = int(session.get("question_number", 1) or 1)
                 self._store_and_send_question(
                     session=session,
                     message=self._final_question(language),
                     topic="final_check",
-                    question_number=int(session.get("question_number", 1) or 1),
+                    question_number=final_qn,
+                    message_source="template_fallback",
+                    fallback_reason="",
+                    selected_topic="final_check",
+                    model_topic="",
+                )
+                self._log_intake_turn(
+                    session=session,
+                    question_number=final_qn,
+                    selected_topic="final_check",
+                    model_topic="",
+                    message_source="template_fallback",
+                    llm_structure_valid=False,
+                    llm_message_valid=False,
+                    fallback_reason="",
+                    is_complete=False,
                 )
                 return
             if self._has_reached_intake_limit(session):
+                closing_qn = int(session.get("question_number", 1) or 1)
                 closing_message = self._closing_message(language, session.get("patient_name"))
-                self._complete_session(session, closing_message, "closing", int(session.get("question_number", 1) or 1))
+                self._complete_session(
+                    session,
+                    closing_message,
+                    "closing",
+                    closing_qn,
+                    message_source="template_fallback",
+                    fallback_reason="",
+                    selected_topic="closing",
+                    model_topic="",
+                )
+                self._log_intake_turn(
+                    session=session,
+                    question_number=closing_qn,
+                    selected_topic="closing",
+                    model_topic="",
+                    message_source="template_fallback",
+                    llm_structure_valid=False,
+                    llm_message_valid=False,
+                    fallback_reason="",
+                    is_complete=True,
+                )
                 return
             patient = self.db.patients.find_one({"patient_id": session.get("patient_id")}) or {}
             context = {
@@ -265,18 +305,68 @@ class IntakeChatService:
                         message=recovery["message"],
                         topic=recovery["topic"],
                         question_number=question_number,
+                        message_source="template_fallback",
+                        fallback_reason="",
+                        selected_topic=recovery["topic"],
+                        model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                    )
+                    self._log_intake_turn(
+                        session=session,
+                        question_number=question_number,
+                        selected_topic=str(recovery["topic"] or ""),
+                        model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                        message_source="template_fallback",
+                        llm_structure_valid=bool(ai_turn.get("llm_structure_valid", False)),
+                        llm_message_valid=bool(ai_turn.get("llm_message_valid", False)),
+                        fallback_reason="",
+                        is_complete=False,
                     )
                     return
                 self._store_and_send_question(
                     session=session,
-                    message=fallback_question,
+                    message=planner_fallback_question,
                     topic="clarification",
                     question_number=question_number,
+                    message_source="template_fallback",
+                    fallback_reason="topic_mismatch",
+                    selected_topic=fallback_topic,
+                    model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                )
+                self._log_intake_turn(
+                    session=session,
+                    question_number=question_number,
+                    selected_topic=fallback_topic,
+                    model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                    message_source="template_fallback",
+                    llm_structure_valid=bool(ai_turn.get("llm_structure_valid", False)),
+                    llm_message_valid=bool(ai_turn.get("llm_message_valid", False)),
+                    fallback_reason="topic_mismatch",
+                    is_complete=False,
                 )
                 return
 
             if is_complete and self._can_complete_intake(session, ai_turn):
-                self._complete_session(session, message, topic, question_number)
+                self._log_intake_turn(
+                    session=session,
+                    question_number=question_number,
+                    selected_topic=str(ai_turn.get("last_selected_topic", topic) or topic),
+                    model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                    message_source=str(ai_turn.get("last_message_source", "template_fallback") or "template_fallback"),
+                    llm_structure_valid=bool(ai_turn.get("llm_structure_valid", False)),
+                    llm_message_valid=bool(ai_turn.get("llm_message_valid", False)),
+                    fallback_reason=str(ai_turn.get("last_fallback_reason", "") or ""),
+                    is_complete=True,
+                )
+                self._complete_session(
+                    session,
+                    message,
+                    topic,
+                    question_number,
+                    message_source=str(ai_turn.get("last_message_source", "template_fallback") or "template_fallback"),
+                    fallback_reason=str(ai_turn.get("last_fallback_reason", "") or ""),
+                    selected_topic=str(ai_turn.get("last_selected_topic", topic) or topic),
+                    model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                )
                 return
 
             if is_complete:
@@ -287,6 +377,21 @@ class IntakeChatService:
                         message=recovery["message"],
                         topic=recovery["topic"],
                         question_number=question_number,
+                        message_source="template_fallback",
+                        fallback_reason="",
+                        selected_topic=recovery["topic"],
+                        model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                    )
+                    self._log_intake_turn(
+                        session=session,
+                        question_number=question_number,
+                        selected_topic=str(recovery["topic"] or ""),
+                        model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                        message_source="template_fallback",
+                        llm_structure_valid=bool(ai_turn.get("llm_structure_valid", False)),
+                        llm_message_valid=bool(ai_turn.get("llm_message_valid", False)),
+                        fallback_reason="",
+                        is_complete=False,
                     )
                     return
 
@@ -295,10 +400,29 @@ class IntakeChatService:
                 message=message,
                 topic=topic,
                 question_number=question_number,
+                message_source=str(ai_turn.get("last_message_source", "template_fallback") or "template_fallback"),
+                fallback_reason=str(ai_turn.get("last_fallback_reason", "") or ""),
+                selected_topic=str(ai_turn.get("last_selected_topic", topic) or topic),
+                model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+            )
+            self._log_intake_turn(
+                session=session,
+                question_number=question_number,
+                selected_topic=str(ai_turn.get("last_selected_topic", topic) or topic),
+                model_topic=str(ai_turn.get("last_model_topic", "") or ""),
+                message_source=str(ai_turn.get("last_message_source", "template_fallback") or "template_fallback"),
+                llm_structure_valid=bool(ai_turn.get("llm_structure_valid", False)),
+                llm_message_valid=bool(ai_turn.get("llm_message_valid", False)),
+                fallback_reason=str(ai_turn.get("last_fallback_reason", "") or ""),
+                is_complete=bool(is_complete),
             )
             return
+        except IntakeTurnError as exc:
+            fallback_reason = exc.reason_code
+            model_topic = exc.model_topic
         except Exception:
-            pass
+            fallback_reason = "unknown_exception"
+            model_topic = ""
 
         # Safe fallback if model call/parsing fails.
         self.db.intake_sessions.update_one(
@@ -306,16 +430,42 @@ class IntakeChatService:
             {
                 "$set": {
                     "status": "in_progress",
-                    "pending_question": fallback_question,
-                    "pending_topic": "associated_symptoms",
+                    "pending_question": planner_fallback_question,
+                    "pending_topic": fallback_topic,
                     "last_outbound_at": datetime.now(timezone.utc).isoformat(),
+                    "last_message_source": "global_fallback",
+                    "last_fallback_reason": fallback_reason,
+                    "last_selected_topic": fallback_topic,
+                    "last_model_topic": model_topic,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
         )
-        self.whatsapp.send_text(session["to_number"], fallback_question)
+        self.whatsapp.send_text(session["to_number"], planner_fallback_question)
+        self._log_intake_turn(
+            session=session,
+            question_number=int(session.get("question_number", 1) or 1),
+            selected_topic=fallback_topic,
+            model_topic=model_topic,
+            message_source="global_fallback",
+            llm_structure_valid=False,
+            llm_message_valid=False,
+            fallback_reason=fallback_reason,
+            is_complete=False,
+        )
 
-    def _store_and_send_question(self, session: dict, message: str, topic: str, question_number: int) -> None:
+    def _store_and_send_question(
+        self,
+        session: dict,
+        message: str,
+        topic: str,
+        question_number: int,
+        *,
+        message_source: str,
+        fallback_reason: str,
+        selected_topic: str,
+        model_topic: str,
+    ) -> None:
         now = datetime.now(timezone.utc)
         self.db.intake_sessions.update_one(
             {"_id": session["_id"]},
@@ -326,13 +476,28 @@ class IntakeChatService:
                     "pending_topic": topic,
                     "question_number": max(question_number + 1, int(session.get("question_number", 1) or 1) + 1),
                     "last_outbound_at": now.isoformat(),
+                    "last_message_source": message_source,
+                    "last_fallback_reason": fallback_reason,
+                    "last_selected_topic": selected_topic,
+                    "last_model_topic": model_topic,
                     "updated_at": now,
                 }
             },
         )
         self.whatsapp.send_text(session["to_number"], message)
 
-    def _complete_session(self, session: dict, message: str, topic: str, question_number: int) -> None:
+    def _complete_session(
+        self,
+        session: dict,
+        message: str,
+        topic: str,
+        question_number: int,
+        *,
+        message_source: str,
+        fallback_reason: str,
+        selected_topic: str,
+        model_topic: str,
+    ) -> None:
         now = datetime.now(timezone.utc)
         self.db.intake_sessions.update_one(
             {"_id": session["_id"]},
@@ -343,12 +508,56 @@ class IntakeChatService:
                     "pending_topic": topic,
                     "question_number": question_number,
                     "last_outbound_at": now.isoformat(),
+                    "last_message_source": message_source,
+                    "last_fallback_reason": fallback_reason,
+                    "last_selected_topic": selected_topic,
+                    "last_model_topic": model_topic,
                     "updated_at": now,
                 }
             },
         )
         self.whatsapp.send_text(session["to_number"], message)
         self._auto_generate_pre_visit_summary(session)
+
+    def _planner_fallback_topic(self, session: dict) -> str:
+        context = {
+            "chief_complaint": session.get("illness", ""),
+            "gender": session.get("gender", ""),
+            "patient_age": session.get("patient_age"),
+            "previous_qa_json": session.get("answers", []),
+            "has_travelled_recently": bool(session.get("has_travelled_recently", False)),
+        }
+        guidance = self.openai._build_condition_guidance(context)
+        next_topic = self.openai._next_topic_from_plan(context=context, guidance=guidance)
+        return next_topic if next_topic != "closing" else "associated_symptoms"
+
+    @staticmethod
+    def _log_intake_turn(
+        *,
+        session: dict,
+        question_number: int,
+        selected_topic: str,
+        model_topic: str,
+        message_source: str,
+        llm_structure_valid: bool,
+        llm_message_valid: bool,
+        fallback_reason: str,
+        is_complete: bool,
+    ) -> None:
+        logger.info(
+            "intake_turn visit_id=%s session_id=%s question_number=%s selected_topic=%s model_topic=%s "
+            "message_source=%s llm_structure_valid=%s llm_message_valid=%s fallback_reason=%s is_complete=%s",
+            str(session.get("visit_id", "") or ""),
+            str(session.get("_id", "") or ""),
+            int(question_number),
+            str(selected_topic or ""),
+            str(model_topic or ""),
+            str(message_source or ""),
+            bool(llm_structure_valid),
+            bool(llm_message_valid),
+            str(fallback_reason or ""),
+            bool(is_complete),
+        )
 
     def _claim_message(self, session_id: object, message_id: str) -> bool:
         result = self.db.intake_sessions.update_one(

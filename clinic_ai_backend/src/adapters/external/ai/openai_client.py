@@ -4,12 +4,16 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib import error
 from urllib import request
 
 from src.core.config import get_settings
 
 
-ALLOWED_TOPICS = {
+# Canonical intake taxonomy.
+# Keep this list as the single source of truth for topic keys used across
+# ALLOWED_TOPICS and TOPIC_QUESTION_TEMPLATES to prevent prompt/backend drift.
+CANONICAL_INTAKE_TOPICS = (
     "reason_for_visit",
     "onset_duration",
     "severity_progression",
@@ -28,7 +32,49 @@ ALLOWED_TOPICS = {
     "menstrual_pregnancy",
     "allergies",
     "closing",
+)
+ALLOWED_TOPICS = set(CANONICAL_INTAKE_TOPICS)
+
+# Backward-compat aliases for historic prompt/model keys.
+# This allows old payloads to keep working while we migrate all producers to the
+# canonical taxonomy above.
+TOPIC_KEY_ALIASES = {
+    "onset_duration_or_trigger": "onset_duration",
+    "current_symptoms": "associated_symptoms",
+    "pain_discomfort": "pain_assessment",
+    "temporal_pattern": "severity_progression",
+    "additional_information": "closing",
+    "final_check": "closing",
 }
+INTAKE_VALIDATION_REASON_CODES = {
+    "missing_required_key",
+    "invalid_type",
+    "missing_agent_block",
+    "invalid_topic",
+}
+MESSAGE_VALIDATION_REASON_CODES = {
+    "empty_message",
+    "too_long",
+    "not_question_format",
+    "low_information_prompt",
+    "language_mismatch",
+}
+
+
+class IntakeTurnError(RuntimeError):
+    """Structured intake generation failure used by service-level fallback routing."""
+
+    def __init__(
+        self,
+        reason_code: str,
+        *,
+        model_topic: str = "",
+        selected_topic: str = "",
+    ) -> None:
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+        self.model_topic = model_topic
+        self.selected_topic = selected_topic
 
 CHRONIC_KEYWORDS = {
     "diabetes",
@@ -125,19 +171,77 @@ def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def normalize_topic_key(topic: str) -> str:
+    normalized = _normalize_text(topic).replace(" ", "_")
+    canonical = TOPIC_KEY_ALIASES.get(normalized, normalized)
+    return canonical if canonical in ALLOWED_TOPICS else ""
+
+
 def _normalize_topic_list(topics: list[str] | None) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
     for topic in topics or []:
-        if topic in ALLOWED_TOPICS and topic not in seen:
-            seen.add(topic)
-            normalized.append(topic)
+        canonical_topic = normalize_topic_key(topic)
+        if canonical_topic and canonical_topic not in seen:
+            seen.add(canonical_topic)
+            normalized.append(canonical_topic)
     return normalized
 
 
 def _normalize_question_text(value: str) -> str:
     text = _normalize_text(value)
     return re.sub(r"[^a-z0-9\u0900-\u097f\s]", "", text)
+
+
+def _is_list_of_strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def validate_intake_message_quality(message: str, *, topic: str, language: str) -> dict:
+    """Validate intake message quality in a reusable, side-effect-free way."""
+    text = str(message or "").strip()
+    if not text:
+        return {"valid": False, "reason": "empty_message"}
+    if len(text) > 180:
+        return {"valid": False, "reason": "too_long"}
+
+    normalized = _normalize_text(text)
+    is_closing = normalize_topic_key(topic) == "closing"
+    if not is_closing and not text.endswith("?"):
+        return {"valid": False, "reason": "not_question_format"}
+
+    low_value_prompts = {
+        "yes or no?",
+        "yes/no?",
+        "yes?",
+        "no?",
+        "ok?",
+        "okay?",
+        "any issue?",
+        "any problem?",
+        "koi dikkat?",
+        "haan ya na?",
+        "haan/na?",
+        "sirf haan ya na batayein?",
+    }
+    if normalized in low_value_prompts:
+        return {"valid": False, "reason": "low_information_prompt"}
+    if (normalized.startswith("yes or no") or normalized.startswith("haan ya na")) and len(normalized) <= 24:
+        return {"valid": False, "reason": "low_information_prompt"}
+
+    lang = _normalize_text(language)
+    devanagari_chars = len(re.findall(r"[\u0900-\u097f]", text))
+    latin_chars = len(re.findall(r"[a-zA-Z]", text))
+    if lang == "hi":
+        # Lightweight sanity: Hindi prompts should usually contain at least one Devanagari character.
+        if devanagari_chars == 0:
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "en":
+        # Lightweight sanity: English prompts should be mostly latin-script.
+        if latin_chars == 0 or devanagari_chars > latin_chars:
+            return {"valid": False, "reason": "language_mismatch"}
+
+    return {"valid": True, "reason": ""}
 
 
 class OpenAIQuestionClient:
@@ -166,16 +270,30 @@ class OpenAIQuestionClient:
         for placeholder, value in replacements.items():
             prompt = prompt.replace(placeholder, value)
 
-        content = self._chat_completion(
-            prompt=prompt,
-            system_role=(
-                "You are an expert clinical intake orchestration engine. "
-                "Follow the provided instructions exactly and return strict JSON only."
-            ),
-        )
-        result = json.loads(content)
+        try:
+            content = self._chat_completion(
+                prompt=prompt,
+                system_role=(
+                    "You are an expert clinical intake orchestration engine. "
+                    "Follow the provided instructions exactly and return strict JSON only."
+                ),
+            )
+        except (error.HTTPError, error.URLError, TimeoutError) as exc:
+            raise IntakeTurnError("openai_http_error") from exc
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise IntakeTurnError("json_parse_error") from exc
         if not isinstance(result, dict):
-            raise RuntimeError("Model did not return object")
+            raise IntakeTurnError("schema_invalid")
+
+        validation = self._validate_intake_turn_response(result)
+        if not validation["valid"]:
+            raise IntakeTurnError(
+                self._map_validation_reason_to_fallback_reason(validation["reason_code"]),
+                model_topic=normalize_topic_key(str(result.get("topic", "") or "")),
+            )
         return self._enforce_condition_guidance(result=result, context=context, guidance=guidance)
 
     def generate_pre_visit_summary(self, language: str, intake_answers: list[dict]) -> dict:
@@ -278,6 +396,155 @@ class OpenAIQuestionClient:
             body = json.loads(resp.read().decode("utf-8"))
         return body["choices"][0]["message"]["content"]
 
+    @staticmethod
+    def _validation_error(reason_code: str, field: str) -> dict:
+        return {"valid": False, "reason_code": reason_code, "field": field}
+
+    @staticmethod
+    def _map_validation_reason_to_fallback_reason(reason_code: str) -> str:
+        if reason_code == "missing_agent_block":
+            return "agent_blocks_missing"
+        if reason_code in MESSAGE_VALIDATION_REASON_CODES:
+            return "message_invalid"
+        return "schema_invalid"
+
+    @classmethod
+    def _normalize_topic_list_strict(cls, topics: list[str], field: str) -> dict:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for topic in topics:
+            canonical_topic = normalize_topic_key(topic)
+            if not canonical_topic:
+                return cls._validation_error("invalid_topic", field)
+            if canonical_topic not in seen:
+                seen.add(canonical_topic)
+                normalized.append(canonical_topic)
+        return {"valid": True, "reason_code": "", "field": field, "value": normalized}
+
+    @classmethod
+    def _validate_intake_turn_response(cls, result: dict) -> dict:
+        required_top_level = ("agent1", "agent2", "agent4", "message", "topic", "is_complete")
+        for key in required_top_level:
+            if key not in result:
+                reason = "missing_agent_block" if key in {"agent1", "agent2", "agent4"} else "missing_required_key"
+                return cls._validation_error(reason, key)
+
+        for agent_key in ("agent1", "agent2", "agent4"):
+            if not isinstance(result.get(agent_key), dict):
+                return cls._validation_error("missing_agent_block", agent_key)
+
+        if not isinstance(result.get("message"), str):
+            return cls._validation_error("invalid_type", "message")
+        if not isinstance(result.get("is_complete"), bool):
+            return cls._validation_error("invalid_type", "is_complete")
+        if "question_number" in result and not isinstance(result.get("question_number"), int):
+            return cls._validation_error("invalid_type", "question_number")
+
+        agent1 = result["agent1"]
+        agent2 = result["agent2"]
+        agent4 = result["agent4"]
+
+        for key in ("condition_category", "priority_topics"):
+            if key not in agent1:
+                return cls._validation_error("missing_required_key", f"agent1.{key}")
+        for key in ("topics_covered", "information_gaps"):
+            if key not in agent2:
+                return cls._validation_error("missing_required_key", f"agent2.{key}")
+        for key in ("next_topic", "stop_intake", "reason"):
+            if key not in agent4:
+                return cls._validation_error("missing_required_key", f"agent4.{key}")
+
+        if not isinstance(agent1.get("condition_category"), str):
+            return cls._validation_error("invalid_type", "agent1.condition_category")
+        if not _is_list_of_strings(agent1.get("priority_topics")):
+            return cls._validation_error("invalid_type", "agent1.priority_topics")
+        if not _is_list_of_strings(agent2.get("topics_covered")):
+            return cls._validation_error("invalid_type", "agent2.topics_covered")
+        if not _is_list_of_strings(agent2.get("information_gaps")):
+            return cls._validation_error("invalid_type", "agent2.information_gaps")
+        if not isinstance(agent4.get("next_topic"), str):
+            return cls._validation_error("invalid_type", "agent4.next_topic")
+        if not isinstance(agent4.get("stop_intake"), bool):
+            return cls._validation_error("invalid_type", "agent4.stop_intake")
+        if not isinstance(agent4.get("reason"), str):
+            return cls._validation_error("invalid_type", "agent4.reason")
+        if not isinstance(result.get("topic"), str):
+            return cls._validation_error("invalid_type", "topic")
+
+        normalized_topic = normalize_topic_key(result["topic"])
+        if not normalized_topic:
+            return cls._validation_error("invalid_topic", "topic")
+        result["topic"] = normalized_topic
+
+        normalized_next_topic = normalize_topic_key(agent4["next_topic"])
+        if not normalized_next_topic:
+            return cls._validation_error("invalid_topic", "agent4.next_topic")
+        agent4["next_topic"] = normalized_next_topic
+
+        normalized_priority = cls._normalize_topic_list_strict(agent1["priority_topics"], "agent1.priority_topics")
+        if not normalized_priority["valid"]:
+            return normalized_priority
+        agent1["priority_topics"] = normalized_priority["value"]
+
+        normalized_covered = cls._normalize_topic_list_strict(agent2["topics_covered"], "agent2.topics_covered")
+        if not normalized_covered["valid"]:
+            return normalized_covered
+        agent2["topics_covered"] = normalized_covered["value"]
+
+        normalized_gaps = cls._normalize_topic_list_strict(agent2["information_gaps"], "agent2.information_gaps")
+        if not normalized_gaps["valid"]:
+            return normalized_gaps
+        agent2["information_gaps"] = normalized_gaps["value"]
+
+        return {"valid": True, "reason_code": "", "field": ""}
+
+    @classmethod
+    def _select_intake_message(
+        cls,
+        *,
+        llm_message: str,
+        llm_topic: str,
+        enforced_topic: str,
+        language: str,
+        allow_llm_message: bool,
+    ) -> dict:
+        # Closing stays deterministic and backend-safe regardless of feature flags.
+        if enforced_topic == "closing":
+            return {
+                "message": cls._topic_message("closing", language),
+                "source": "template_fallback",
+                "fallback_reason": "",
+                "llm_message_valid": False,
+            }
+
+        fallback_message = cls._topic_message(enforced_topic, language)
+        if not allow_llm_message:
+            return {
+                "message": fallback_message,
+                "source": "template_fallback",
+                "fallback_reason": "",
+                "llm_message_valid": False,
+            }
+
+        # If backend changed the topic, do not trust the LLM phrasing for a possibly different intent.
+        if normalize_topic_key(llm_topic) != enforced_topic:
+            return {
+                "message": fallback_message,
+                "source": "template_fallback",
+                "fallback_reason": "topic_mismatch",
+                "llm_message_valid": False,
+            }
+
+        message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
+        if not message_validation["valid"]:
+            return {
+                "message": fallback_message,
+                "source": "template_fallback",
+                "fallback_reason": "message_invalid",
+                "llm_message_valid": False,
+            }
+        return {"message": llm_message, "source": "llm", "fallback_reason": "", "llm_message_valid": True}
+
     @classmethod
     def _build_condition_guidance(cls, context: dict) -> dict:
         complaint = _normalize_text(context.get("chief_complaint", ""))
@@ -355,15 +622,15 @@ class OpenAIQuestionClient:
         covered: list[str] = []
         for qa in context.get("previous_qa_json", []) or []:
             topic = cls._infer_topic_from_qa(qa)
-            if topic in ALLOWED_TOPICS and topic not in covered:
+            if topic and topic not in covered:
                 covered.append(topic)
         return covered
 
     @classmethod
     def _infer_topic_from_qa(cls, qa: dict | None) -> str:
         item = qa or {}
-        explicit_topic = str(item.get("topic", "") or "").strip()
-        if explicit_topic in ALLOWED_TOPICS:
+        explicit_topic = normalize_topic_key(str(item.get("topic", "") or ""))
+        if explicit_topic:
             return explicit_topic
 
         question = str(item.get("question", "") or "")
@@ -376,7 +643,7 @@ class OpenAIQuestionClient:
                 if topic == "closing":
                     continue
                 if _normalize_question_text(template) == normalized_question:
-                    return topic
+                    return normalize_topic_key(topic)
 
         keyword_map = {
             "reason_for_visit": ["main health issue", "health problem", "concern brings you", "मुख्य स्वास्थ्य समस्या"],
@@ -399,7 +666,7 @@ class OpenAIQuestionClient:
         }
         for topic, phrases in keyword_map.items():
             if any(phrase in normalized_question for phrase in phrases):
-                return topic
+                return normalize_topic_key(topic)
         return ""
 
     @classmethod
@@ -418,9 +685,14 @@ class OpenAIQuestionClient:
 
     @classmethod
     def _enforce_condition_guidance(cls, result: dict, context: dict, guidance: dict) -> dict:
+        settings = get_settings()
+        allow_llm_message = settings.intake_use_llm_message
+        language = str(context.get("language", "en") or "en")
         agent1 = result.get("agent1") if isinstance(result.get("agent1"), dict) else {}
         agent2 = result.get("agent2") if isinstance(result.get("agent2"), dict) else {}
         agent4 = result.get("agent4") if isinstance(result.get("agent4"), dict) else {}
+        llm_topic = normalize_topic_key(str(result.get("topic", "") or ""))
+        llm_message = str(result.get("message", "") or "").strip()
 
         enforced_next_topic = cls._next_topic_from_plan(context=context, guidance=guidance)
         if result.get("is_complete"):
@@ -459,10 +731,19 @@ class OpenAIQuestionClient:
         result["is_complete"] = is_complete
         if not isinstance(result.get("question_number"), int):
             result["question_number"] = int(context.get("question_number", 1) or 1)
-
-        if enforced_next_topic == "closing":
-            result["message"] = result.get("message") or cls._topic_message("closing", context.get("language", "en"))
-        else:
-            result["message"] = cls._topic_message(enforced_next_topic, context.get("language", "en"))
+        message_selection = cls._select_intake_message(
+            llm_message=llm_message,
+            llm_topic=llm_topic,
+            enforced_topic=enforced_next_topic,
+            language=language,
+            allow_llm_message=allow_llm_message,
+        )
+        result["message"] = message_selection["message"]
+        result["last_message_source"] = message_selection["source"]
+        result["last_fallback_reason"] = message_selection["fallback_reason"]
+        result["last_selected_topic"] = enforced_next_topic
+        result["last_model_topic"] = llm_topic
+        result["llm_structure_valid"] = True
+        result["llm_message_valid"] = bool(message_selection["llm_message_valid"])
 
         return result

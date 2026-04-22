@@ -28,6 +28,9 @@ class Settings:
     whatsapp_intake_template_lang_en: str = os.getenv("WHATSAPP_INTAKE_TEMPLATE_LANG_EN", "en_US")
     whatsapp_intake_template_lang_hi: str = os.getenv("WHATSAPP_INTAKE_TEMPLATE_LANG_HI", "hi")
     whatsapp_intake_template_param_count: int = int(os.getenv("WHATSAPP_INTAKE_TEMPLATE_PARAM_COUNT", "1"))
+    intake_use_llm_message: bool = os.getenv("INTAKE_USE_LLM_MESSAGE", "true").lower() == "true"
+    intake_require_all_agents: bool = os.getenv("INTAKE_REQUIRE_ALL_AGENTS", "true").lower() == "true"
+    intake_strict_validation: bool = os.getenv("INTAKE_STRICT_VALIDATION", "true").lower() == "true"
     # Follow-up reminders (post-visit next visit). Defaults to dedicated Meta template `follow_up_1`.
     whatsapp_followup_template_name: str = os.getenv("WHATSAPP_FOLLOWUP_TEMPLATE_NAME", "follow_up_1")
     whatsapp_followup_template_lang_en: str = os.getenv(

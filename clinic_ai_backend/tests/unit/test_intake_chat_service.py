@@ -1,4 +1,5 @@
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
+from src.adapters.external.ai.openai_client import IntakeTurnError
 from src.application.services.intake_chat_service import IntakeChatService
 
 
@@ -113,3 +114,66 @@ def test_should_not_reask_final_question_if_already_present() -> None:
     }
 
     assert service._should_ask_final_question(session) is False
+
+
+class _FakeCollection:
+    def __init__(self) -> None:
+        self.last_update = None
+        self.record = None
+
+    def find_one(self, *_args, **_kwargs):  # noqa: ANN001
+        return self.record or {}
+
+    def update_one(self, query, payload):  # noqa: ANN001
+        self.last_update = (query, payload)
+
+
+class _FakeWhatsApp:
+    def __init__(self) -> None:
+        self.sent = []
+
+    def send_text(self, to_number: str, message: str) -> None:
+        self.sent.append((to_number, message))
+
+
+def test_generate_next_turn_exception_uses_global_fallback_metadata() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    service._planner_fallback_topic = lambda _session: "associated_symptoms"
+
+    class _FailingOpenAI:
+        @staticmethod
+        def _topic_message(_topic: str, _language: str) -> str:
+            return "What other symptoms have you noticed?"
+
+        @staticmethod
+        def generate_intake_turn(_context: dict) -> dict:
+            raise IntakeTurnError("json_parse_error")
+
+    service.openai = _FailingOpenAI()
+
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.patients = _FakeCollection()
+    fake_db.patients.record = {"name": "Patient", "age": 30, "gender": "female", "travelled_recently": False}
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+
+    session = {
+        "_id": "session-1",
+        "visit_id": "visit-1",
+        "to_number": "9999999999",
+        "patient_id": "p1",
+        "language": "en",
+        "question_number": 2,
+        "max_questions": 8,
+        "answers": [{"question": "illness", "answer": "fever"}],
+        "illness": "fever",
+    }
+
+    service._generate_and_send_next_turn(session)
+
+    update_payload = fake_db.intake_sessions.last_update[1]["$set"]
+    assert update_payload["last_message_source"] == "global_fallback"
+    assert update_payload["last_fallback_reason"] == "json_parse_error"
+    assert update_payload["last_selected_topic"] == "associated_symptoms"
+    assert service.whatsapp.sent

@@ -38,6 +38,41 @@ make dev
 | WHATSAPP_INTAKE_TEMPLATE_LANG_EN | No | English template locale code | en_US |
 | WHATSAPP_INTAKE_TEMPLATE_LANG_HI | No | Hindi template locale code | hi |
 | WHATSAPP_INTAKE_TEMPLATE_PARAM_COUNT | No | Number of body params in template | 1 |
+| INTAKE_USE_LLM_MESSAGE | No | Intake flag for LLM-based message generation (default false) | false |
+| INTAKE_REQUIRE_ALL_AGENTS | No | Intake flag requiring all intake agents to be present (default true) | true |
+| INTAKE_STRICT_VALIDATION | No | Intake flag for strict intake validation checks (default true) | true |
+
+## Intake Rollout Guidance (Safe Defaults)
+- Keep existing deployments safe by explicitly setting:
+  - `INTAKE_USE_LLM_MESSAGE=false`
+  - `INTAKE_REQUIRE_ALL_AGENTS=true`
+  - `INTAKE_STRICT_VALIDATION=true`
+- This keeps deterministic template fallback behavior active while still collecting validation/fallback telemetry.
+
+### Phase 1: Log-Only Validation (No LLM Message Delivery)
+- `INTAKE_USE_LLM_MESSAGE=false`
+- `INTAKE_REQUIRE_ALL_AGENTS=true`
+- `INTAKE_STRICT_VALIDATION=true`
+- Goal: validate structure/message quality and reason-code telemetry without changing patient-facing question source.
+
+### Phase 2: Staging Enablement
+- `INTAKE_USE_LLM_MESSAGE=true`
+- `INTAKE_REQUIRE_ALL_AGENTS=true`
+- `INTAKE_STRICT_VALIDATION=true`
+- Goal: verify that LLM messages pass validation and that template fallback remains safe under staging traffic.
+
+### Phase 3: Production Gradual Enable
+- Start canary with:
+  - `INTAKE_USE_LLM_MESSAGE=true`
+  - `INTAKE_REQUIRE_ALL_AGENTS=true`
+  - `INTAKE_STRICT_VALIDATION=true`
+- Gradually increase rollout only if monitoring remains healthy; immediately rollback to `INTAKE_USE_LLM_MESSAGE=false` on regressions.
+
+### Monitoring Checklist
+- Fallback rate: track share of turns where `last_message_source != llm`.
+- Repeated topic rate: track repeated-topic recovery/fallback occurrences.
+- Completion rate: track intake sessions reaching normal completion.
+- Error reason distribution: monitor `last_fallback_reason` (for example `openai_http_error`, `json_parse_error`, `schema_invalid`, `message_invalid`, `topic_mismatch`, `unknown_exception`).
 
 ## Doctor transcription (upload → poll → dialogue)
 - **Queue**: MongoDB collection `transcription_queue` (FIFO), or an in-process `asyncio` queue when `USE_LOCAL_ADAPTERS=true`. **Not** Azure Storage Queue.

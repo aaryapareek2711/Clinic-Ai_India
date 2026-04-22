@@ -1,4 +1,9 @@
-from src.adapters.external.ai.openai_client import OpenAIQuestionClient
+import json
+
+import pytest
+
+from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuestionClient, validate_intake_message_quality
+from src.core.config import get_settings
 
 
 def test_uses_universal_hardcoded_sequence_for_first_topic() -> None:
@@ -138,3 +143,163 @@ def test_merges_model_covered_topics_with_history_topics() -> None:
 
     assert result["agent2"]["topics_covered"] == ["associated_symptoms", "onset_duration"]
     assert result["topic"] == "associated_symptoms"
+
+
+def test_select_intake_message_uses_llm_when_flag_enabled_and_valid() -> None:
+    settings = get_settings()
+    settings.intake_use_llm_message = True
+
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="Can you describe all symptoms you noticed with this issue?",
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=settings.intake_use_llm_message,
+    )
+
+    assert selection["message"] == "Can you describe all symptoms you noticed with this issue?"
+    assert selection["source"] == "llm"
+    assert selection["fallback_reason"] == ""
+
+
+def test_select_intake_message_falls_back_when_topic_changes() -> None:
+    settings = get_settings()
+    settings.intake_use_llm_message = True
+
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="When did this start for you?",
+        llm_topic="onset_duration",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=settings.intake_use_llm_message,
+    )
+
+    assert selection["message"] == OpenAIQuestionClient._topic_message("associated_symptoms", "en")
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "topic_mismatch"
+
+
+def test_select_intake_message_falls_back_when_flag_disabled() -> None:
+    settings = get_settings()
+    settings.intake_use_llm_message = False
+
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="Can you describe all symptoms you noticed with this issue?",
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=settings.intake_use_llm_message,
+    )
+
+    assert selection["message"] == OpenAIQuestionClient._topic_message("associated_symptoms", "en")
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == ""
+
+
+def test_generate_intake_turn_raises_for_missing_agent_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = OpenAIQuestionClient()
+    payload = {
+        "agent1": {"condition_category": "general_other", "priority_topics": ["onset_duration"]},
+        "agent2": {"topics_covered": [], "information_gaps": ["onset_duration"]},
+        "message": "When did this problem first start?",
+        "topic": "onset_duration",
+        "is_complete": False,
+    }
+    monkeypatch.setattr(client, "_chat_completion", lambda **_: json.dumps(payload))
+
+    with pytest.raises(IntakeTurnError) as exc_info:
+        client.generate_intake_turn(
+            {
+                "chief_complaint": "fever",
+                "language": "en",
+                "question_number": 2,
+                "previous_qa_json": [{"question": "illness", "answer": "fever"}],
+            }
+        )
+
+    assert exc_info.value.reason_code == "agent_blocks_missing"
+
+
+def test_generate_intake_turn_uses_template_fallback_for_invalid_message_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    settings.intake_use_llm_message = True
+    client = OpenAIQuestionClient()
+    payload = {
+        "agent1": {"condition_category": "general_other", "priority_topics": ["associated_symptoms"]},
+        "agent2": {"topics_covered": ["onset_duration"], "information_gaps": ["associated_symptoms"]},
+        "agent4": {"next_topic": "associated_symptoms", "stop_intake": False, "reason": "Continue"},
+        "message": "Tell me symptoms now",
+        "topic": "associated_symptoms",
+        "is_complete": False,
+    }
+    monkeypatch.setattr(client, "_chat_completion", lambda **_: json.dumps(payload))
+
+    result = client.generate_intake_turn(
+        {
+            "chief_complaint": "fever",
+            "language": "en",
+            "question_number": 3,
+            "previous_qa_json": [
+                {"question": "illness", "answer": "fever"},
+                {"question": "When did this problem first start?", "answer": "2 days", "topic": "onset_duration"},
+            ],
+        }
+    )
+
+    assert result["last_message_source"] == "template_fallback"
+    assert result["last_fallback_reason"] == "message_invalid"
+
+
+def test_generate_intake_turn_normalizes_topic_alias_to_canonical(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    settings.intake_use_llm_message = True
+    client = OpenAIQuestionClient()
+    payload = {
+        "agent1": {"condition_category": "general_other", "priority_topics": ["current_symptoms"]},
+        "agent2": {"topics_covered": ["onset_duration"], "information_gaps": ["current_symptoms"]},
+        "agent4": {"next_topic": "current_symptoms", "stop_intake": False, "reason": "Continue"},
+        "message": "What other symptoms are you noticing right now?",
+        "topic": "current_symptoms",
+        "is_complete": False,
+    }
+    monkeypatch.setattr(client, "_chat_completion", lambda **_: json.dumps(payload))
+
+    result = client.generate_intake_turn(
+        {
+            "chief_complaint": "fever",
+            "language": "en",
+            "question_number": 3,
+            "previous_qa_json": [
+                {"question": "illness", "answer": "fever"},
+                {"question": "When did this problem first start?", "answer": "2 days", "topic": "onset_duration"},
+            ],
+        }
+    )
+
+    assert result["last_model_topic"] == "associated_symptoms"
+    assert result["topic"] == "associated_symptoms"
+
+
+def test_select_intake_message_keeps_closing_deterministic() -> None:
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="Anything from model",
+        llm_topic="closing",
+        enforced_topic="closing",
+        language="en",
+        allow_llm_message=True,
+    )
+
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == ""
+    assert "thank you" in selection["message"].lower()
+
+
+def test_hindi_message_sanity_check_rejects_non_devanagari() -> None:
+    validation = validate_intake_message_quality(
+        "What symptoms are you feeling?",
+        topic="associated_symptoms",
+        language="hi",
+    )
+
+    assert validation["valid"] is False
+    assert validation["reason"] == "language_mismatch"
