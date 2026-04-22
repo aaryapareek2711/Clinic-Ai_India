@@ -74,8 +74,9 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
     if not (settings.whatsapp_access_token or "").strip() or not (settings.whatsapp_phone_number_id or "").strip():
         logger.info("follow_up_immediate_whatsapp_skipped reason=no_meta_credentials")
         return False
-    template = resolve_follow_up_template_name(settings)
-    if not template:
+    primary_template = resolve_follow_up_template_name(settings)
+    fallback_template = (settings.whatsapp_intake_template_name or "").strip()
+    if not primary_template and not fallback_template:
         logger.info("follow_up_immediate_whatsapp_skipped reason=no_template_configured")
         return False
     raw_phone = str(patient.get("phone_number") or "").strip()
@@ -98,14 +99,25 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
             body_values = [default_follow_up_body_line("immediate", nv, synthetic)]
     else:
         body_values = [f"Your visit summary is ready. {follow_up_text}".strip()[:900]] if param_count > 0 else []
-    try:
-        MetaWhatsAppClient().send_template(
-            to_number=to_number,
-            template_name=template,
-            language_code=language_code,
-            body_values=body_values[:param_count] if param_count else body_values,
-        )
-        return True
-    except Exception as exc:
-        logger.warning("follow_up_immediate_whatsapp_failed error=%s", exc)
-        return False
+    candidate_templates: list[str] = []
+    if primary_template:
+        candidate_templates.append(primary_template)
+    if fallback_template and fallback_template not in candidate_templates:
+        candidate_templates.append(fallback_template)
+
+    for template_name in candidate_templates:
+        try:
+            MetaWhatsAppClient().send_template(
+                to_number=to_number,
+                template_name=template_name,
+                language_code=language_code,
+                body_values=body_values[:param_count] if param_count else body_values,
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "follow_up_immediate_whatsapp_failed template=%s error=%s",
+                template_name,
+                exc,
+            )
+    return False

@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Sparkles, Loader2, Save, Edit3, X, FileText, Bookmark } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
+import TemplateBrowserModal from '@/components/templates/TemplateBrowserModal';
 import SaveTemplateModal from '@/components/templates/SaveTemplateModal';
 import RecordingControls from './RecordingControls';
-import type { PatientData } from '@/lib/utils/templatePopulation';
+import { populateTemplate, type PatientData } from '@/lib/utils/templatePopulation';
+import type { SOAPTemplate } from '@/lib/types/templates';
 
 interface SOAPNotes {
   doctor_notes: string;
@@ -60,8 +62,10 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [refinementInstructions, setRefinementInstructions] = useState('');
   const [isRefining, setIsRefining] = useState(false);
-  const [isInsertingTemplate, setIsInsertingTemplate] = useState(false);
+  const [isLoadingClinicalTemplate, setIsLoadingClinicalTemplate] = useState(false);
+  const [showTemplateBrowser, setShowTemplateBrowser] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templates, setTemplates] = useState<SOAPTemplate[]>([]);
   const [currentTranscriptId, setCurrentTranscriptId] = useState<string | undefined>(transcriptId);
   const [hasRecording, setHasRecording] = useState(false);
   const localDraftKey = `soap_notes_draft_${visitId}`;
@@ -106,6 +110,47 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
       // Ignore malformed local draft and continue with provided notes.
     }
   }, [localDraftKey]);
+
+  useEffect(() => {
+    if (!showTemplateBrowser) return;
+    if (templates.length > 0) return;
+    const loadTemplates = async () => {
+      try {
+        const response = await apiClient.listTemplates({ page_size: 100 });
+        const formattedTemplates: SOAPTemplate[] = (response?.items || []).map((item: any) => ({
+          id: String(item.id),
+          name: String(item.name || 'Template'),
+          description: String(item.description || ''),
+          type: (item.type || 'personal') as 'personal' | 'practice' | 'community',
+          content: {
+            subjective: String(item?.content?.subjective || ''),
+            objective: String(item?.content?.objective || ''),
+            assessment: String(item?.content?.assessment || ''),
+            plan: String(item?.content?.plan || ''),
+          },
+          metadata: {
+            category: item.category || 'General',
+            specialty: item.specialty || '',
+            appointmentTypes: Array.isArray(item.appointment_types) ? item.appointment_types : [],
+            tags: Array.isArray(item.tags) ? item.tags : [],
+            version: String(item.version || '1.0'),
+            authorId: String(item.author_id || 'unknown'),
+            authorName: String(item.author_name || 'Unknown'),
+            createdAt: String(item.created_at || ''),
+            updatedAt: String(item.updated_at || ''),
+            usageCount: Number(item.usage_count || 0),
+            lastUsed: item.last_used ? String(item.last_used) : undefined,
+            isFavorite: Boolean(item.is_favorite),
+          },
+        }));
+        setTemplates(formattedTemplates);
+      } catch (error: any) {
+        console.error('Error loading templates:', error);
+        toast.error(error?.response?.data?.detail || 'Failed to load templates');
+      }
+    };
+    loadTemplates();
+  }, [showTemplateBrowser, templates.length]);
 
   const handleTranscriptionComplete = (transcriptionId: string) => {
     setCurrentTranscriptId(transcriptionId);
@@ -220,8 +265,8 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
     }
   };
 
-  const handleInsertTemplate = async () => {
-    setIsInsertingTemplate(true);
+  const handleInsertClinicalTemplate = async () => {
+    setIsLoadingClinicalTemplate(true);
     try {
       const template = await apiClient.getClinicalNoteTemplate({
         doctor_type: 'Allopathic',
@@ -267,8 +312,25 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
       console.error('Error loading clinical note template:', error);
       toast.error(error?.response?.data?.detail || 'Failed to load clinical note template');
     } finally {
-      setIsInsertingTemplate(false);
+      setIsLoadingClinicalTemplate(false);
     }
+  };
+
+  const handleInsertTemplateFromLibrary = async (template: SOAPTemplate) => {
+    const populated = populateTemplate(template, patientData || {});
+    setSOAPNotes((prev) => ({
+      ...prev,
+      doctor_notes: prev.doctor_notes + (prev.doctor_notes ? '\n\n' : '') + populated.subjective,
+      assessment: prev.assessment + (prev.assessment ? '\n\n' : '') + populated.assessment,
+      plan: prev.plan + (prev.plan ? '\n\n' : '') + populated.plan,
+    }));
+    setShowTemplateBrowser(false);
+    try {
+      await apiClient.recordTemplateUsage(template.id, visitId, patientId);
+    } catch (error) {
+      console.error('Error recording template usage:', error);
+    }
+    toast.success(`Template "${template.name}" inserted`);
   };
 
   const handleSaveAsTemplate = () => {
@@ -410,20 +472,30 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
               {/* Secondary Actions */}
               <div className="flex gap-2 flex-wrap ml-auto">
                 <Button
-                  onClick={handleInsertTemplate}
+                  onClick={() => setShowTemplateBrowser(true)}
                   variant="outline"
                   size="sm"
-                  disabled={isInsertingTemplate}
                 >
-                  {isInsertingTemplate ? (
+                  <>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Insert Template
+                  </>
+                </Button>
+                <Button
+                  onClick={handleInsertClinicalTemplate}
+                  variant="outline"
+                  size="sm"
+                  disabled={isLoadingClinicalTemplate}
+                >
+                  {isLoadingClinicalTemplate ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Inserting...
                     </>
                   ) : (
                     <>
-                      <FileText className="mr-2 h-4 w-4" />
-                      Insert Template
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Insert Clinical Template
                     </>
                   )}
                 </Button>
@@ -567,6 +639,16 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
             </ul>
           </CardContent>
         </Card>
+      )}
+
+      {/* Template Browser Modal */}
+      {showTemplateBrowser && (
+        <TemplateBrowserModal
+          templates={templates}
+          onClose={() => setShowTemplateBrowser(false)}
+          onSelectTemplate={handleInsertTemplateFromLibrary}
+          activeTab="personal"
+        />
       )}
 
       {/* Save Template Modal */}
