@@ -27,7 +27,6 @@ export default function VitalsFormPanel({ patientId, visitId }: VitalsFormPanelP
   const [fields, setFields] = useState<VitalsField[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [values, setValues] = useState<Record<string, string>>({});
-  const [staffName, setStaffName] = useState('Provider');
 
   useEffect(() => {
     const load = async () => {
@@ -81,18 +80,13 @@ export default function VitalsFormPanel({ patientId, visitId }: VitalsFormPanelP
       return;
     }
 
-    if (!staffName.trim()) {
-      toast.error('Please enter staff/provider name');
-      return;
-    }
-
     setSaving(true);
     try {
       await apiClient.submitVitals({
         patient_id: patientId,
         visit_id: visitId,
         form_id: formId || undefined,
-        staff_name: staffName.trim(),
+        staff_name: 'Provider',
         values: payloadValues,
       });
       toast.success('Vitals saved successfully');
@@ -114,11 +108,6 @@ export default function VitalsFormPanel({ patientId, visitId }: VitalsFormPanelP
         <CardTitle>Vitals Form</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="max-w-md">
-          <label className="mb-1 block text-sm font-medium text-gray-700">Staff / Provider Name</label>
-          <Input value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Enter your name" />
-        </div>
-
         <div className="space-y-2">
           {fields.map((field) => (
             <div key={field.key} className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 items-center border rounded-lg p-3">

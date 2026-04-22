@@ -38,26 +38,39 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
     db = get_database()
     now = datetime.now(timezone.utc)
     records = list(
-        db.visits.find({"provider_id": provider_id, "status": {"$ne": "cancelled"}}, {"_id": 0}).sort("scheduled_start", 1)
+        db.visits.find(
+            {
+                "status": {"$ne": "cancelled"},
+                "$or": [
+                    {"provider_id": provider_id},
+                    {"provider_id": None},
+                    {"provider_id": {"$exists": False}},
+                ],
+            },
+            {"_id": 0},
+        ).sort("scheduled_start", 1)
     )
 
     appointments: list[dict] = []
     for visit in records:
         patient_id = str(visit.get("patient_id") or "")
+        resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
+        if not resolved_visit_id:
+            continue
         patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0}) or {}
         patient_name = (patient.get("name") or "").strip() or "Unknown Patient"
         scheduled_start = visit.get("scheduled_start")
-        chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, str(visit.get("visit_id") or ""))
+        chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
         appointments.append(
             {
-                "appointment_id": str(visit.get("visit_id") or ""),
+                "appointment_id": resolved_visit_id,
                 "patient_id": encode_patient_id(patient_id) if patient_id else "",
                 "patient_name": patient_name,
                 "scheduled_start": scheduled_start,
                 "chief_complaint": chief_complaint or "Visit",
                 "appointment_type": visit.get("visit_type") or "visit",
                 "previsit_completed": False,
-                "visit_id": str(visit.get("visit_id") or ""),
+                "visit_id": resolved_visit_id,
             }
         )
 
@@ -68,10 +81,19 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
 def get_visit(visit_id: str) -> dict:
     """Return visit details for visit workflow page."""
     db = get_database()
-    visit = db.visits.find_one({"visit_id": visit_id}, {"_id": 0})
+    visit = db.visits.find_one(
+        {
+            "$or": [
+                {"visit_id": visit_id},
+                {"id": visit_id},
+            ]
+        },
+        {"_id": 0},
+    )
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
 
+    resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
     patient_id = str(visit.get("patient_id") or "")
     patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0}) or {}
     full_name = (patient.get("name") or "").strip()
@@ -81,9 +103,9 @@ def get_visit(visit_id: str) -> dict:
     age = patient.get("age")
     year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
 
-    resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, visit_id)
+    resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
     return {
-        "id": str(visit.get("visit_id") or visit_id),
+        "id": resolved_visit_id,
         "patient_id": encode_patient_id(patient_id) if patient_id else "",
         "provider_id": str(visit.get("provider_id") or ""),
         "appointment_id": visit.get("appointment_id"),

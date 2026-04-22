@@ -235,7 +235,12 @@ class StoreVitalsUseCase:
             )
             result["fields"] = self._fixed_common_vitals_fields() + contextual
         else:
-            result["fields"] = []
+            # Keep baseline capture available for every visit so the Vitals tab never renders as an empty form.
+            result = {
+                "needs_vitals": True,
+                "reason": "Baseline vitals are captured for every visit.",
+                "fields": self._fixed_common_vitals_fields(),
+            }
 
         if result.get("needs_vitals") and not result["fields"]:
             result = {

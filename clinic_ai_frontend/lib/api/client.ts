@@ -440,6 +440,16 @@ class APIClient {
     };
   }
 
+  async getLatestVisitForPatient(patientId: string) {
+    const response = await this.client.get(`/api/patients/${encodeURIComponent(patientId)}/latest-visit`);
+    return response.data as {
+      patient_id: string;
+      visit_id: string;
+      status: string;
+      scheduled_start?: string;
+    };
+  }
+
   async updatePatient(patientId: string, data: Record<string, any>) {
     const response = await this.client.put(`/api/patients/${patientId}`, data);
     return response.data;

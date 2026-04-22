@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Phone, UserRound, CalendarDays, Search } from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -25,9 +26,11 @@ type PatientSummary = {
 };
 
 export default function ProviderPatientsPage() {
+  const router = useRouter();
   const [patients, setPatients] = useState<PatientSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [openingForPatientId, setOpeningForPatientId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadPatients = async () => {
@@ -62,6 +65,23 @@ export default function ProviderPatientsPage() {
         .includes(q)
     );
   }, [patients, search]);
+
+  const handleOpenVisit = async (patientId: string) => {
+    setOpeningForPatientId(patientId);
+    try {
+      const response = await apiClient.getLatestVisitForPatient(patientId);
+      if (!response?.visit_id) {
+        toast.error('No visit found for this patient');
+        return;
+      }
+      router.push(`/provider/visits/${response.visit_id}`);
+    } catch (error: any) {
+      console.error('Error opening existing visit from patient list:', error);
+      toast.error(error?.response?.data?.detail || 'Failed to open existing visit');
+    } finally {
+      setOpeningForPatientId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -117,6 +137,15 @@ export default function ProviderPatientsPage() {
                     <p className="sm:col-span-3 flex items-center gap-1">
                       <CalendarDays className="h-4 w-4" /> DOB: {p.date_of_birth || 'N/A'}
                     </p>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenVisit(p.patient_id)}
+                      disabled={openingForPatientId === p.patient_id}
+                    >
+                      {openingForPatientId === p.patient_id ? 'Opening...' : 'Open Visit'}
+                    </Button>
                   </div>
                 </div>
               ))}
