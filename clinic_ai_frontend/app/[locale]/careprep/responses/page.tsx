@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,8 +22,9 @@ interface QuestionnaireResponse {
   }[];
 }
 
-export default function CarePrepResponsesPage({ params }: { params: { patientId: string } }) {
-  const patientId = decodeURIComponent(params.patientId || '');
+export default function CarePrepResponsesPage() {
+  const searchParams = useSearchParams();
+  const patientId = decodeURIComponent(searchParams.get('patientId') || '');
   const [responses, setResponses] = useState<QuestionnaireResponse[]>([]);
   const [selectedResponse, setSelectedResponse] = useState<QuestionnaireResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +32,11 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
 
   useEffect(() => {
     const loadIntakeSession = async () => {
+      if (!patientId) {
+        setIsLoading(false);
+        toast.error('Missing patient id');
+        return;
+      }
       setIsLoading(true);
       try {
         const latest = await apiClient.getLatestVisitForPatient(patientId);
@@ -137,7 +144,6 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
         </Card>
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Response List */}
           <div className="space-y-4">
             <h2 className="font-semibold text-gray-700">Submitted Questionnaires</h2>
             {responses.map((response) => (
@@ -173,7 +179,6 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
             ))}
           </div>
 
-          {/* Response Details */}
           <div>
             {selectedResponse ? (
               <Card>
@@ -218,7 +223,6 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
         </div>
       )}
 
-      {/* Actions */}
       <div className="mt-6 flex items-center justify-between">
         <Link href="/provider/dashboard">
           <Button variant="outline">Back to Dashboard</Button>

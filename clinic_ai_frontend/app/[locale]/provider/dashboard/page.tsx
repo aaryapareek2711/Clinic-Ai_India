@@ -427,7 +427,7 @@ export default function ProviderDashboardPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       {appt.careprepStatus === "completed" ? (
-                        <Link href={`/careprep/responses/${appt.patient.id}`}>
+                        <Link href={`/careprep/responses?patientId=${encodeURIComponent(appt.patient.id)}`}>
                           <Button variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50">
                             <Eye className="w-4 h-4 mr-1" />
                             View
@@ -439,7 +439,7 @@ export default function ProviderDashboardPage() {
                           Awaiting
                         </Button>
                       ) : (
-                        <Link href={`/careprep/send/${appt.patient.id}?appointment=${appt.id}`}>
+                        <Link href={`/careprep/send/${encodeURIComponent(appt.patient.id)}?appointment=${appt.id}`}>
                           <Button variant="outline" size="sm" className="text-purple-600 border-purple-200 hover:bg-purple-50">
                             <Send className="w-4 h-4 mr-1" />
                             CarePrep
@@ -555,7 +555,7 @@ export default function ProviderDashboardPage() {
                       >
                         {!p.isScheduled ? 'Fix Appointment First' : p.workflowVisitId ? 'Open Visit' : 'Next Step'}
                       </Button>
-                      <Link href={`/careprep/send/${p.id}`}>
+                      <Link href={`/careprep/send/${encodeURIComponent(p.id)}`}>
                         <Button variant="ghost" size="sm" className="text-purple-600 hover:bg-purple-50 h-7 px-2">
                           <ClipboardList className="w-3.5 h-3.5" />
                         </Button>
