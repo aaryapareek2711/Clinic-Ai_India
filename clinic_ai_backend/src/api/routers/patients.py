@@ -36,6 +36,19 @@ def list_patients() -> list[PatientSummaryResponse]:
         year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
         estimated_dob = f"{year:04d}-01-01"
         opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
+        latest_visit = (
+            db.visits.find_one(
+                {"patient_id": internal_patient_id},
+                {"_id": 0, "visit_id": 1, "id": 1, "scheduled_start": 1},
+                sort=[("created_at", -1)],
+            )
+            if internal_patient_id
+            else None
+        )
+        latest_visit_id = (
+            str((latest_visit or {}).get("visit_id") or (latest_visit or {}).get("id") or "").strip() or None
+        )
+        latest_visit_scheduled_start = (latest_visit or {}).get("scheduled_start")
 
         patients.append(
             PatientSummaryResponse(
@@ -51,6 +64,8 @@ def list_patients() -> list[PatientSummaryResponse]:
                 phone_number=str(record.get("phone_number") or "").strip() or None,
                 created_at=str(record.get("created_at") or "") or None,
                 updated_at=str(record.get("updated_at") or "") or None,
+                latest_visit_id=latest_visit_id,
+                latest_visit_scheduled_start=latest_visit_scheduled_start,
             )
         )
 

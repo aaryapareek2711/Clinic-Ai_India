@@ -1,14 +1,16 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, ChevronDown, ChevronUp, SlidersHorizontal, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { apiClient } from '@/lib/api/client';
+import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
+import FlowBreadcrumb from '@/components/workspace/FlowBreadcrumb';
 
 type VisitRow = {
   visit_id: string;
@@ -19,7 +21,12 @@ type VisitRow = {
   status?: string;
 };
 
-type DateFilterMode = 'single' | 'range';
+type AppointmentFilterKey = 'visit_wise' | 'date_wise' | 'time_wise';
+const FILTER_LABELS: Record<AppointmentFilterKey, string> = {
+  visit_wise: 'Visit wise',
+  date_wise: 'Date wise',
+  time_wise: 'Time wise',
+};
 
 const toLocalDateString = (date: Date) => {
   const year = date.getFullYear();
@@ -61,11 +68,14 @@ const extractScheduledTime = (scheduledStart?: string) => {
 };
 
 export default function ManageAppointmentsPage() {
+  const pathname = usePathname();
+  const ws = workspaceBaseFromPathname(pathname);
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingVisitId, setSavingVisitId] = useState<string | null>(null);
+  const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const loadErrorToastShown = useRef(false);
 
@@ -75,8 +85,8 @@ export default function ManageAppointmentsPage() {
   const [periodByVisit, setPeriodByVisit] = useState<Record<string, string>>({});
   const [includeWithAppointment, setIncludeWithAppointment] = useState(true);
   const [includeWithoutAppointment, setIncludeWithoutAppointment] = useState(true);
-  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('single');
-  const [singleDateFilter, setSingleDateFilter] = useState('');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
   const [rangeStartDate, setRangeStartDate] = useState('');
   const [rangeEndDate, setRangeEndDate] = useState('');
   const [timeFromHour, setTimeFromHour] = useState('');
@@ -85,9 +95,8 @@ export default function ManageAppointmentsPage() {
   const [timeToHour, setTimeToHour] = useState('');
   const [timeToMinute, setTimeToMinute] = useState('');
   const [timeToPeriod, setTimeToPeriod] = useState('');
-  const singleDateInputRef = useRef<HTMLInputElement | null>(null);
-  const rangeStartInputRef = useRef<HTMLInputElement | null>(null);
-  const rangeEndInputRef = useRef<HTMLInputElement | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [enabledFilters, setEnabledFilters] = useState<AppointmentFilterKey[]>([]);
 
   const minAppointmentDate = useMemo(() => toLocalDateString(new Date()), []);
   const maxAppointmentDate = useMemo(() => {
@@ -155,26 +164,24 @@ export default function ManageAppointmentsPage() {
   const filteredVisits = useMemo(() => {
     const timeFromFilter = toTwentyFourHourTime(timeFromHour, timeFromMinute, timeFromPeriod);
     const timeToFilter = toTwentyFourHourTime(timeToHour, timeToMinute, timeToPeriod);
-    const treatVisitWiseAsAll = !includeWithAppointment && !includeWithoutAppointment;
     return visits.filter((visit) => {
-      const hasAppointment = Boolean(visit.scheduled_start);
-      if (!treatVisitWiseAsAll) {
-        if (!includeWithAppointment && hasAppointment) return false;
-        if (!includeWithoutAppointment && !hasAppointment) return false;
+      if (enabledFilters.includes('visit_wise')) {
+        const hasAppointment = Boolean(visit.scheduled_start);
+        const treatVisitWiseAsAll = !includeWithAppointment && !includeWithoutAppointment;
+        if (!treatVisitWiseAsAll) {
+          if (!includeWithAppointment && hasAppointment) return false;
+          if (!includeWithoutAppointment && !hasAppointment) return false;
+        }
       }
 
       const scheduledDate = extractScheduledDate(visit.scheduled_start);
-      if (dateFilterMode === 'single' && singleDateFilter && scheduledDate !== singleDateFilter) {
-        return false;
-      }
-      if (dateFilterMode === 'range' && (rangeStartDate || rangeEndDate)) {
-        if (!scheduledDate) return false;
-        if (rangeStartDate && scheduledDate < rangeStartDate) return false;
-        if (rangeEndDate && scheduledDate > rangeEndDate) return false;
+      if (enabledFilters.includes('date_wise')) {
+        if (dateFromFilter && (!scheduledDate || scheduledDate < dateFromFilter)) return false;
+        if (dateToFilter && (!scheduledDate || scheduledDate > dateToFilter)) return false;
       }
 
       const scheduledTime = extractScheduledTime(visit.scheduled_start);
-      if (timeFromFilter || timeToFilter) {
+      if (enabledFilters.includes('time_wise') && (timeFromFilter || timeToFilter)) {
         if (!scheduledTime) return false;
         if (timeFromFilter && scheduledTime < timeFromFilter) return false;
         if (timeToFilter && scheduledTime > timeToFilter) return false;
@@ -183,12 +190,11 @@ export default function ManageAppointmentsPage() {
     });
   }, [
     visits,
+    enabledFilters,
     includeWithAppointment,
     includeWithoutAppointment,
-    dateFilterMode,
-    singleDateFilter,
-    rangeStartDate,
-    rangeEndDate,
+    dateFromFilter,
+    dateToFilter,
     timeFromHour,
     timeFromMinute,
     timeFromPeriod,
@@ -196,6 +202,19 @@ export default function ManageAppointmentsPage() {
     timeToMinute,
     timeToPeriod,
   ]);
+
+  const summary = useMemo(() => {
+    const total = visits.length;
+    const fixed = visits.filter((v) => Boolean(v.scheduled_start)).length;
+    const pending = total - fixed;
+    return { total, fixed, pending };
+  }, [visits]);
+
+  const prioritizedVisits = useMemo(() => {
+    const pending = filteredVisits.filter((visit) => !visit.scheduled_start);
+    const fixed = filteredVisits.filter((visit) => Boolean(visit.scheduled_start));
+    return [...pending, ...fixed];
+  }, [filteredVisits]);
 
   const handleSchedule = async (event: FormEvent, visitId: string) => {
     event.preventDefault();
@@ -244,8 +263,8 @@ export default function ManageAppointmentsPage() {
   const handleResetFilters = () => {
     setIncludeWithAppointment(true);
     setIncludeWithoutAppointment(true);
-    setDateFilterMode('single');
-    setSingleDateFilter('');
+    setDateFromFilter('');
+    setDateToFilter('');
     setRangeStartDate('');
     setRangeEndDate('');
     setTimeFromHour('');
@@ -254,213 +273,263 @@ export default function ManageAppointmentsPage() {
     setTimeToHour('');
     setTimeToMinute('');
     setTimeToPeriod('');
+    setEnabledFilters([]);
   };
 
-  const openPicker = (ref: React.RefObject<HTMLInputElement | null>) => {
-    const input = ref.current;
-    if (!input) return;
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-      return;
-    }
-    input.focus();
+  const availableFilterOptions = (['visit_wise', 'date_wise', 'time_wise'] as AppointmentFilterKey[]).filter(
+    (key) => !enabledFilters.includes(key),
+  );
+
+  const addFilter = (key: AppointmentFilterKey) => {
+    setEnabledFilters((prev) => (prev.includes(key) ? prev : [...prev, key]));
   };
 
-  const openDateWiseCalendar = () => {
-    if (dateFilterMode === 'single') {
-      openPicker(singleDateInputRef);
-      return;
+  const removeFilter = (key: AppointmentFilterKey) => {
+    setEnabledFilters((prev) => prev.filter((item) => item !== key));
+    if (key === 'visit_wise') {
+      setIncludeWithAppointment(true);
+      setIncludeWithoutAppointment(true);
     }
-    if (dateFilterMode === 'range') {
-      if (!rangeStartDate) {
-        openPicker(rangeStartInputRef);
-        return;
-      }
-      openPicker(rangeEndInputRef);
-      return;
+    if (key === 'date_wise') {
+      setDateFromFilter('');
+      setDateToFilter('');
+      setRangeStartDate('');
+      setRangeEndDate('');
     }
-    window.setTimeout(() => openPicker(singleDateInputRef), 50);
+    if (key === 'time_wise') {
+      setTimeFromHour('');
+      setTimeFromMinute('');
+      setTimeFromPeriod('');
+      setTimeToHour('');
+      setTimeToMinute('');
+      setTimeToPeriod('');
+    }
+  };
+
+  const isLockedVisit = (status?: string) => {
+    const normalized = String(status || '').toLowerCase();
+    return ['completed', 'cancelled', 'closed', 'ended'].includes(normalized);
+  };
+
+  const statusBadgeClass = (status?: string) => {
+    const normalized = String(status || 'open').toLowerCase();
+    if (normalized === 'completed') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    if (normalized === 'cancelled') return 'bg-rose-100 text-rose-700 border-rose-200';
+    if (normalized === 'in_progress') return 'bg-blue-100 text-blue-700 border-blue-200';
+    return 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <FlowBreadcrumb
+        items={[
+          { label: 'Clinic Dashboard', href: `${ws}/dashboard` },
+          { label: 'Appointments Center' },
+        ]}
+      />
+
+      <div>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Manage Appointments</h1>
-          <p className="text-gray-600 mt-1">Fix missing appointment times before opening visit and intake flow.</p>
+          <h1 className="text-3xl font-bold text-slate-900">Manage Appointments</h1>
+          <p className="text-slate-600 mt-1">
+            Single place to fix pending scheduling and update already scheduled visits.
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-      <Card className="lg:col-span-1 h-fit">
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Total visits</p><p className="text-3xl font-bold text-slate-900">{summary.total}</p></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Appointment fixed</p><p className="text-3xl font-bold text-green-700">{summary.fixed}</p></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Needs scheduling</p><p className="text-3xl font-bold text-amber-700">{summary.pending}</p></CardContent></Card>
+      </div>
+
+      <Card className="sticky top-0 z-10 border-slate-200">
+        <CardHeader className="pb-3">
+          <CardTitle>Filter Appointments</CardTitle>
+          <CardDescription>Apply visit, date, and time filters together.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-800">Visit wise</p>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+        <CardContent>
+          <div className="mb-4 flex justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters((prev) => !prev)}
+              leftIcon={<SlidersHorizontal className="h-4 w-4" />}
+            >
+              Filter
+            </Button>
+          </div>
+
+          {showFilters && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-slate-700">Add filter:</p>
+                <select
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const value = e.target.value as AppointmentFilterKey;
+                    if (value) addFilter(value);
+                    e.target.value = '';
+                  }}
+                >
+                  <option value="" disabled>Select filter</option>
+                  {availableFilterOptions.map((key) => (
+                    <option key={key} value={key}>{FILTER_LABELS[key]}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {enabledFilters.map((key) => (
+                  <span key={key} className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+                    {FILTER_LABELS[key]}
+                    <button type="button" onClick={() => removeFilter(key)} className="text-slate-500 hover:text-slate-800">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {enabledFilters.includes('visit_wise') && <div className="space-y-3">
+            <p className="text-sm font-semibold text-slate-800">Visit wise</p>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
                 checked={includeWithAppointment}
                 onChange={(e) => setIncludeWithAppointment(e.target.checked)}
               />
               Visit with appointment
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
                 checked={includeWithoutAppointment}
                 onChange={(e) => setIncludeWithoutAppointment(e.target.checked)}
               />
               Visit without appointment
             </label>
-          </div>
+          </div>}
 
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-800">Date wise</p>
-            <Button type="button" variant="outline" className="w-full" onClick={openDateWiseCalendar}>
-              Select Date
-            </Button>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={dateFilterMode === 'range'}
-                onChange={(e) => {
-                  const useRange = e.target.checked;
-                  setDateFilterMode(useRange ? 'range' : 'single');
-                  if (useRange) {
-                    setSingleDateFilter('');
-                  } else {
-                    setRangeStartDate('');
-                    setRangeEndDate('');
-                  }
-                }}
-              />
-              Use date range
-            </label>
-            <p className="text-xs text-gray-600">
-              {dateFilterMode === 'single'
-                ? `Selected: ${singleDateFilter || 'No date selected'}`
-                : `Selected: ${rangeStartDate || 'Start'} to ${rangeEndDate || 'End'}`}
-            </p>
-            <input
-              ref={singleDateInputRef}
-              type="date"
-              value={singleDateFilter}
-              onChange={(e) => setSingleDateFilter(e.target.value)}
-              className="absolute pointer-events-none opacity-0 h-0 w-0"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-            <input
-              ref={rangeStartInputRef}
-              type="date"
-              value={rangeStartDate}
-              onChange={(e) => setRangeStartDate(e.target.value)}
-              className="absolute pointer-events-none opacity-0 h-0 w-0"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-            <input
-              ref={rangeEndInputRef}
-              type="date"
-              value={rangeEndDate}
-              onChange={(e) => setRangeEndDate(e.target.value)}
-              className="absolute pointer-events-none opacity-0 h-0 w-0"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-800">Time wise</p>
-            <p className="text-xs text-gray-600">From</p>
-            <div className="grid grid-cols-3 gap-2">
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeFromHour}
-                onChange={(e) => setTimeFromHour(e.target.value)}
-              >
-                <option value="">Hour</option>
-                {Array.from({ length: 12 }, (_, index) => {
-                  const value = String(index + 1).padStart(2, '0');
-                  return <option key={value} value={value}>{value}</option>;
-                })}
-              </select>
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeFromMinute}
-                onChange={(e) => setTimeFromMinute(e.target.value)}
-              >
-                <option value="">Minute</option>
-                {Array.from({ length: 60 }, (_, index) => {
-                  const value = String(index).padStart(2, '0');
-                  return <option key={value} value={value}>{value}</option>;
-                })}
-              </select>
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeFromPeriod}
-                onChange={(e) => setTimeFromPeriod(e.target.value)}
-              >
-                <option value="">AM/PM</option>
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
+          {enabledFilters.includes('date_wise') && <div className="space-y-3">
+            <p className="text-sm font-semibold text-slate-800">Date wise</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} />
+              <Input type="date" value={dateToFilter} onChange={(e) => setDateToFilter(e.target.value)} />
             </div>
-            <p className="text-xs text-gray-600">To</p>
-            <div className="grid grid-cols-3 gap-2">
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeToHour}
-                onChange={(e) => setTimeToHour(e.target.value)}
-              >
-                <option value="">Hour</option>
-                {Array.from({ length: 12 }, (_, index) => {
-                  const value = String(index + 1).padStart(2, '0');
-                  return <option key={value} value={value}>{value}</option>;
-                })}
-              </select>
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeToMinute}
-                onChange={(e) => setTimeToMinute(e.target.value)}
-              >
-                <option value="">Minute</option>
-                {Array.from({ length: 60 }, (_, index) => {
-                  const value = String(index).padStart(2, '0');
-                  return <option key={value} value={value}>{value}</option>;
-                })}
-              </select>
-              <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                value={timeToPeriod}
-                onChange={(e) => setTimeToPeriod(e.target.value)}
-              >
-                <option value="">AM/PM</option>
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
-            </div>
-          </div>
+          </div>}
 
-          <Button type="button" variant="outline" className="w-full" onClick={handleResetFilters}>
-            Reset Filters
-          </Button>
+          {enabledFilters.includes('time_wise') && <div className="space-y-3">
+            <p className="text-sm font-semibold text-slate-800">Time wise</p>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-600">Time range (12-hour format)</p>
+              <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeFromHour}
+                    onChange={(e) => setTimeFromHour(e.target.value)}
+                  >
+                    <option value="">From hour</option>
+                    {Array.from({ length: 12 }, (_, index) => {
+                      const value = String(index + 1).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeFromMinute}
+                    onChange={(e) => setTimeFromMinute(e.target.value)}
+                  >
+                    <option value="">Minute</option>
+                    {Array.from({ length: 60 }, (_, index) => {
+                      const value = String(index).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeFromPeriod}
+                    onChange={(e) => setTimeFromPeriod(e.target.value)}
+                  >
+                    <option value="">AM/PM</option>
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeToHour}
+                    onChange={(e) => setTimeToHour(e.target.value)}
+                  >
+                    <option value="">To hour</option>
+                    {Array.from({ length: 12 }, (_, index) => {
+                      const value = String(index + 1).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeToMinute}
+                    onChange={(e) => setTimeToMinute(e.target.value)}
+                  >
+                    <option value="">Minute</option>
+                    {Array.from({ length: 60 }, (_, index) => {
+                      const value = String(index).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={timeToPeriod}
+                    onChange={(e) => setTimeToPeriod(e.target.value)}
+                  >
+                    <option value="">AM/PM</option>
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            </div>
+          </div>}
+
+              <div className="pt-2">
+              <Button type="button" variant="outline" className="w-full" onClick={handleResetFilters}>
+                Reset Filters
+              </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-3">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-blue-600" />
-            Manage Visit Appointments
+            Scheduling Worklist
           </CardTitle>
-          <CardDescription>Set or update appointment date/time for any visit.</CardDescription>
+          <CardDescription>
+            Pending scheduling appears first. Complete/cancelled visits remain locked.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {loading && <p className="text-sm text-gray-600">Loading visits...</p>}
+          {loading && (
+            <div className="space-y-3">
+              <div className="h-20 rounded-md border border-slate-200 bg-slate-100 animate-pulse" />
+              <div className="h-20 rounded-md border border-slate-200 bg-slate-100 animate-pulse" />
+              <div className="h-20 rounded-md border border-slate-200 bg-slate-100 animate-pulse" />
+            </div>
+          )}
           {!loading && loadError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3">
               <p className="text-sm text-red-700">{loadError}</p>
@@ -469,89 +538,118 @@ export default function ManageAppointmentsPage() {
               </Button>
             </div>
           )}
-          {!loading && !loadError && filteredVisits.length === 0 && (
+          {!loading && !loadError && prioritizedVisits.length === 0 && (
             <p className="text-sm text-gray-600">No visits match the selected filters.</p>
           )}
-          {!loading && !loadError && filteredVisits.map((visit) => (
-            <div key={visit.visit_id} className="rounded-md border p-3">
-              <div className="mb-2">
-                <p className="font-medium text-gray-900">{visit.patient_name}</p>
-                <p className="text-xs text-gray-600">Visit ID: {visit.visit_id}</p>
-                <p className="text-xs text-gray-600">Status: {visit.status || 'open'}</p>
-                <p className={`text-xs ${visit.scheduled_start ? 'text-green-700' : 'text-amber-700'}`}>
-                  {visit.scheduled_start ? 'Appointment is fixed.' : 'Appointment is not fixed yet.'}
-                </p>
-                {visit.scheduled_start && (
-                  <p className="text-xs text-gray-600">
-                    Current appointment: {new Date(visit.scheduled_start).toLocaleString()}
+          {!loading && !loadError && prioritizedVisits.map((visit) => (
+            <div key={visit.visit_id} className="rounded-md border p-3 transition-colors hover:bg-slate-50">
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{visit.patient_name}</p>
+                  <p className="text-xs text-gray-600">Visit ID: {visit.visit_id}</p>
+                  <p className={`text-xs mt-1 ${visit.scheduled_start ? 'text-green-700' : 'text-amber-700'}`}>
+                    {visit.scheduled_start ? 'Appointment is fixed.' : 'Appointment is not fixed yet.'}
                   </p>
-                )}
+                  {visit.scheduled_start && (
+                    <p className="text-xs text-gray-600">
+                      Current appointment: {new Date(visit.scheduled_start).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${statusBadgeClass(visit.status)}`}>
+                    {(visit.status || 'open').replace('_', ' ')}
+                  </span>
+                  {isLockedVisit(visit.status) ? (
+                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                      Locked
+                    </span>
+                  ) : visit.scheduled_start ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setExpandedVisitId((prev) => (prev === visit.visit_id ? null : visit.visit_id))
+                      }
+                    >
+                      {expandedVisitId === visit.visit_id ? (
+                        <>
+                          Hide editor <ChevronUp className="ml-1 h-4 w-4" />
+                        </>
+                      ) : (
+                        <>
+                          Edit schedule <ChevronDown className="ml-1 h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-              <form
-                className="grid grid-cols-1 md:grid-cols-5 gap-2"
-                onSubmit={(e) => handleSchedule(e, visit.visit_id)}
-              >
-                <Input
-                  type="date"
-                  min={minAppointmentDate}
-                  max={maxAppointmentDate}
-                  value={dateByVisit[visit.visit_id] || ''}
-                  onChange={(e) => setDateByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
-                  required
-                />
-                <select
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  value={hourByVisit[visit.visit_id] || ''}
-                  onChange={(e) => setHourByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
-                  required
+              {(expandedVisitId === visit.visit_id || !visit.scheduled_start) && !isLockedVisit(visit.status) && (
+                <form
+                  className="grid grid-cols-1 md:grid-cols-5 gap-2"
+                  onSubmit={(e) => handleSchedule(e, visit.visit_id)}
                 >
-                  <option value="">Hour</option>
-                  {Array.from({ length: 12 }, (_, index) => {
-                    const value = String(index + 1).padStart(2, '0');
-                    return <option key={value} value={value}>{value}</option>;
-                  })}
-                </select>
-                <select
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  value={minuteByVisit[visit.visit_id] || ''}
-                  onChange={(e) => setMinuteByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
-                  required
-                >
-                  <option value="">Minute</option>
-                  {Array.from({ length: 60 }, (_, index) => {
-                    const value = String(index).padStart(2, '0');
-                    return <option key={value} value={value}>{value}</option>;
-                  })}
-                </select>
-                <select
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  value={periodByVisit[visit.visit_id] || ''}
-                  onChange={(e) => setPeriodByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
-                  required
-                >
-                  <option value="">AM/PM</option>
-                  <option value="AM">AM</option>
-                  <option value="PM">PM</option>
-                </select>
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={savingVisitId === visit.visit_id || (visit.status || '').toLowerCase() === 'completed'}
-                >
-                  {savingVisitId === visit.visit_id
-                    ? 'Saving...'
-                    : (visit.status || '').toLowerCase() === 'completed'
-                    ? 'Completed Visit (Locked)'
-                    : visit.scheduled_start
-                    ? 'Update Appointment'
-                    : 'Fix Appointment'}
-                </Button>
-              </form>
+                  <Input
+                    type="date"
+                    min={minAppointmentDate}
+                    max={maxAppointmentDate}
+                    value={dateByVisit[visit.visit_id] || ''}
+                    onChange={(e) => setDateByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
+                    required
+                  />
+                  <select
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    value={hourByVisit[visit.visit_id] || ''}
+                    onChange={(e) => setHourByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
+                    required
+                  >
+                    <option value="">Hour</option>
+                    {Array.from({ length: 12 }, (_, index) => {
+                      const value = String(index + 1).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    value={minuteByVisit[visit.visit_id] || ''}
+                    onChange={(e) => setMinuteByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
+                    required
+                  >
+                    <option value="">Minute</option>
+                    {Array.from({ length: 60 }, (_, index) => {
+                      const value = String(index).padStart(2, '0');
+                      return <option key={value} value={value}>{value}</option>;
+                    })}
+                  </select>
+                  <select
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    value={periodByVisit[visit.visit_id] || ''}
+                    onChange={(e) => setPeriodByVisit((prev) => ({ ...prev, [visit.visit_id]: e.target.value }))}
+                    required
+                  >
+                    <option value="">AM/PM</option>
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                  </select>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={savingVisitId === visit.visit_id}
+                  >
+                    {savingVisitId === visit.visit_id
+                      ? 'Saving...'
+                      : visit.scheduled_start
+                      ? 'Update Appointment'
+                      : 'Fix Appointment'}
+                  </Button>
+                </form>
+              )}
             </div>
           ))}
         </CardContent>
       </Card>
-      </div>
     </div>
   );
 }

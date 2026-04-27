@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { apiClient } from '@/lib/api/client';
 
@@ -24,6 +26,8 @@ type CalendarEvent = {
 };
 
 export default function ProviderCalendarPage() {
+  const pathname = usePathname();
+  const ws = workspaceBaseFromPathname(pathname);
   const { user } = useAuthStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -225,11 +229,16 @@ export default function ProviderCalendarPage() {
           <p className="text-gray-600 mt-1">Manage your appointments and schedule</p>
         </div>
         <div className="flex gap-3">
+          <Link href={`${ws}/manage-appointments`}>
+            <Button variant="outline">
+              Manage Appointments
+            </Button>
+          </Link>
           <Button variant="outline" onClick={() => setIsImportOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Import CSV
           </Button>
-          <Link href="/provider/registered-patients">
+          <Link href={`${ws}/registered-patients`}>
             <Button className="bg-blue-600 hover:bg-blue-700">
               <Plus className="h-4 w-4 mr-2" />
               New Appointment
@@ -349,9 +358,11 @@ export default function ProviderCalendarPage() {
                       </div>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm">
-                    View Details
-                  </Button>
+                  <Link href={`${ws}/visits/${encodeURIComponent(apt.id)}`}>
+                    <Button variant="outline" size="sm">
+                      Open Visit
+                    </Button>
+                  </Link>
                 </div>
               ))}
           </div>

@@ -66,10 +66,10 @@ export default function Sidebar() {
         <div className="space-y-1">
           <p className="text-xs font-medium text-gray-700 px-2">Switch Dashboard</p>
           <Link
-            href="/provider/dashboard"
+            href="/clinic/dashboard"
             className="flex items-center text-xs text-gray-600 hover:text-blue-600 px-2 py-1 rounded hover:bg-gray-50"
           >
-            Provider Dashboard →
+            Clinic Dashboard →
           </Link>
           <Link
             href="/patient/dashboard"

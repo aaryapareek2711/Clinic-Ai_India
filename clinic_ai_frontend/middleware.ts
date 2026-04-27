@@ -26,7 +26,7 @@ export async function middleware(request: NextRequest) {
 
   // Ensure unprefixed role routes resolve through the default locale.
   // Without this, direct URLs like /provider/dashboard can fall through to 404.
-  if (!hasLocalePrefix && /^(\/provider|\/patient|\/admin)(\/|$)/.test(pathname)) {
+  if (!hasLocalePrefix && /^(\/provider|\/patient|\/admin|\/clinic)(\/|$)/.test(pathname)) {
     const localeUrl = request.nextUrl.clone();
     localeUrl.pathname = `/${defaultLocale}${pathname}`;
     return NextResponse.redirect(localeUrl);
@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
 
   // Define exact public routes
-  const exactPublicRoutes = ['/login', '/signup', '/'];
+  const exactPublicRoutes = ['/login', '/signup', '/forgot-password', '/'];
 
   // Define public route prefixes (e.g., for marketing pages and CarePrep links)
   const publicRoutePrefixes = ['/community', '/features', '/solutions', '/pricing', '/roadmap', '/demo', '/roi', '/security', '/changelog', '/guides', '/how-it-works', '/integrations', '/partners', '/careprep'];
@@ -86,19 +86,25 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const isProvider = ['doctor', 'nurse', 'admin', 'super_admin'].includes(userRole);
+  const isClinicStaff = ['doctor', 'nurse', 'admin', 'super_admin', 'staff', 'provider'].includes(userRole);
   const isPatient = userRole === 'patient';
 
-  // Provider route protection
-  if (pathnameWithoutLocale.startsWith('/provider') && !isProvider) {
+  // Provider route protection (legacy shell)
+  if (pathnameWithoutLocale.startsWith('/provider') && !isClinicStaff) {
     console.log('❌ Unauthorized access to provider route:', pathname, 'Role:', userRole);
+    return NextResponse.redirect(new URL('/patient/dashboard', request.url));
+  }
+
+  // Clinic workspace route protection (same roles as provider)
+  if (pathnameWithoutLocale.startsWith('/clinic') && !isClinicStaff) {
+    console.log('❌ Unauthorized access to clinic route:', pathname, 'Role:', userRole);
     return NextResponse.redirect(new URL('/patient/dashboard', request.url));
   }
 
   // Patient route protection
   if (pathnameWithoutLocale.startsWith('/patient') && !isPatient) {
     console.log('❌ Unauthorized access to patient route:', pathname, 'Role:', userRole);
-    return NextResponse.redirect(new URL('/provider/dashboard', request.url));
+    return NextResponse.redirect(new URL('/clinic/dashboard', request.url));
   }
 
   // Allow admin routes - role checking is done in the admin layout

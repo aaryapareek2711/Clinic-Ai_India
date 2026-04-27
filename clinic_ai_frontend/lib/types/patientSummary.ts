@@ -8,7 +8,6 @@
 export interface PatientBasicInfo {
   first_name: string;
   last_name: string;
-  date_of_birth?: string | null;
   age?: number | null;
 }
 

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Mic, Square, Trash2, FileText, Sparkles, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
+import { toWavFile } from '@/lib/audio/toWav';
 
 interface RecordingControlsProps {
   patientId: string;
@@ -154,9 +155,10 @@ export default function RecordingControls({
 
     setIsProcessing(true);
     try {
-      const audioFile = new File([audioBlob], `recording-${Date.now()}.webm`, {
+      const webmFile = new File([audioBlob], `recording-${Date.now()}.webm`, {
         type: 'audio/webm'
       });
+      const audioFile = await toWavFile(webmFile, `recording-${Date.now()}`);
 
       const upload = await apiClient.uploadVisitTranscription(patientId, visitId, audioFile);
       const jobId = String(upload?.job_id || upload?.message_id || '');

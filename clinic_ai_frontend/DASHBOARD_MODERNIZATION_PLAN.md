@@ -31,7 +31,7 @@ After comprehensive analysis with frontend-developer agent and validation with G
 3. **PHI Scrubbing**: Automated + manual confirmation for "Save as Template"
 4. **RBAC**: Role-based access for organizational templates
 5. **Context-Aware Suggestions**: Suggest templates based on appointment type
-6. **Template Placeholders**: Auto-populate `[Patient Name]`, `[DOB]` from context
+6. **Template Placeholders**: Auto-populate `[Patient Name]` from context
 
 **Architecture Decisions**:
 - **PHI Scrubbing**: Hybrid approach (automated regex + manual confirmation with diff view)
@@ -636,7 +636,6 @@ function insertTemplateWithPlaceholders(
   // Auto-populate placeholders from patient context
   const replacements = {
     '[Patient Name]': patientContext.name,
-    '[Patient DOB]': patientContext.dob,
     '[Patient Age]': calculateAge(patientContext.dob),
     '[Patient MRN]': patientContext.mrn,
     '[Today\'s Date]': new Date().toLocaleDateString(),

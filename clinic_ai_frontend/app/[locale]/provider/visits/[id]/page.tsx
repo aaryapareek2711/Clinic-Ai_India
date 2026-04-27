@@ -12,10 +12,12 @@ import MedicationReview from "@/components/appoint-ready/MedicationReview";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Bot, FileText, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Bot, FileText, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send, CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter } from 'next/navigation';
+import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
+import FlowBreadcrumb from '@/components/workspace/FlowBreadcrumb';
 import { Badge } from "@/components/ui/badge";
-import axios from "axios";
 import toast from 'react-hot-toast';
 import type { PatientData } from '@/lib/utils/templatePopulation';
 import { apiClient } from '@/lib/api/client';
@@ -40,7 +42,6 @@ interface Visit {
     id: string;
     first_name: string;
     last_name: string;
-    date_of_birth: string;
     gender: string;
     phone_number?: string | null;
   };
@@ -127,6 +128,10 @@ function clinicalVisitPatchFromStoredNote(visitBase: Visit, note: any): Partial<
 }
 
 export default function VisitPage({ params }: { params: { id: string } }) {
+  const pathname = usePathname();
+  const ws = workspaceBaseFromPathname(pathname);
+  const router = useRouter();
+  const visitId = decodeURIComponent(params.id);
   const [visit, setVisit] = useState<Visit | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +140,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeContextSection, setActiveContextSection] = useState<'patient' | 'risk' | 'gaps' | 'meds'>('patient');
   const [transcriptJobId, setTranscriptJobId] = useState<string | undefined>(undefined);
+  const [transcriptWorkflowStatus, setTranscriptWorkflowStatus] = useState<'pending' | 'processing' | 'done' | 'failed'>('pending');
   const [previsitSummary, setPrevisitSummary] = useState<string>('');
   const [postVisitSummary, setPostVisitSummary] = useState<string>('');
   const [isGeneratingPrevisit, setIsGeneratingPrevisit] = useState(false);
@@ -142,10 +148,11 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [postVisitFollowUpDate, setPostVisitFollowUpDate] = useState('');
   const [postVisitWhatsappOverride, setPostVisitWhatsappOverride] = useState('');
   const [isSendingPostVisitWhatsapp, setIsSendingPostVisitWhatsapp] = useState(false);
+  const [hasVitals, setHasVitals] = useState(false);
 
   useEffect(() => {
     fetchVisit();
-  }, [params.id]);
+  }, [visitId]);
 
   const fetchVisit = async () => {
     try {
@@ -160,30 +167,35 @@ export default function VisitPage({ params }: { params: { id: string } }) {
         return;
       }
 
-      const response = await axios.get(`/api/visits/${params.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      const visitData = response.data as Visit;
+      const visitData = await apiClient.getVisit(visitId) as Visit;
       const patientId = visitData.patient_id;
-      const visitId = params.id;
+      const resolvedVisitId = visitId;
 
-      const [preDoc, postNote, clinicalNote] = await Promise.all([
-        apiClient.getPreVisitSummary(patientId, visitId).catch(() => null),
-        apiClient.getLatestPostVisitSummary(patientId, visitId).catch(() => null),
-        apiClient.getLatestClinicalNote(patientId, visitId, 'india_clinical').catch(() => null),
+      const [preDoc, postNote, clinicalNote, latestVitals] = await Promise.all([
+        apiClient.getPreVisitSummary(patientId, resolvedVisitId).catch(() => null),
+        apiClient.getLatestPostVisitSummary(patientId, resolvedVisitId).catch(() => null),
+        apiClient.getLatestClinicalNote(patientId, resolvedVisitId, 'india_clinical').catch(() => null),
+        apiClient.getLatestVitals(patientId, resolvedVisitId).catch(() => null),
       ]);
 
       let resolvedTranscriptId: string | undefined;
+      let resolvedTranscriptStatus: 'pending' | 'processing' | 'done' | 'failed' = 'pending';
       try {
-        const txStatus = await apiClient.getVisitTranscriptionStatus(patientId, visitId);
+        const txStatus = await apiClient.getVisitTranscriptionStatus(patientId, resolvedVisitId);
         const normalized = String(txStatus?.status || '').toLowerCase();
-        if (normalized === 'completed' && txStatus?.transcription_id) {
-          resolvedTranscriptId = String(txStatus.transcription_id);
+        if (normalized === 'completed') {
+          resolvedTranscriptStatus = 'done';
+          if (txStatus?.transcription_id) {
+            resolvedTranscriptId = String(txStatus.transcription_id);
+          }
+        } else if (normalized === 'failed' || normalized === 'stale_processing') {
+          resolvedTranscriptStatus = 'failed';
+        } else if (normalized === 'processing' || normalized === 'queued') {
+          resolvedTranscriptStatus = 'processing';
         } else {
-          const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
+          const dialogue = await apiClient.getVisitDialogue(patientId, resolvedVisitId);
           if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
+            resolvedTranscriptStatus = 'done';
             const inferred = String((dialogue?.data as any)?.transcription_id || txStatus?.transcription_id || '').trim();
             if (inferred) resolvedTranscriptId = inferred;
           }
@@ -196,11 +208,20 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       const chiefFromPrevisit = preDoc?.sections?.chief_complaint?.reason_for_visit;
       const chiefPatch =
         chiefFromPrevisit && !visitData.chief_complaint ? { chief_complaint: String(chiefFromPrevisit) } : {};
-      setVisit({ ...visitData, ...soapPatch, ...chiefPatch });
+      const resolvedVisit = { ...visitData, ...soapPatch, ...chiefPatch };
+      setVisit(resolvedVisit);
+      setHasVitals(Boolean(latestVitals?.vitals_id));
       setPrevisitSummary(preDoc ? formatPrevisitSummaryForDisplay(preDoc) : '');
       setPostVisitSummary(postNote ? formatPostVisitNoteForDisplay(postNote) : '');
       setPostVisitFollowUpDate(String(postNote?.payload?.next_visit_date || ''));
       setTranscriptJobId(resolvedTranscriptId);
+      setTranscriptWorkflowStatus(resolvedTranscriptStatus);
+
+      if (!resolvedVisit?.scheduled_start) {
+        toast.error('Appointment is not fixed yet. Please schedule it first.');
+        router.push(`${ws}/fix-appointment/${encodeURIComponent(resolvedVisitId)}`);
+        return;
+      }
     } catch (error: any) {
       console.error('Error fetching visit:', error);
 
@@ -233,7 +254,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <p className="text-red-600 mb-4">{error || 'Visit not found'}</p>
-        <Link href="/provider/dashboard" className="text-blue-600 hover:underline">
+        <Link href={`${ws}/dashboard`} className="text-blue-600 hover:underline">
           Return to Dashboard
         </Link>
       </div>
@@ -260,7 +281,22 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   };
 
   const handleTranscriptionComplete = (transcription: any) => {
-    if (transcription?.id) {
+    const status = String(transcription?.status || '').toLowerCase();
+    if (status === 'completed') {
+      setTranscriptWorkflowStatus('done');
+      if (transcription?.id) {
+        setTranscriptJobId(String(transcription.id));
+      }
+      return;
+    }
+    if (status === 'failed') {
+      setTranscriptWorkflowStatus('failed');
+      return;
+    }
+    if (status === 'processing' || status === 'queued') {
+      setTranscriptWorkflowStatus('processing');
+    }
+    if (transcription?.id && (status === 'processing' || status === 'queued')) {
       setTranscriptJobId(String(transcription.id));
     }
   };
@@ -268,14 +304,14 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const resolveCompletedTranscriptJobId = async (): Promise<string | null> => {
     if (transcriptJobId) return transcriptJobId;
     try {
-      const status = await apiClient.getVisitTranscriptionStatus(visit.patient_id, params.id);
+      const status = await apiClient.getVisitTranscriptionStatus(visit.patient_id, visitId);
       const normalized = String(status?.status || '').toLowerCase();
       const resolvedId = String(status?.transcription_id || '').trim();
       if (normalized === 'completed' && resolvedId) {
         setTranscriptJobId(resolvedId);
         return resolvedId;
       }
-      const dialogue = await apiClient.getVisitDialogue(visit.patient_id, params.id);
+      const dialogue = await apiClient.getVisitDialogue(visit.patient_id, visitId);
       if (dialogue.status === 200 && String(dialogue?.data?.transcript || '').trim()) {
         const inferred = String((dialogue?.data as any)?.transcription_id || resolvedId || '').trim();
         if (inferred) {
@@ -294,13 +330,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const handleGeneratePrevisitSummary = async () => {
     setIsGeneratingPrevisit(true);
     try {
-      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-      const response = await axios.post(
-        `/api/workflow/pre-visit-summary/${visit.patient_id}/${params.id}`,
-        {},
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
-      );
-      const data = response?.data;
+      const data = await apiClient.generatePreVisitSummary(visit.patient_id, visitId);
       const summaryText =
         data?.sections
           ? formatPrevisitSummaryForDisplay(data)
@@ -334,7 +364,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     try {
       const res = await apiClient.sendPostVisitSummaryWhatsapp({
         patient_id: visit.patient_id,
-        visit_id: params.id,
+        visit_id: visitId,
         phone_number: override || undefined,
       });
       if (res.summary_template_sent || res.follow_up_template_sent) {
@@ -362,7 +392,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
     try {
       const response = await apiClient.generateClinicalNote({
         patient_id: visit.patient_id,
-        visit_id: params.id,
+        visit_id: visitId,
         transcription_job_id: completedTranscriptId || undefined,
         note_type: 'post_visit_summary',
         follow_up_date: postVisitFollowUpDate || undefined,
@@ -391,30 +421,81 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const buildPatientData = (): PatientData => {
     if (!visit.patient) return {};
 
-    const dob = visit.patient.date_of_birth;
-    const parsed = dob ? new Date(dob) : null;
-    const age =
-      parsed && !isNaN(parsed.getTime())
-        ? Math.floor((Date.now() - parsed.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-        : undefined;
-
     return {
       name: `${visit.patient.first_name} ${visit.patient.last_name}`,
-      age,
-      dob: parsed ? parsed.toLocaleDateString() : undefined,
       gender: visit.patient.gender,
       chiefComplaint: visit.chief_complaint || undefined,
     };
   };
 
+  const hasPrevisitSummary = Boolean(previsitSummary.trim());
+  const hasTranscript = transcriptWorkflowStatus === 'done';
+  const hasClinicalNote =
+    Boolean((visit.subjective || '').trim()) ||
+    Boolean((visit.objective || '').trim()) ||
+    Boolean((visit.assessment || '').trim()) ||
+    Boolean((visit.plan || '').trim());
+  const hasPostVisitSummary = Boolean(postVisitSummary.trim());
+
+  const workflowSteps = [
+    { id: 'vitals', label: 'Vitals', state: hasVitals ? 'done' : 'pending' },
+    { id: 'previsit-summary', label: 'Previsit', state: hasPrevisitSummary ? 'done' : 'pending' },
+    { id: 'transcription', label: 'Transcript', state: transcriptWorkflowStatus },
+    { id: 'soap', label: 'Clinical Note', state: hasClinicalNote ? 'done' : 'pending' },
+    { id: 'post-visit-summary', label: 'Post Summary', state: hasPostVisitSummary ? 'done' : 'pending' },
+  ] as const;
+
+  const tabLabelMap: Record<typeof activeTab, string> = {
+    vitals: 'Vitals Form',
+    'previsit-summary': 'Previsit Summary',
+    transcription: 'Transcript',
+    soap: 'Clinical Note',
+    'post-visit-summary': 'Post Visit Summary',
+  };
+
+  const nextRecommendedStep: { tab: typeof activeTab; title: string; hint: string } | null = !hasPrevisitSummary
+    ? {
+        tab: 'previsit-summary',
+        title: 'Generate previsit summary',
+        hint: 'This gives a quick intake overview before documentation.',
+      }
+    : !hasTranscript
+    ? {
+        tab: 'transcription',
+        title: 'Upload or record transcript',
+        hint: 'Transcript helps AI create more accurate clinical notes.',
+      }
+    : !hasClinicalNote
+    ? {
+        tab: 'soap',
+        title: 'Complete clinical note',
+        hint: 'Capture assessment and plan before sharing visit summary.',
+      }
+    : !hasPostVisitSummary
+    ? {
+        tab: 'post-visit-summary',
+        title: 'Generate post visit summary',
+        hint: 'Prepare patient-friendly summary and follow-up reminders.',
+      }
+    : null;
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Main Content Area */}
       <div className={`flex-1 overflow-auto p-6 transition-all duration-300 ${sidebarCollapsed ? 'mr-12' : 'mr-96'}`}>
+        <FlowBreadcrumb
+          items={[
+            { label: 'Clinic Dashboard', href: `${ws}/dashboard` },
+            { label: 'Visit Workspace', href: `${ws}/visits` },
+            { label: `Visit ${visitId}` },
+          ]}
+          className="mb-4"
+        />
+
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <Link href="/provider/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
+            <Link href={`${ws}/dashboard`} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
@@ -463,71 +544,87 @@ export default function VisitPage({ params }: { params: { id: string } }) {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('vitals')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'vitals'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Vitals Form
-            </button>
-            <button
-              onClick={() => setActiveTab('previsit-summary')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'previsit-summary'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Previsit Summary
-            </button>
-            <button
-              onClick={() => setActiveTab('transcription')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'transcription'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Transcript
-            </button>
-            <button
-              onClick={() => setActiveTab('soap')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'soap'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Clinical Note
-            </button>
-            <button
-              onClick={() => setActiveTab('post-visit-summary')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === 'post-visit-summary'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Post Visit Summary
-            </button>
-          </nav>
-        </div>
+        <Card className="mb-6">
+          <CardHeader className="py-4">
+            <CardTitle className="text-base">Visit Workflow Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              {workflowSteps.map((step) => (
+                <button
+                  key={step.id}
+                  onClick={() => setActiveTab(step.id)}
+                  className={`rounded-lg border p-3 text-left transition ${
+                    activeTab === step.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <p className="text-xs text-gray-500 mb-1">{step.label}</p>
+                  <p
+                    className={`flex items-center gap-1 text-sm font-medium ${
+                      step.state === 'done'
+                        ? 'text-green-700'
+                        : step.state === 'failed'
+                        ? 'text-red-700'
+                        : step.state === 'processing'
+                        ? 'text-blue-700'
+                        : 'text-amber-700'
+                    }`}
+                  >
+                    {step.state === 'done' ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+                    {step.state === 'done'
+                      ? 'Done'
+                      : step.state === 'failed'
+                      ? 'Failed'
+                      : step.state === 'processing'
+                      ? 'Processing'
+                      : 'Pending'}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {nextRecommendedStep && (
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardContent className="py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Recommended next step: {nextRecommendedStep.title}</p>
+                  <p className="text-xs text-blue-800 mt-1">{nextRecommendedStep.hint}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-blue-400 text-blue-700 hover:bg-blue-100"
+                  onClick={() => setActiveTab(nextRecommendedStep.tab)}
+                >
+                  Open {tabLabelMap[nextRecommendedStep.tab]}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tab Content */}
         <div>
           {activeTab === 'vitals' && (
-            <VitalsFormPanel patientId={visit.patient_id} visitId={params.id} />
+            <div className="space-y-4">
+              <Card className="border-slate-200 bg-slate-50">
+                <CardContent className="py-3">
+                  <p className="text-sm text-slate-700">
+                    Enter vitals first when available. This improves risk/context interpretation and note quality.
+                  </p>
+                </CardContent>
+              </Card>
+              <VitalsFormPanel
+                patientId={visit.patient_id}
+                visitId={visitId}
+                onSaved={() => setHasVitals(true)}
+              />
+            </div>
           )}
 
           {activeTab === 'previsit-summary' && (
@@ -536,8 +633,11 @@ export default function VisitPage({ params }: { params: { id: string } }) {
                 <CardTitle>Previsit Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Use this to quickly review intake details before clinical documentation.
+                </p>
                 <Button onClick={handleGeneratePrevisitSummary} disabled={isGeneratingPrevisit}>
-                  {isGeneratingPrevisit ? 'Generating...' : 'Generate Previsit Summary'}
+                  {isGeneratingPrevisit ? 'Generating...' : 'Refresh Previsit Summary'}
                 </Button>
                 <div className="rounded-lg border p-4 min-h-[160px] whitespace-pre-wrap text-sm text-gray-800">
                   {previsitSummary || 'No previsit summary generated yet.'}
@@ -547,30 +647,74 @@ export default function VisitPage({ params }: { params: { id: string } }) {
           )}
 
           {activeTab === 'transcription' && (
-            <AudioTranscription
-              visitId={params.id}
-              patientId={visit.patient_id}
-              onTranscriptionComplete={handleTranscriptionComplete}
-            />
+            <div className="space-y-4">
+              <Card className="border-slate-200 bg-slate-50">
+                <CardContent className="py-3">
+                  <p className="text-sm text-slate-700">
+                    Upload/record conversation audio here. Once completed, continue to <strong>Clinical Note</strong>.
+                  </p>
+                </CardContent>
+              </Card>
+              <AudioTranscription
+                visitId={visitId}
+                patientId={visit.patient_id}
+                onTranscriptionComplete={handleTranscriptionComplete}
+              />
+            </div>
           )}
 
           {activeTab === 'soap' && (
-            <SOAPNotesEditor
-              visitId={params.id}
-              initialNotes={{
-                doctor_notes: [visit.subjective, visit.objective].filter(Boolean).join('\n\n'),
-                chief_complaint: visit.chief_complaint || '',
-                assessment: visit.assessment || '',
-                plan: visit.plan || '',
-              }}
-              onSave={(notes) => {
-                console.log('Clinical note saved:', notes);
-                toast.success('Visit documentation updated');
-              }}
-              patientData={buildPatientData()}
-              patientId={visit.patient_id}
-              transcriptId={transcriptJobId}
-            />
+            <div className="space-y-4">
+              {!hasTranscript && (
+                <Card className="border-amber-200 bg-amber-50">
+                  <CardContent className="py-3">
+                    <p className="text-sm text-amber-800">
+                      No transcript detected yet. You can still write notes manually, but transcript-based AI help works best after transcription.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+              <SOAPNotesEditor
+                visitId={visitId}
+                initialNotes={{
+                  doctor_notes: [visit.subjective, visit.objective].filter(Boolean).join('\n\n'),
+                  chief_complaint: visit.chief_complaint || '',
+                  assessment: visit.assessment || '',
+                  plan: visit.plan || '',
+                }}
+                onSave={(notes) => {
+                  setVisit((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          subjective: notes.doctor_notes || prev.subjective,
+                          chief_complaint: notes.chief_complaint || prev.chief_complaint,
+                          assessment: notes.assessment || prev.assessment,
+                          plan: notes.plan || prev.plan,
+                        }
+                      : prev,
+                  );
+                  console.log('Clinical note saved:', notes);
+                  toast.success('Visit documentation updated');
+                }}
+                onGenerated={(notes) => {
+                  setVisit((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          subjective: notes.doctor_notes || prev.subjective,
+                          chief_complaint: notes.chief_complaint || prev.chief_complaint,
+                          assessment: notes.assessment || prev.assessment,
+                          plan: notes.plan || prev.plan,
+                        }
+                      : prev,
+                  );
+                }}
+                patientData={buildPatientData()}
+                patientId={visit.patient_id}
+                transcriptId={transcriptJobId}
+              />
+            </div>
           )}
 
           {activeTab === 'post-visit-summary' && (
@@ -579,9 +723,16 @@ export default function VisitPage({ params }: { params: { id: string } }) {
                 <CardTitle>Post Visit Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {!hasClinicalNote && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm text-amber-800">
+                      Clinical note appears incomplete. Complete key note sections first for better patient summary quality.
+                    </p>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 items-center">
                   <Button onClick={handleGeneratePostVisitSummary} disabled={isGeneratingPostVisit}>
-                    {isGeneratingPostVisit ? 'Generating...' : 'Generate Post Visit Summary'}
+                    {isGeneratingPostVisit ? 'Generating...' : 'Generate / Refresh Post Visit Summary'}
                   </Button>
                   <Button
                     type="button"
@@ -700,7 +851,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
             {/* Context Content */}
             <div className="p-4">
               {activeContextSection === 'patient' && visit.patient_id && (
-                <PatientContextCard patientId={visit.patient_id} visitId={params.id} />
+                <PatientContextCard patientId={visit.patient_id} visitId={visitId} />
               )}
 
               {activeContextSection === 'risk' && visit.patient_id && (
@@ -712,7 +863,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
               )}
 
               {activeContextSection === 'meds' && visit.patient_id && (
-                <MedicationReview patientId={visit.patient_id} visitId={params.id} />
+                <MedicationReview patientId={visit.patient_id} visitId={visitId} />
               )}
             </div>
 
@@ -750,7 +901,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       {/* AI Assistant Chat (Floating) */}
       {showAIChat && (
         <AIAssistantChat
-          visitId={params.id}
+          visitId={visitId}
           onClose={() => setShowAIChat(false)}
         />
       )}

@@ -22,7 +22,6 @@ interface PatientContext {
     mrn: string;
     first_name: string;
     last_name: string;
-    date_of_birth: string;
     age: number;
     gender: string;
     phone: string | null;
@@ -142,10 +141,8 @@ export default function PatientContextCard({ patientId, visitId }: PatientContex
             <div className="flex items-start gap-2">
               <Calendar className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-600">Date of Birth / Age</p>
-                <p className="font-medium text-gray-900">
-                  {demographics.date_of_birth} ({demographics.age} years)
-                </p>
+                <p className="text-sm text-gray-600">Age</p>
+                <p className="font-medium text-gray-900">{demographics.age} years</p>
               </div>
             </div>
 

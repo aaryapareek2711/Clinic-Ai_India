@@ -9,6 +9,10 @@ import { ArrowLeft, CheckCircle, Clock, AlertTriangle, FileText, Calendar } from
 import Link from 'next/link';
 import apiClient from '@/lib/api/client';
 import toast from 'react-hot-toast';
+import FlowBreadcrumb from '@/components/workspace/FlowBreadcrumb';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { usePathname } from 'next/navigation';
+import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
 
 interface QuestionnaireResponse {
   id: string;
@@ -22,19 +26,59 @@ interface QuestionnaireResponse {
   }[];
 }
 
+interface CarePrepPatientRow {
+  patientId: string;
+  patientName: string;
+  visitId: string;
+  scheduledStart?: string;
+}
+
 export default function CarePrepResponsesPage() {
   const searchParams = useSearchParams();
   const patientId = decodeURIComponent(searchParams.get('patientId') || '');
+  const pathname = usePathname();
+  const ws = workspaceBaseFromPathname(pathname);
+  const { user } = useAuthStore();
   const [responses, setResponses] = useState<QuestionnaireResponse[]>([]);
   const [selectedResponse, setSelectedResponse] = useState<QuestionnaireResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [resolvedVisitId, setResolvedVisitId] = useState<string | null>(null);
+  const [carePrepPatients, setCarePrepPatients] = useState<CarePrepPatientRow[]>([]);
 
   useEffect(() => {
+    const loadCarePrepPatientList = async () => {
+      if (!user?.id) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const upcoming = await apiClient.getProviderUpcomingVisits(user.id);
+        const appointments = Array.isArray(upcoming?.appointments) ? upcoming.appointments : [];
+        const mapped = appointments
+          .filter((item: any) => Boolean(item?.previsit_completed))
+          .map((item: any) => ({
+            patientId: String(item.patient_id || '').trim(),
+            patientName: String(item.patient_name || 'Unknown patient').trim(),
+            visitId: String(item.visit_id || item.appointment_id || item.id || '').trim(),
+            scheduledStart: item.scheduled_start || undefined,
+          }))
+          .filter((item: CarePrepPatientRow) => item.patientId && item.visitId);
+        const deduped = Array.from(
+          new Map(mapped.map((item: CarePrepPatientRow) => [item.patientId, item])).values(),
+        );
+        setCarePrepPatients(deduped);
+      } catch (error: any) {
+        toast.error(error?.response?.data?.detail || 'Failed to load CarePrep responses');
+        setCarePrepPatients([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     const loadIntakeSession = async () => {
       if (!patientId) {
-        setIsLoading(false);
-        toast.error('Missing patient id');
+        await loadCarePrepPatientList();
         return;
       }
       setIsLoading(true);
@@ -79,7 +123,7 @@ export default function CarePrepResponsesPage() {
     };
 
     loadIntakeSession();
-  }, [patientId]);
+  }, [patientId, user?.id]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -107,8 +151,16 @@ export default function CarePrepResponsesPage() {
   if (isLoading) {
     return (
       <div className="container mx-auto p-6 max-w-4xl">
-        <div className="flex items-center justify-center h-64">
-          <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-4">
+            <div className="h-6 w-40 rounded bg-slate-200 animate-pulse" />
+            <div className="h-24 rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+            <div className="h-24 rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+            <div className="h-24 rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+          </div>
+          <div>
+            <div className="h-80 rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
+          </div>
         </div>
       </div>
     );
@@ -116,20 +168,63 @@ export default function CarePrepResponsesPage() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
+      <FlowBreadcrumb
+        items={[
+          { label: 'Clinic Dashboard', href: `${ws}/dashboard` },
+          { label: 'CarePrep Center', href: `${ws}/careprep` },
+          { label: patientId ? 'Responses' : 'Response Center' },
+        ]}
+        className="mb-3"
+      />
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/provider/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
+        <Link href={`${ws}/dashboard`} className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">CarePrep Responses</h1>
-          <p className="text-gray-600">
-            Patient ID: {patientId}
-            {resolvedVisitId ? ` • Visit: ${resolvedVisitId}` : ''}
-          </p>
+          <h1 className="text-2xl font-bold">{patientId ? 'CarePrep Responses' : 'CarePrep Response Center'}</h1>
+          {patientId ? (
+            <p className="text-gray-600">
+              Patient ID: {patientId}
+              {resolvedVisitId ? ` • Visit: ${resolvedVisitId}` : ''}
+            </p>
+          ) : (
+            <p className="text-gray-600">Select a patient to view CarePrep question and answer details.</p>
+          )}
         </div>
       </div>
 
-      {responses.length === 0 ? (
+      {!patientId ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Completed CarePrep Sessions</CardTitle>
+            <CardDescription>Open a patient to view intake questions and answers.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {carePrepPatients.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                No completed CarePrep responses found yet.
+              </div>
+            ) : (
+              carePrepPatients.map((item) => (
+                <div key={`${item.patientId}-${item.visitId}`} className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium text-slate-900">{item.patientName}</p>
+                    <p className="text-xs text-slate-600">Patient ID: {item.patientId}</p>
+                    {item.scheduledStart && (
+                      <p className="text-xs text-slate-500">
+                        Scheduled: {new Date(item.scheduledStart).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <Link href={`${ws}/careprep/responses?patientId=${encodeURIComponent(item.patientId)}`}>
+                    <Button size="sm" variant="outline">View Q&A</Button>
+                  </Link>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      ) : responses.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -224,14 +319,18 @@ export default function CarePrepResponsesPage() {
       )}
 
       <div className="mt-6 flex items-center justify-between">
-        <Link href="/provider/dashboard">
+        <Link href={`${ws}/dashboard`}>
           <Button variant="outline">Back to Dashboard</Button>
         </Link>
-        <Link href={`/careprep/send/${encodeURIComponent(patientId)}`}>
-          <Button className="bg-purple-600 hover:bg-purple-700">
-            Send New Questionnaire
-          </Button>
-        </Link>
+        {patientId && responses.length > 0 ? (
+          <Link href={`/careprep/send/${encodeURIComponent(patientId)}`}>
+            <Button className="bg-purple-600 hover:bg-purple-700">
+              Send New Questionnaire
+            </Button>
+          </Link>
+        ) : (
+          <span className="text-xs text-slate-500">Send action is available above.</span>
+        )}
       </div>
     </div>
   );

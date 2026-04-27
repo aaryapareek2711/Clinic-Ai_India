@@ -64,8 +64,8 @@ export default function LandingPage() {
     if (isAuthenticated && user) {
       if (user.role === 'patient') {
         router.push('/patient/dashboard');
-      } else if (['doctor', 'nurse', 'admin', 'staff'].includes(user.role)) {
-        router.push('/provider/dashboard');
+      } else if (['doctor', 'nurse', 'admin', 'staff', 'super_admin', 'provider'].includes(user.role)) {
+        router.push('/clinic/dashboard');
       }
     }
   }, [isAuthenticated, user, router]);
@@ -125,7 +125,7 @@ export default function LandingPage() {
                             <Clipboard className="w-4 h-4 text-slate-400 group-hover/item:text-forest-600" />
                             <span className="text-slate-700 group-hover/item:text-forest-600 font-medium">{tNav('menu.smartTasks')}</span>
                           </Link>
-                          <Link href="/provider/templates" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-cream-50 transition-colors group/item text-sm">
+                          <Link href="/clinic/templates" className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-cream-50 transition-colors group/item text-sm">
                             <FileText className="w-4 h-4 text-slate-400 group-hover/item:text-forest-600" />
                             <span className="text-slate-700 group-hover/item:text-forest-600 font-medium">{tNav('menu.clinicalTemplates')}</span>
                           </Link>
@@ -499,9 +499,9 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              <Link href="/provider/dashboard">
+              <Link href="/clinic/dashboard">
                 <Button variant="primary" size="lg" rightIcon={<ArrowRight className="w-5 h-5" />}>
-                  See Provider Dashboard
+                  Open clinic workspace
                 </Button>
               </Link>
             </div>
@@ -1073,7 +1073,7 @@ export default function LandingPage() {
               <h4 className="font-semibold mb-4">Product</h4>
               <ul className="space-y-2 text-sm text-slate-400">
                 <li><Link href="/patient/previsit/symptoms" className="hover:text-white transition-colors">CarePrep</Link></li>
-                <li><Link href="/provider/dashboard" className="hover:text-white transition-colors">ContextAI</Link></li>
+                <li><Link href="/clinic/dashboard" className="hover:text-white transition-colors">ContextAI</Link></li>
                 <li><Link href="/features/ai-assistant" className="hover:text-white transition-colors">Features</Link></li>
                 <li><Link href="#pricing" className="hover:text-white transition-colors">Pricing</Link></li>
               </ul>

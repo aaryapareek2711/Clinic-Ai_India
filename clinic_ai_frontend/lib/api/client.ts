@@ -127,6 +127,14 @@ class APIClient {
     return response.data;
   }
 
+  async forgotPassword(email: string) {
+    const response = await this.client.post('/api/auth/forgot-password', { email });
+    return response.data as {
+      message?: string;
+      detail?: string;
+    };
+  }
+
   async getAuthUsers() {
     const response = await this.client.get('/api/auth/users');
     return response.data;
@@ -576,7 +584,16 @@ class APIClient {
   }
 
   async getVisit(visitId: string) {
-    return await this.client.get(`/api/visits/${visitId}`);
+    const response = await this.client.get(`/api/visits/${encodeURIComponent(visitId)}`);
+    return response.data;
+  }
+
+  async generatePreVisitSummary(patientId: string, visitId: string) {
+    const response = await this.client.post(
+      `/api/workflow/pre-visit-summary/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`,
+      {}
+    );
+    return response.data;
   }
 
   async getVisitIntakeSession(visitId: string) {
@@ -605,7 +622,7 @@ class APIClient {
 
   async getProviderVisits(providerId: string, status?: string) {
     const params = status ? { status_filter: status } : {};
-    return await this.client.get(`/api/visits/provider/${providerId}`, { params });
+    return await this.client.get(`/api/visits/provider/${encodeURIComponent(providerId)}`, { params });
   }
 
   async getProviderUpcomingVisits(providerId: string) {

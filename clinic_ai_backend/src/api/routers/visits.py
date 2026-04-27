@@ -1,7 +1,7 @@
 """Visit routes module."""
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.patient import ScheduleVisitIntakeRequest, ScheduleVisitIntakeResponse
@@ -131,6 +131,7 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                 "status": {"$ne": "cancelled"},
                 "$or": [
                     {"provider_id": provider_id},
+                    {"provider_id": ""},
                     {"provider_id": None},
                     {"provider_id": {"$exists": False}},
                 ],
@@ -164,6 +165,73 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
         )
 
     return {"appointments": appointments}
+
+
+@router.get("/provider/{provider_id}")
+def list_provider_visits(
+    provider_id: str,
+    status_filter: str | None = Query(default=None, description="Filter by visit status (scheduled, in_progress, completed, etc)"),
+) -> list[dict]:
+    """Return provider visits for Visits workspace list."""
+    db = get_database()
+    query: dict = {
+        "$or": [
+            {"provider_id": provider_id},
+            {"provider_id": ""},
+            {"provider_id": None},
+            {"provider_id": {"$exists": False}},
+        ],
+    }
+    if status_filter:
+        query["status"] = status_filter
+
+    records = list(db.visits.find(query, {"_id": 0}).sort("created_at", -1))
+    out: list[dict] = []
+    for visit in records:
+        resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
+        if not resolved_visit_id:
+            continue
+        internal_patient_id = str(visit.get("patient_id") or "")
+        patient = db.patients.find_one({"patient_id": internal_patient_id}, {"_id": 0}) or {}
+        patient_name = str(patient.get("name") or "").strip() or "Unknown patient"
+        patient_phone_number = str(patient.get("phone_number") or "").strip()
+        scheduled_start = visit.get("scheduled_start")
+        actual_start = visit.get("actual_start")
+        actual_end = visit.get("actual_end")
+        duration_minutes = None
+        try:
+            if isinstance(actual_start, datetime) and isinstance(actual_end, datetime):
+                duration_minutes = int((actual_end - actual_start).total_seconds() / 60)
+            elif isinstance(actual_start, str) and isinstance(actual_end, str):
+                start_dt = datetime.fromisoformat(actual_start.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(actual_end.replace("Z", "+00:00"))
+                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+        except Exception:
+            duration_minutes = None
+
+        out.append(
+            {
+                "id": resolved_visit_id,
+                "visit_id": resolved_visit_id,
+                "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
+                "patient_name": patient_name,
+                "mobile_number": patient_phone_number or None,
+                "visit_type": (
+                    "Visit"
+                    if str(visit.get("visit_type") or "").strip().lower() in {"", "string"}
+                    else str(visit.get("visit_type"))
+                ),
+                "status": str(visit.get("status") or "open"),
+                "scheduled_start": scheduled_start,
+                "actual_start": actual_start,
+                "actual_end": actual_end,
+                "duration_minutes": duration_minutes,
+                "chief_complaint": visit.get("chief_complaint") or None,
+                "created_at": visit.get("created_at") or "",
+            }
+        )
+
+    return out
 
 
 @router.get("/{visit_id}")

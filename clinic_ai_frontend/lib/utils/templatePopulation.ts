@@ -6,7 +6,6 @@ import type { SOAPTemplate } from '@/lib/types/templates';
 export interface PatientData {
   name?: string;
   age?: number;
-  dob?: string;
   gender?: string;
   mrn?: string;
   chiefComplaint?: string;
@@ -31,7 +30,6 @@ export interface PatientData {
 const placeholderMap: Record<string, (data: PatientData) => string> = {
   '[Patient Name]': (data) => data.name || '[Patient Name]',
   '[Age]': (data) => data.age?.toString() || '[Age]',
-  '[DOB]': (data) => data.dob || '[DOB]',
   '[Gender]': (data) => data.gender || '[Gender]',
   '[MRN]': (data) => data.mrn || '[MRN]',
   '[Chief Complaint]': (data) => data.chiefComplaint || '[Chief Complaint]',

@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -115,7 +116,9 @@ class TranscriptionWorker:
 
             review_count = sum(1 for segment in normalized if segment["needs_manual_review"])
             review_ratio = review_count / len(normalized)
-            full_text = " ".join(segment["text"] for segment in normalized if segment["text"]).strip()
+            full_text = self._normalize_transcript_text(
+                " ".join(segment["text"] for segment in normalized if segment["text"]).strip()
+            )
             avg_confidence = sum(segment["confidence"] for segment in normalized) / len(normalized)
             if self.settings.use_local_adapters:
                 requires_manual_review = False
@@ -1174,6 +1177,27 @@ class TranscriptionWorker:
         if speaker in {"unknown"}:
             return "Unknown"
         return "Unknown"
+
+    @staticmethod
+    def _normalize_transcript_text(text: str) -> str:
+        """
+        Improve readability of raw ASR transcript text.
+
+        Azure short-audio responses can contain run-on punctuation like "department.Umm"
+        and inconsistent spacing/newlines. Keep content intact, just normalize formatting.
+        """
+        if not text:
+            return ""
+
+        cleaned = text.strip()
+        # Collapse tabs/newlines and repeated spaces.
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        # Insert missing whitespace after sentence punctuation before next token.
+        cleaned = re.sub(r"([.!?])([A-Za-z0-9])", r"\1 \2", cleaned)
+        # Preserve common abbreviations by avoiding aggressive punctuation rewrites.
+        # Add line-breaks between likely sentence boundaries for easier reading.
+        cleaned = re.sub(r"(?<=[.!?])\s+(?=[A-Z])", "\n", cleaned)
+        return cleaned.strip()
 
 
 async def _worker_loop(worker_id: int, stop_event: asyncio.Event, poll_interval_sec: float) -> None:

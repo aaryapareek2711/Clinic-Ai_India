@@ -16,11 +16,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
+import { apiClient } from '@/lib/api/client';
+import toast from 'react-hot-toast';
 
 export const SignupForm = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const plan = searchParams.get('plan');
+  const plan = searchParams?.get('plan');
   const {
     register,
     handleSubmit,
@@ -60,22 +62,8 @@ export const SignupForm = () => {
 
       console.log('Registering provider:', { ...payload, password: '[REDACTED]' });
 
-      // Call the backend registration API
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-      const response = await fetch(`${apiUrl}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        // Handle API errors
-        throw new Error(result.detail || 'Registration failed');
-      }
+      // Call backend through the shared API client (/api proxy aware)
+      const result = await apiClient.register(payload);
 
       // Registration successful
       console.log('Registration successful:', result.user);
@@ -97,14 +85,21 @@ export const SignupForm = () => {
 
       // Show success message (brief, non-blocking)
       console.log(`✅ Welcome ${result.user.full_name}! Redirecting to dashboard...`);
+      toast.success('Account created successfully');
 
-      // Redirect to provider dashboard
-      // The landing page will also auto-redirect authenticated providers
-      router.push('/provider/dashboard');
+      router.push('/clinic/dashboard');
 
     } catch (error) {
       console.error('Registration error:', error);
-      alert(error instanceof Error ? error.message : 'Registration failed. Please try again.');
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 503) {
+        toast.error('Signup service is temporarily unavailable. Please try again in a moment.');
+        return;
+      }
+      const detail =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (error instanceof Error ? error.message : 'Registration failed. Please try again.');
+      toast.error(detail);
     }
   };
 

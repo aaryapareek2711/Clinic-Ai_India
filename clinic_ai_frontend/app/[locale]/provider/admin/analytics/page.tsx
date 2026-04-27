@@ -48,7 +48,7 @@ export default function AnalyticsPage() {
         if (!isAuthenticated || !user) {
             router.replace('/login');
         } else if (user.role !== 'admin' && user.role !== 'doctor') {
-            router.replace('/provider/dashboard');
+            router.replace('/clinic/dashboard');
         } else {
             fetchAnalytics();
         }

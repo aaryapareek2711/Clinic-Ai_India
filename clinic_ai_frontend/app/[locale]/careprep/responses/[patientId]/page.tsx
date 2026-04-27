@@ -110,7 +110,7 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/provider/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
+        <Link href="/clinic/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
@@ -220,7 +220,7 @@ export default function CarePrepResponsesPage({ params }: { params: { patientId:
 
       {/* Actions */}
       <div className="mt-6 flex items-center justify-between">
-        <Link href="/provider/dashboard">
+        <Link href="/clinic/dashboard">
           <Button variant="outline">Back to Dashboard</Button>
         </Link>
         <Link href={`/careprep/send/${encodeURIComponent(patientId)}`}>

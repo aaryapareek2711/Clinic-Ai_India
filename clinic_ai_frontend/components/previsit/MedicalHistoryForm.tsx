@@ -135,7 +135,6 @@ export default function MedicalHistoryForm({ patientId, onComplete }: MedicalHis
         // Keep existing data for other fields
         first_name: currentPatient.first_name,
         last_name: currentPatient.last_name,
-        date_of_birth: currentPatient.date_of_birth,
         gender: currentPatient.gender,
       };
 

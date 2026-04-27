@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, Mic, Pause, Play, StopCircle, Loader2, CheckCircle, XCircle, FileAudio } from 'lucide-react';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
+import { toWavFile } from '@/lib/audio/toWav';
 
 interface Transcription {
   id: string;
@@ -60,6 +61,15 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
       .filter((turn) => turn.text.length > 0);
   };
 
+  const formatTranscriptText = (raw: string): string => {
+    if (!raw) return '';
+    return raw
+      .replace(/\s+/g, ' ')
+      .replace(/([.!?])([A-Za-z0-9])/g, '$1 $2')
+      .replace(/(?<=[.!?])\s+(?=[A-Z])/g, '\n')
+      .trim();
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (isUploading || isProcessing || isRecording) return;
     const file = event.target.files?.[0];
@@ -94,7 +104,11 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
 
     setIsUploading(true);
     try {
-      const response = await apiClient.uploadVisitTranscription(patientId, visitId, selectedFile);
+      const lowerType = String(selectedFile.type || '').toLowerCase();
+      const fileForUpload = lowerType === 'audio/wav' || lowerType === 'audio/x-wav' || lowerType === 'audio/mpeg' || lowerType === 'audio/mp3'
+        ? selectedFile
+        : await toWavFile(selectedFile, `transcription-${Date.now()}`);
+      const response = await apiClient.uploadVisitTranscription(patientId, visitId, fileForUpload);
       const newTranscription: Transcription = {
         id: response?.job_id || response?.message_id || `job-${Date.now()}`,
         transcription_text: '',
@@ -469,20 +483,29 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
                         <span>Duration: {transcription.audio_duration_seconds}s</span>
                       )}
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
-                      {(transcription.diarized_turns || []).length > 0 ? (
-                        <div className="space-y-2">
-                          {(transcription.diarized_turns || []).map((turn, idx) => (
-                            <div key={`${transcription.id}-turn-${idx}`} className="text-sm text-gray-900">
-                              <span className="font-semibold text-blue-700 mr-2">{turn.speaker}:</span>
-                              <span className="whitespace-pre-wrap">{turn.text}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-900 whitespace-pre-wrap">
-                          {transcription.transcription_text}
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Complete Transcript
                         </p>
+                        <p className="text-sm text-gray-900 whitespace-pre-wrap">
+                          {formatTranscriptText(transcription.transcription_text)}
+                        </p>
+                      </div>
+                      {(transcription.diarized_turns || []).length > 1 && (
+                        <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Diarization
+                          </p>
+                          <div className="space-y-2">
+                            {(transcription.diarized_turns || []).map((turn, idx) => (
+                              <div key={`${transcription.id}-turn-${idx}`} className="text-sm text-gray-900">
+                                <span className="font-semibold text-blue-700 mr-2">{turn.speaker}:</span>
+                                <span className="whitespace-pre-wrap">{turn.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>

@@ -16,6 +16,14 @@ class Settings:
     app_name: str = "Clinic AI India Backend"
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = int(os.getenv("API_PORT", "8000"))
+    cors_origins: list[str] = [
+        value.strip()
+        for value in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+        ).split(",")
+        if value.strip()
+    ]
     mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017/clinic_ai")
     mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "clinic_ai")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")

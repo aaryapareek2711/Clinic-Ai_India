@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Loader2, Mail, Clock } from "lucide-react";
 import apiClient from "@/lib/api/client";
+import toast from "react-hot-toast";
+import { workspaceBaseFromPathname } from "@/lib/workspace/resolver";
 
 interface User {
     id: string;
@@ -36,6 +40,8 @@ interface Invitation {
 }
 
 export default function SettingsPage() {
+    const pathname = usePathname();
+    const ws = workspaceBaseFromPathname(pathname);
     const [users, setUsers] = useState<User[]>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [loading, setLoading] = useState(false);
@@ -65,6 +71,7 @@ export default function SettingsPage() {
             }
         } catch (error) {
             console.error("Failed to load settings data", error);
+            toast.error("Failed to load settings data");
         } finally {
             setLoading(false);
         }
@@ -76,8 +83,10 @@ export default function SettingsPage() {
             // Refresh list
             const usersData = await apiClient.getUsers();
             setUsers(usersData);
+            toast.success("Role updated");
         } catch (error) {
             console.error("Failed to update role", error);
+            toast.error("Failed to update role");
         }
     };
 
@@ -99,17 +108,39 @@ export default function SettingsPage() {
             setIsInviteModalOpen(false);
             setInviteEmail("");
             setInviteRole("staff");
+            toast.success("Invitation sent");
         } catch (error) {
             console.error("Failed to invite user", error);
-            alert("Failed to invite user. Please check if the email is already invited or registered.");
+            toast.error("Failed to invite user. Email may already be invited or registered.");
         } finally {
             setIsInviting(false);
         }
     };
 
+    if (loading) {
+        return (
+            <div className="container mx-auto py-10">
+                <div className="flex items-center justify-center py-20">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-3 text-slate-600">Loading settings...</span>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="container mx-auto py-10">
-            <h1 className="text-3xl font-bold mb-6">Settings</h1>
+            <div className="mb-6 flex items-center justify-between gap-3">
+                <h1 className="text-3xl font-bold">Settings</h1>
+                <div className="flex gap-2">
+                    <Link href={`${ws}/dashboard`}>
+                        <Button variant="outline">Back to Dashboard</Button>
+                    </Link>
+                    <Link href={`${ws}/templates`}>
+                        <Button variant="outline">Templates</Button>
+                    </Link>
+                </div>
+            </div>
 
             <Tabs defaultValue="profile" className="w-full">
                 <TabsList className="grid w-full grid-cols-3">

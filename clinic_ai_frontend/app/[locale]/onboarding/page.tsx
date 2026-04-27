@@ -16,6 +16,7 @@ import {
   Shield,
   Stethoscope,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // Onboarding steps
 const STEPS = [
@@ -141,6 +142,16 @@ export default function OnboardingPage() {
   };
 
   const handleNext = () => {
+    if (STEPS[currentStep].id === 'organization') {
+      if (!formData.organizationName.trim() || !formData.organizationType || !formData.phone.trim() || !formData.email.trim()) {
+        toast.error('Please fill organization name, type, phone, and email to continue.');
+        return;
+      }
+    }
+    if (STEPS[currentStep].id === 'billing' && !formData.selectedPlan) {
+      toast.error('Please select a plan to continue.');
+      return;
+    }
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     }
@@ -155,7 +166,7 @@ export default function OnboardingPage() {
   const handleComplete = () => {
     // TODO: Submit onboarding data to API
     console.log('Onboarding data:', formData);
-    router.push('/provider/dashboard');
+    router.push('/clinic/dashboard');
   };
 
   const renderStepContent = () => {
@@ -611,7 +622,7 @@ export default function OnboardingPage() {
         <div className="container mx-auto px-6">
           <div className="flex items-center gap-2">
             <Stethoscope className="w-8 h-8 text-emerald-600" />
-            <span className="text-xl font-bold text-slate-900">HealthcareAI</span>
+            <span className="text-xl font-bold text-slate-900">MedGenie</span>
           </div>
         </div>
       </header>

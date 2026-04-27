@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { RegionLanguageSwitcher } from '@/components/ui/RegionLanguageSwitcher';
 import { RegionProvider } from '@/contexts/RegionContext';
+import { normalizeWorkspacePath } from '@/lib/workspace/resolver';
 
 interface NavItem {
   href: string;
@@ -30,12 +31,12 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/provider/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/provider/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/provider/visits', label: 'Visits', icon: Stethoscope },
-  { href: '/provider/patients', label: 'Patients', icon: User },
-  { href: '/provider/templates', label: 'Templates', icon: FileText },
-  { href: '/provider/settings', label: 'Settings', icon: Settings },
+  { href: '/clinic/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/clinic/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/clinic/visits', label: 'Visits', icon: Stethoscope },
+  { href: '/clinic/patients', label: 'Patients', icon: User },
+  { href: '/clinic/templates', label: 'Templates', icon: FileText },
+  { href: '/clinic/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function ProviderLayout({
@@ -50,14 +51,18 @@ export default function ProviderLayout({
 
   useEffect(() => {
     // Wait for hydration to complete
+    if (pathname?.includes('/provider')) {
+      router.replace(normalizeWorkspacePath(pathname));
+      return;
+    }
     if (!isAuthenticated) {
       router.replace('/login');
-    } else if (user?.role !== 'provider' && user?.role !== 'admin' && user?.role !== 'doctor') {
+    } else if (!['doctor', 'nurse', 'admin', 'staff', 'super_admin', 'provider'].includes(user?.role || '')) {
       router.replace('/login');
     } else {
       setIsReady(true);
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, pathname, user, router]);
 
   const handleLogout = () => {
     logout();
@@ -67,8 +72,8 @@ export default function ProviderLayout({
 
   const isActive = (href: string) => {
     const currentPath = pathname || '';
-    if (href === '/provider/dashboard') {
-      return currentPath === '/provider/dashboard';
+    if (href === '/clinic/dashboard') {
+      return currentPath.endsWith('/clinic/dashboard') || currentPath.endsWith('/clinic');
     }
     return currentPath.startsWith(href);
   };
@@ -89,7 +94,7 @@ export default function ProviderLayout({
       <aside className="hidden w-72 flex-col bg-slate-900 md:flex">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center border-b border-slate-800 px-6">
-          <Link href="/provider/dashboard" className="flex items-center space-x-3">
+          <Link href="/clinic/dashboard" className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
               <Activity className="w-5 h-5 text-white" />
             </div>
@@ -140,7 +145,7 @@ export default function ProviderLayout({
               </p>
               <Link
                 href="/provider/admin/subscription"
-                className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${isActive('/provider/admin/subscription')
+                className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname?.includes('/provider/admin/subscription')
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                   }`}
@@ -152,7 +157,7 @@ export default function ProviderLayout({
               </Link>
               <Link
                 href="/provider/admin/analytics"
-                className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${isActive('/provider/admin/analytics')
+                className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname?.includes('/provider/admin/analytics')
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                   }`}

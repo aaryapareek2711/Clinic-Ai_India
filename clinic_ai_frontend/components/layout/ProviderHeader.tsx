@@ -10,11 +10,11 @@ export async function ProviderHeader() {
   const user = await getCurrentUser();
 
   const navLinks = [
-    { href: "/provider/dashboard", label: "Dashboard" },
-    { href: "/provider/patients", label: "Patients" },
-    { href: "/dashboard/calendar", label: "Calendar" },
-    { href: "/provider/visits", label: "Visits" },
-    { href: "/provider/templates", label: "Templates" },
+    { href: "/clinic/dashboard", label: "Dashboard" },
+    { href: "/clinic/patients", label: "Patients" },
+    { href: "/clinic/calendar", label: "Calendar" },
+    { href: "/clinic/visits", label: "Visits" },
+    { href: "/clinic/templates", label: "Templates" },
   ];
 
   return (
@@ -22,11 +22,11 @@ export async function ProviderHeader() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-8">
-            <Link href="/provider/dashboard" className="flex items-center space-x-2">
+            <Link href="/clinic/dashboard" className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
                 <Activity className="h-5 w-5 text-white" />
               </div>
-              <span className="font-bold text-lg text-gray-900">HealthAI</span>
+              <span className="font-bold text-lg text-gray-900">MedGenie</span>
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
                 Provider
               </span>

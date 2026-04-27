@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 interface VitalsFormPanelProps {
   patientId: string;
   visitId: string;
+  onSaved?: () => void;
 }
 
 interface VitalsField {
@@ -20,7 +21,7 @@ interface VitalsField {
   required: boolean;
 }
 
-export default function VitalsFormPanel({ patientId, visitId }: VitalsFormPanelProps) {
+export default function VitalsFormPanel({ patientId, visitId, onSaved }: VitalsFormPanelProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formId, setFormId] = useState<string>('');
@@ -90,6 +91,7 @@ export default function VitalsFormPanel({ patientId, visitId }: VitalsFormPanelP
         values: payloadValues,
       });
       toast.success('Vitals saved successfully');
+      onSaved?.();
     } catch (error: any) {
       console.error('Failed to submit vitals:', error);
       toast.error(error?.response?.data?.detail || 'Failed to save vitals');

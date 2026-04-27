@@ -90,7 +90,7 @@ export default function RecentVisitsCard({ providerId }: { providerId: string })
             </CardTitle>
             <CardDescription>Documentation status for recent patient encounters</CardDescription>
           </div>
-          <Link href="/provider/visits/new">
+          <Link href="/clinic/visits/new">
             <Button variant="primary" size="sm" className="bg-purple-600 hover:bg-purple-700">
               <PlayCircle className="w-4 h-4 mr-2" />
               Start New Visit
@@ -123,7 +123,7 @@ export default function RecentVisitsCard({ providerId }: { providerId: string })
                       <p className="text-sm text-gray-600">{visit.chief_complaint || 'No complaint recorded'}</p>
                       <p className="text-xs text-gray-500 mt-1">{formatDate(visit)}</p>
                     </div>
-                    <Link href={`/provider/visits/${visit.id}`}>
+                    <Link href={`/clinic/visits/${visit.id}`}>
                       <Button variant="outline" size="sm">
                         {statusKey === 'completed' ? (
                           <>
@@ -160,7 +160,7 @@ export default function RecentVisitsCard({ providerId }: { providerId: string })
             <p className="text-gray-600 mb-4">
               Start a new visit to begin documenting patient encounters with AI assistance.
             </p>
-            <Link href="/provider/visits/new">
+            <Link href="/clinic/visits/new">
               <Button variant="primary" className="bg-purple-600 hover:bg-purple-700">
                 <PlayCircle className="w-4 h-4 mr-2" />
                 Start Your First Visit

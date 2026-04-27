@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Heart } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
+import { homePathForRole } from '@/lib/workspace/resolver';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading, error, isAuthenticated, user, clearError } = useAuthStore();
 
   const [username, setUsername] = useState('');
@@ -18,19 +20,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      // Normalize role: both "doctor" and "provider" should be treated as provider
-      const normalizedRole = (user.role === 'doctor' || user.role === 'provider') ? 'provider' : user.role;
-
-      // Redirect based on role
-      if (user.role === 'super_admin') {
-        router.push('/admin');
-      } else if (normalizedRole === 'patient') {
-        router.push('/patient/dashboard');
-      } else {
-        router.push('/provider/dashboard');
-      }
+      const redirectPath = searchParams?.get('redirect');
+      const safeRedirect = redirectPath && redirectPath.startsWith('/') ? redirectPath : null;
+      router.push(safeRedirect || homePathForRole(user.role));
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, user, router, searchParams]);
 
   useEffect(() => {
     if (error) {
@@ -118,9 +112,14 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 space-y-3 text-center">
               <p className="text-sm text-slate-600">
-                Don't have an account?{' '}
+                <Link href="/forgot-password" className="text-forest-600 hover:text-forest-700 font-medium">
+                  Forgot password?
+                </Link>
+              </p>
+              <p className="text-sm text-slate-600">
+                Don&apos;t have an account?{' '}
                 <Link href="/signup" className="text-forest-600 hover:text-forest-700 font-medium">
                   Start your free trial
                 </Link>

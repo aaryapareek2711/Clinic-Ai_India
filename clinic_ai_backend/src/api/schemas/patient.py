@@ -59,6 +59,8 @@ class PatientSummaryResponse(BaseModel):
     phone_number: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    latest_visit_id: str | None = None
+    latest_visit_scheduled_start: str | None = None
 
 
 class CreateVisitFromPatientRequest(BaseModel):

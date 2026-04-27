@@ -40,11 +40,12 @@ interface SOAPNotesEditorProps {
   initialNotes?: Partial<SOAPNotes>;
   transcriptId?: string;
   onSave?: (notes: SOAPNotes) => void;
+  onGenerated?: (notes: SOAPNotes) => void;
   patientData?: PatientData;
   patientId?: string;
 }
 
-export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, onSave, patientData, patientId }: SOAPNotesEditorProps) {
+export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, onSave, onGenerated, patientData, patientId }: SOAPNotesEditorProps) {
   const [soapNotes, setSOAPNotes] = useState<SOAPNotes>({
     doctor_notes: initialNotes?.doctor_notes || '',
     chief_complaint: initialNotes?.chief_complaint || '',
@@ -211,6 +212,17 @@ export default function SOAPNotesEditor({ visitId, initialNotes, transcriptId, o
       // Replace note body with generated clinical content to avoid duplicate
       // template paragraphs being appended repeatedly.
       setSOAPNotes({
+        doctor_notes: generatedNotes.doctor_notes || '',
+        chief_complaint: generatedNotes.chief_complaint || '',
+        assessment: generatedNotes.assessment || '',
+        plan: generatedNotes.plan || '',
+        medications: generatedNotes.medications || [],
+        investigations: generatedNotes.investigations || [],
+        follow_up: generatedNotes.follow_up || '',
+        red_flags: generatedNotes.red_flags || [],
+        data_gaps: generatedNotes.data_gaps || [],
+      });
+      onGenerated?.({
         doctor_notes: generatedNotes.doctor_notes || '',
         chief_complaint: generatedNotes.chief_complaint || '',
         assessment: generatedNotes.assessment || '',

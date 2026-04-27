@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { Plus, FileText, Users, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import TemplateCard from '@/components/templates/TemplateCard';
 import FilterBar from '@/components/templates/FilterBar';
 import TemplatePreviewModal from '@/components/templates/TemplatePreviewModal';
@@ -12,10 +14,13 @@ import PublishTemplateModal from '@/components/templates/PublishTemplateModal';
 import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
 import type { SOAPTemplate, TemplateFilters, TemplateType } from '@/lib/types/templates';
+import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
 
 type TabType = 'my' | 'practice' | 'community';
 
 export default function TemplatesPage() {
+  const pathname = usePathname();
+  const ws = workspaceBaseFromPathname(pathname);
   const [activeTab, setActiveTab] = useState<TabType>('my');
   const [filters, setFilters] = useState<TemplateFilters>({
     search: '',
@@ -222,7 +227,7 @@ export default function TemplatesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cream-50 via-white to-sand-50">
+    <div className="bg-gradient-to-br from-cream-50 via-white to-sand-50">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -235,16 +240,21 @@ export default function TemplatesPage() {
                 Browse, preview, and use clinical-note templates
               </p>
             </div>
-            <Button
-              variant="primary"
-              leftIcon={<Plus className="w-5 h-5" />}
-              onClick={() => {
-                setEditingTemplate(null);
-                setShowCreateModal(true);
-              }}
-            >
-              Create New Template
-            </Button>
+            <div className="flex gap-2">
+              <Link href={`${ws}/dashboard`}>
+                <Button variant="outline">Back to Dashboard</Button>
+              </Link>
+              <Button
+                variant="primary"
+                leftIcon={<Plus className="w-5 h-5" />}
+                onClick={() => {
+                  setEditingTemplate(null);
+                  setShowCreateModal(true);
+                }}
+              >
+                Create New Template
+              </Button>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -281,6 +291,12 @@ export default function TemplatesPage() {
       {/* FilterBar */}
       <FilterBar filters={filters} onFiltersChange={setFilters} />
 
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Tip: start from <strong>My Templates</strong> for day-to-day speed. Publish polished templates to Community for reuse.
+        </div>
+      </div>
+
       {/* Community Stats Section - Only show on community tab */}
       {activeTab === 'community' && !isLoading && templates.length > 0 && (
         <div className="bg-white border-b border-slate-200 py-8">
@@ -307,7 +323,7 @@ export default function TemplatesPage() {
                       {template.description}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>{template.metadata.category || template.category}</span>
+                      <span>{template.metadata.category || 'General'}</span>
                       {template.metadata.authorName && (
                         <>
                           <span>•</span>

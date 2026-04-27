@@ -209,7 +209,7 @@ export default function SendCarePrepPage({ params }: { params: { patientId: stri
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/provider/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
+        <Link href="/clinic/dashboard" className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>

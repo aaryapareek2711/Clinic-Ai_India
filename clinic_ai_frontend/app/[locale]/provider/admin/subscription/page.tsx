@@ -44,7 +44,7 @@ export default function SubscriptionPage() {
             }
 
             if (user.role !== 'admin' && user.role !== 'doctor') {
-                router.replace('/provider/dashboard');
+                router.replace('/clinic/dashboard');
                 return;
             }
 
