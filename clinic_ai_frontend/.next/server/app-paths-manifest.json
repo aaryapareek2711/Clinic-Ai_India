@@ -1,10 +1,8 @@
 {
   "/login/page": "app/login/page.js",
-  "/clinic/careprep/page": "app/clinic/careprep/page.js",
   "/clinic/dashboard/page": "app/clinic/dashboard/page.js",
-  "/[locale]/page": "app/[locale]/page.js",
-  "/[locale]/careprep/responses/page": "app/[locale]/careprep/responses/page.js",
-  "/[locale]/clinic/manage-appointments/page": "app/[locale]/clinic/manage-appointments/page.js",
+  "/[locale]/login/page": "app/[locale]/login/page.js",
   "/[locale]/clinic/dashboard/page": "app/[locale]/clinic/dashboard/page.js",
-  "/[locale]/clinic/careprep/page": "app/[locale]/clinic/careprep/page.js"
+  "/[locale]/clinic/visits/page": "app/[locale]/clinic/visits/page.js",
+  "/[locale]/clinic/patients/page": "app/[locale]/clinic/patients/page.js"
 }

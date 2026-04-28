@@ -75,6 +75,7 @@ export default function ManageAppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingVisitId, setSavingVisitId] = useState<string | null>(null);
+  const [cancellingVisitId, setCancellingVisitId] = useState<string | null>(null);
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const loadErrorToastShown = useRef(false);
@@ -242,11 +243,11 @@ export default function ManageAppointmentsPage() {
         ),
       );
       if (response.intake_skipped_existing_session) {
-        toast('Appointment fixed. Intake already existed for this visit.', { icon: 'ℹ️' });
+        toast('Appointment booked. Intake already existed for this visit.', { icon: 'ℹ️' });
       } else if (response.whatsapp_triggered) {
-        toast.success('Appointment fixed and WhatsApp intake triggered.');
+        toast.success('Appointment booked and WhatsApp intake triggered.');
       } else {
-        toast.success('Appointment fixed.');
+        toast.success('Appointment booked.');
       }
       const selectedTime = fromTwentyFourToTwelve(appointmentTime);
       setDateByVisit((prev) => ({ ...prev, [visitId]: appointmentDate }));
@@ -254,7 +255,7 @@ export default function ManageAppointmentsPage() {
       setMinuteByVisit((prev) => ({ ...prev, [visitId]: selectedTime.minute }));
       setPeriodByVisit((prev) => ({ ...prev, [visitId]: selectedTime.period }));
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to fix appointment');
+      toast.error(error?.response?.data?.detail || 'Failed to book appointment');
     } finally {
       setSavingVisitId(null);
     }
@@ -319,6 +320,26 @@ export default function ManageAppointmentsPage() {
     return 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
+  const handleCancelVisit = async (visitId: string) => {
+    setCancellingVisitId(visitId);
+    try {
+      const response = await apiClient.cancelVisit(visitId);
+      setVisits((prev) =>
+        prev.map((visit) =>
+          visit.visit_id === visitId
+            ? { ...visit, status: response.status, scheduled_start: response.scheduled_start }
+            : visit,
+        ),
+      );
+      setExpandedVisitId((prev) => (prev === visitId ? null : prev));
+      toast.success('Visit cancelled');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to cancel visit');
+    } finally {
+      setCancellingVisitId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <FlowBreadcrumb
@@ -332,14 +353,14 @@ export default function ManageAppointmentsPage() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Manage Appointments</h1>
           <p className="text-slate-600 mt-1">
-            Single place to fix pending scheduling and update already scheduled visits.
+            Single place to book pending appointments and update already scheduled visits.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Total visits</p><p className="text-3xl font-bold text-slate-900">{summary.total}</p></CardContent></Card>
-        <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Appointment fixed</p><p className="text-3xl font-bold text-green-700">{summary.fixed}</p></CardContent></Card>
+        <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Appointment booked</p><p className="text-3xl font-bold text-green-700">{summary.fixed}</p></CardContent></Card>
         <Card><CardContent className="p-5"><p className="text-sm text-slate-500">Needs scheduling</p><p className="text-3xl font-bold text-amber-700">{summary.pending}</p></CardContent></Card>
       </div>
 
@@ -560,6 +581,13 @@ export default function ManageAppointmentsPage() {
                   <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${statusBadgeClass(visit.status)}`}>
                     {(visit.status || 'open').replace('_', ' ')}
                   </span>
+                  {visit.scheduled_start && !isLockedVisit(visit.status) && (
+                    <Link href={`${ws}/visits/${encodeURIComponent(visit.visit_id)}`}>
+                      <Button type="button" size="sm">
+                        Open visit
+                      </Button>
+                    </Link>
+                  )}
                   {isLockedVisit(visit.status) ? (
                     <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
                       Locked
@@ -584,6 +612,17 @@ export default function ManageAppointmentsPage() {
                       )}
                     </Button>
                   ) : null}
+                  {!isLockedVisit(visit.status) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={cancellingVisitId === visit.visit_id}
+                      onClick={() => handleCancelVisit(visit.visit_id)}
+                    >
+                      {cancellingVisitId === visit.visit_id ? 'Cancelling...' : 'Cancel visit'}
+                    </Button>
+                  )}
                 </div>
               </div>
               {(expandedVisitId === visit.visit_id || !visit.scheduled_start) && !isLockedVisit(visit.status) && (
@@ -642,7 +681,7 @@ export default function ManageAppointmentsPage() {
                       ? 'Saving...'
                       : visit.scheduled_start
                       ? 'Update Appointment'
-                      : 'Fix Appointment'}
+                      : 'Book Appointment'}
                   </Button>
                 </form>
               )}

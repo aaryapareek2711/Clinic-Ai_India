@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { apiClient } from '@/lib/api/client';
-import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
+import { localizedWorkspacePath, workspaceBaseFromPathname } from '@/lib/workspace/resolver';
 import { WelcomeModal } from '@/components/dashboard/WelcomeModal';
 import FlowBreadcrumb from '@/components/workspace/FlowBreadcrumb';
 
@@ -51,6 +51,7 @@ const LOCAL_APPOINTMENTS_KEY = 'provider_local_appointments';
 export default function WorkspaceDashboard() {
   const pathname = usePathname();
   const ws = workspaceBaseFromPathname(pathname);
+  const withLocale = (href: string) => localizedWorkspacePath(pathname, href);
   const { user } = useAuthStore();
   const router = useRouter();
 
@@ -168,14 +169,19 @@ export default function WorkspaceDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`${ws}/registered-patients`}>
+            <Link href={withLocale(`${ws}/registered-patients`)}>
               <Button size="sm" variant="primary" leftIcon={<UserPlus className="h-4 w-4" />}>
                 New registration
               </Button>
             </Link>
-            <Link href={`${ws}/manage-appointments`}>
+            <Link href={withLocale(`${ws}/manage-appointments`)}>
               <Button size="sm" variant="outline" leftIcon={<Calendar className="h-4 w-4" />}>
                 Appointments center
+              </Button>
+            </Link>
+            <Link href={withLocale(`${ws}/follow-through`)}>
+              <Button size="sm" variant="outline" leftIcon={<CheckCircle2 className="h-4 w-4" />}>
+                Follow-through center
               </Button>
             </Link>
           </div>
@@ -244,7 +250,7 @@ export default function WorkspaceDashboard() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 1</p>
             <p className="mt-1 font-semibold text-slate-900">Registration + Visit</p>
             <p className="mt-1 text-xs text-slate-600">Create patient + visit without forcing immediate appointment.</p>
-            <Link href={`${ws}/registered-patients`} className="mt-3 block">
+            <Link href={withLocale(`${ws}/registered-patients`)} className="mt-3 block">
               <Button size="sm" className="w-full" leftIcon={<Plus className="h-4 w-4" />}>
                 Open registration
               </Button>
@@ -255,9 +261,14 @@ export default function WorkspaceDashboard() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
             <p className="mt-1 font-semibold text-slate-900">Appointments + Queue</p>
             <p className="mt-1 text-xs text-slate-600">Fix pending scheduling and reschedule existing appointments.</p>
-            <Link href={`${ws}/manage-appointments`} className="mt-3 block">
+            <Link href={withLocale(`${ws}/manage-appointments`)} className="mt-3 block">
               <Button size="sm" variant="outline" className="w-full" leftIcon={<ClipboardList className="h-4 w-4" />}>
                 Open appointments center
+              </Button>
+            </Link>
+            <Link href={withLocale(`${ws}/queue`)} className="mt-2 block">
+              <Button size="sm" variant="ghost" className="w-full">
+                Open queue board
               </Button>
             </Link>
           </div>
@@ -266,7 +277,7 @@ export default function WorkspaceDashboard() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
             <p className="mt-1 font-semibold text-slate-900">CarePrep Intake</p>
             <p className="mt-1 text-xs text-slate-600">Trigger WhatsApp intake and review Q&A responses.</p>
-            <Link href="/careprep" className="mt-3 block">
+            <Link href={withLocale('/careprep')} className="mt-3 block">
               <Button size="sm" variant="outline" className="w-full" leftIcon={<MessageSquare className="h-4 w-4" />}>
                 Open CarePrep
               </Button>
@@ -277,7 +288,7 @@ export default function WorkspaceDashboard() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
             <p className="mt-1 font-semibold text-slate-900">Consult + Post-Visit</p>
             <p className="mt-1 text-xs text-slate-600">Vitals, transcription, clinical notes, and WhatsApp follow-through.</p>
-            <Link href={`${ws}/visits`} className="mt-3 block">
+            <Link href={withLocale(`${ws}/visits`)} className="mt-3 block">
               <Button size="sm" variant="outline" className="w-full" leftIcon={<Stethoscope className="h-4 w-4" />}>
                 Open visit workspace
               </Button>
@@ -311,9 +322,9 @@ export default function WorkspaceDashboard() {
                     <p className="text-xs text-slate-500">{item.reason}</p>
                     <p className="text-xs text-amber-700">Visit ID: {item.id}</p>
                   </div>
-                  <Link href={`${ws}/fix-appointment/${encodeURIComponent(item.workflowVisitId || item.id)}`}>
+                  <Link href={withLocale(`${ws}/fix-appointment/${encodeURIComponent(item.workflowVisitId || item.id)}`)}>
                     <Button size="sm" variant="outline">
-                      Fix appointment
+                      Book appointment
                     </Button>
                   </Link>
                 </div>
@@ -328,6 +339,11 @@ export default function WorkspaceDashboard() {
             <CardDescription>Scheduled visits ready to open documentation workspace.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <Link href={withLocale(`${ws}/queue`)} className="block">
+              <Button size="sm" variant="outline" className="w-full">
+                Open full queue board
+              </Button>
+            </Link>
             {loading ? (
               <>
                 <div className="h-16 rounded-lg border border-slate-200 bg-slate-100 animate-pulse" />
@@ -383,7 +399,7 @@ export default function WorkspaceDashboard() {
                     <p className="font-medium text-slate-900">{item.patient.name}</p>
                     <p className="text-xs text-slate-500">{item.reason}</p>
                   </div>
-                  <Link href={`/careprep/responses?patientId=${encodeURIComponent(item.patient.id)}`}>
+                  <Link href={withLocale(`/careprep/patient/${encodeURIComponent(item.patient.id)}`)}>
                     <Button size="sm" variant="outline" leftIcon={<CheckCircle2 className="h-4 w-4" />}>
                       View intake
                     </Button>
@@ -407,13 +423,13 @@ export default function WorkspaceDashboard() {
               <p className="text-sm text-slate-600">No templates yet. Create one to speed up documentation.</p>
             ) : (
               quickTemplates.map((template) => (
-                <Link key={template.id} href={`${ws}/templates`} className="block rounded-lg border p-3 hover:bg-slate-50">
+                <Link key={template.id} href={withLocale(`${ws}/templates`)} className="block rounded-lg border p-3 hover:bg-slate-50">
                   <p className="font-medium text-slate-900 line-clamp-1">{template.name}</p>
                   <p className="text-xs text-slate-600 line-clamp-2">{template.description}</p>
                 </Link>
               ))
             )}
-            <Link href={`${ws}/templates`} className="block">
+            <Link href={withLocale(`${ws}/templates`)} className="block">
               <Button size="sm" className="w-full" variant="outline" leftIcon={<FileText className="h-4 w-4" />}>
                 Manage templates
               </Button>

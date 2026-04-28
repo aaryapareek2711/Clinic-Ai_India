@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import auth, contextai, health, notes, patients, templates, transcription, visits, vitals, whatsapp, workflow
+from src.api.routers import auth, contextai, followthrough, health, notes, patients, templates, transcription, visits, vitals, whatsapp, workflow
 from src.core.config import get_settings
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
 
@@ -38,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(transcription.router)
     app.include_router(visits.router)
     app.include_router(contextai.router)
+    app.include_router(followthrough.router)
     app.include_router(templates.router)
     app.include_router(notes.router)
     return app

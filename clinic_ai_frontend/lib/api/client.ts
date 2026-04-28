@@ -496,7 +496,17 @@ class APIClient {
   }
 
   async startVisit(visitId: string) {
-    return await this.client.post(`/api/visits/${visitId}/start`);
+    const response = await this.client.post(`/api/visits/${encodeURIComponent(visitId)}/start`);
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
   }
 
   // ==================== Vitals ====================
@@ -617,7 +627,16 @@ class APIClient {
 
   async getPatientVisits(patientId: string, status?: string) {
     const params = status ? { status_filter: status } : {};
-    return await this.client.get(`/api/visits/patient/${patientId}`, { params });
+    const response = await this.client.get(`/api/visits/patient/${encodeURIComponent(patientId)}`, { params });
+    return response.data as Array<{
+      id: string;
+      visit_id: string;
+      patient_id: string;
+      status?: string;
+      scheduled_start?: string;
+      created_at?: string;
+      updated_at?: string;
+    }>;
   }
 
   async getProviderVisits(providerId: string, status?: string) {
@@ -643,7 +662,123 @@ class APIClient {
   }
 
   async cancelVisit(visitId: string) {
-    return await this.client.delete(`/api/visits/${visitId}`);
+    const response = await this.client.delete(`/api/visits/${encodeURIComponent(visitId)}`);
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
+  }
+
+  async queueVisit(visitId: string) {
+    const response = await this.client.post(`/api/visits/${encodeURIComponent(visitId)}/queue`);
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
+  }
+
+  async completeVisit(visitId: string) {
+    const response = await this.client.post(`/api/visits/${encodeURIComponent(visitId)}/complete`);
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
+  }
+
+  async markVisitNoShow(visitId: string) {
+    const response = await this.client.post(`/api/visits/${encodeURIComponent(visitId)}/no-show`);
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
+  }
+
+  async updateVisitStatus(visitId: string, status: string) {
+    const response = await this.client.patch(`/api/visits/${encodeURIComponent(visitId)}/status`, { status });
+    return response.data as {
+      visit_id: string;
+      id: string;
+      patient_id: string;
+      status: string;
+      scheduled_start?: string;
+      actual_start?: string | null;
+      actual_end?: string | null;
+      updated_at?: string | null;
+    };
+  }
+
+  // ==================== Follow-through ====================
+
+  async listLabFollowThroughQueue(status?: string) {
+    const params = status ? { status } : {};
+    const response = await this.client.get('/api/follow-through/lab-queue', { params });
+    return response.data as {
+      items: Array<{
+        record_id: string;
+        visit_id: string;
+        patient_id: string;
+        source: string;
+        status: string;
+        raw_text: string;
+        extracted_values: Array<{ label: string; value: number }>;
+        flags: string[];
+        doctor_decision?: string | null;
+        doctor_notes?: string | null;
+        continuity_summary?: string | null;
+        created_at?: string | null;
+        updated_at?: string | null;
+      }>;
+    };
+  }
+
+  async createLabRecord(payload: { visit_id: string; source?: string; raw_text: string }) {
+    const response = await this.client.post('/api/follow-through/lab-records', payload);
+    return response.data;
+  }
+
+  async extractLabRecord(recordId: string) {
+    const response = await this.client.post(`/api/follow-through/lab-records/${encodeURIComponent(recordId)}/extract`);
+    return response.data;
+  }
+
+  async reviewLabRecord(recordId: string, payload: { decision: 'approved' | 'rejected'; notes?: string }) {
+    const response = await this.client.post(
+      `/api/follow-through/lab-records/${encodeURIComponent(recordId)}/review`,
+      payload,
+    );
+    return response.data;
+  }
+
+  async updateContinuity(recordId: string, payload: { continuity_summary: string; mark_visit_completed?: boolean }) {
+    const response = await this.client.post(
+      `/api/follow-through/lab-records/${encodeURIComponent(recordId)}/continuity-update`,
+      payload,
+    );
+    return response.data;
   }
 
   async uploadAudioTranscription(visitId: string, audioFile: File, language: string = 'en-US') {

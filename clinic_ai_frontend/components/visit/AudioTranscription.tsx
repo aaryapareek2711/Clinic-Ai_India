@@ -61,6 +61,11 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
       .filter((turn) => turn.text.length > 0);
   };
 
+  const buildTranscriptFromTurns = (turns: Array<{ speaker: string; text: string }>): string => {
+    if (!turns.length) return '';
+    return turns.map((turn) => `${turn.speaker}: ${turn.text}`).join('\n');
+  };
+
   const formatTranscriptText = (raw: string): string => {
     if (!raw) return '';
     return raw
@@ -75,15 +80,26 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
     const file = event.target.files?.[0];
     if (file) {
       // Check file type
-      const validTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'];
+      const validTypes = [
+        'audio/wav',
+        'audio/x-wav',
+        'audio/mpeg',
+        'audio/mp3',
+        'audio/mp4',
+        'audio/m4a',
+        'audio/x-m4a',
+        'audio/webm',
+        'audio/ogg',
+        'audio/opus',
+      ];
       if (!validTypes.includes(file.type)) {
-        toast.error('Please select a valid audio file (WAV, MP3, WebM, OGG, M4A)');
+        toast.error('Please select a valid audio file (WAV, MP3, WebM, OGG/Opus, M4A)');
         return;
       }
 
-      // Check file size (max 50MB)
-      if (file.size > 50 * 1024 * 1024) {
-        toast.error('File size must be less than 50MB');
+      // Check file size (max 25MB) - should match backend MAX_AUDIO_SIZE_MB default.
+      if (file.size > 25 * 1024 * 1024) {
+        toast.error('File size must be less than 25MB');
         return;
       }
 
@@ -105,7 +121,7 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
     setIsUploading(true);
     try {
       const lowerType = String(selectedFile.type || '').toLowerCase();
-      const fileForUpload = lowerType === 'audio/wav' || lowerType === 'audio/x-wav' || lowerType === 'audio/mpeg' || lowerType === 'audio/mp3'
+      const fileForUpload = lowerType === 'audio/wav' || lowerType === 'audio/x-wav'
         ? selectedFile
         : await toWavFile(selectedFile, `transcription-${Date.now()}`);
       const response = await apiClient.uploadVisitTranscription(patientId, visitId, fileForUpload);
@@ -266,9 +282,20 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
       };
 
       if (normalized === 'completed') {
-        const dialogue = await apiClient.getVisitDialogue(patientId, visitId);
-        base.transcription_text = String(dialogue?.data?.transcript || '');
-        let diarizedTurns = normalizeTurns(dialogue?.data?.structured_dialogue || []);
+        let dialogue: any = null;
+        let transcriptText = '';
+        let diarizedTurns: Array<{ speaker: string; text: string }> = [];
+
+        // Backend status may flip to "completed" slightly before dialogue payload is fully materialized.
+        // Retry briefly so we don't mark completion with an empty/incomplete transcript.
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          dialogue = await apiClient.getVisitDialogue(patientId, visitId);
+          transcriptText = String(dialogue?.data?.transcript || '').trim();
+          diarizedTurns = normalizeTurns(dialogue?.data?.structured_dialogue || []);
+          if (transcriptText.length > 0 || diarizedTurns.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+
         if (!diarizedTurns.length) {
           try {
             const structured = await apiClient.structureVisitDialogue(patientId, visitId);
@@ -277,6 +304,12 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
             // Non-blocking: keep plain transcript view when structuring is unavailable.
           }
         }
+
+        if (!transcriptText && diarizedTurns.length) {
+          transcriptText = buildTranscriptFromTurns(diarizedTurns);
+        }
+
+        base.transcription_text = transcriptText;
         base.diarized_turns = diarizedTurns;
         setTranscriptions([base]);
         setIsProcessing(false);
@@ -492,7 +525,7 @@ export default function AudioTranscription({ visitId, patientId, onTranscription
                           {formatTranscriptText(transcription.transcription_text)}
                         </p>
                       </div>
-                      {(transcription.diarized_turns || []).length > 1 && (
+                      {(transcription.diarized_turns || []).length > 0 && (
                         <div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
                           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                             Diarization

@@ -117,14 +117,14 @@ export default function FixAppointmentPage({ params }: { params: { visitId: stri
       });
       setVisit((prev) => (prev ? { ...prev, scheduled_start: response.scheduled_start } : prev));
       if (response.intake_skipped_existing_session) {
-        toast('Appointment fixed. Intake already existed for this visit.', { icon: 'ℹ️' });
+        toast('Appointment booked. Intake already existed for this visit.', { icon: 'ℹ️' });
       } else if (response.whatsapp_triggered) {
-        toast.success('Appointment fixed and WhatsApp intake triggered.');
+        toast.success('Appointment booked and WhatsApp intake triggered.');
       } else {
-        toast.success('Appointment fixed.');
+        toast.success('Appointment booked.');
       }
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'Failed to fix appointment');
+      toast.error(error?.response?.data?.detail || 'Failed to book appointment');
     } finally {
       setSaving(false);
     }
@@ -144,7 +144,7 @@ export default function FixAppointmentPage({ params }: { params: { visitId: stri
         items={[
           { label: 'Clinic Dashboard', href: `${ws}/dashboard` },
           { label: 'Appointments Center', href: `${ws}/manage-appointments` },
-          { label: 'Fix Appointment' },
+          { label: 'Book Appointment' },
         ]}
       />
 
@@ -152,10 +152,10 @@ export default function FixAppointmentPage({ params }: { params: { visitId: stri
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-blue-600" />
-            Fix Appointment
+            Book Appointment
           </CardTitle>
           <CardDescription>
-            Set or update appointment for this patient visit.
+            Set or update the appointment for this patient visit.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

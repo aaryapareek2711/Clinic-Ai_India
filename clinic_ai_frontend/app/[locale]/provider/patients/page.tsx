@@ -37,6 +37,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   updated_date: 'Updated date',
   updated_time: 'Updated time',
 };
+const ITEMS_PER_PAGE = 10;
 
 const toLocalDate = (value: string | undefined): string | null => {
   if (!value) return null;
@@ -88,6 +89,7 @@ export default function ProviderPatientsPage() {
   const [updatedTimeToPeriod, setUpdatedTimeToPeriod] = useState('');
   const [openingForPatientId, setOpeningForPatientId] = useState<string | null>(null);
   const [creatingVisitForPatientId, setCreatingVisitForPatientId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const loadPatients = async () => {
@@ -189,6 +191,31 @@ export default function ProviderPatientsPage() {
     return { total, withPhone, updatedToday };
   }, [patients]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    search,
+    enabledFilters,
+    patientNameFilter,
+    patientIdFilter,
+    mrnFilter,
+    mobileFilter,
+    updatedDateFrom,
+    updatedDateTo,
+    updatedTimeFromHour,
+    updatedTimeFromMinute,
+    updatedTimeFromPeriod,
+    updatedTimeToHour,
+    updatedTimeToMinute,
+    updatedTimeToPeriod,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const paginatedPatients = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(start, start + ITEMS_PER_PAGE);
+  }, [filtered, currentPage]);
+
   const handleOpenVisit = async (patientId: string) => {
     setOpeningForPatientId(patientId);
     try {
@@ -234,7 +261,7 @@ export default function ProviderPatientsPage() {
       router.push(`${ws}/fix-appointment/${encodeURIComponent(response.visit_id)}`);
     } catch (error: any) {
       console.error('Error opening fix appointment page:', error);
-      toast.error(error?.response?.data?.detail || 'Failed to open fix appointment');
+      toast.error(error?.response?.data?.detail || 'Failed to open book appointment');
     }
   };
 
@@ -438,7 +465,7 @@ export default function ProviderPatientsPage() {
             <p className="text-slate-600">No patients found.</p>
           ) : (
             <div className="space-y-3">
-              {filtered.map((p) => (
+              {paginatedPatients.map((p) => (
                 <div key={p.id} className="rounded-lg border bg-white p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
@@ -463,7 +490,7 @@ export default function ProviderPatientsPage() {
                       variant="outline"
                       onClick={() => handleFixAppointment(p.patient_id)}
                     >
-                      {p.latest_visit_scheduled_start ? 'Edit Appointment' : 'Fix Appointment'}
+                      {p.latest_visit_scheduled_start ? 'Edit Appointment' : 'Book Appointment'}
                     </Button>
                     <Button
                       size="sm"
@@ -497,6 +524,35 @@ export default function ProviderPatientsPage() {
                   </div>
                 </div>
               ))}
+              <div className="pt-2 flex items-center justify-between">
+                <p className="text-xs text-slate-600">
+                  Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-
+                  {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-slate-600">
+                    Page {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

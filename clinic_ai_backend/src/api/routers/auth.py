@@ -11,6 +11,7 @@ from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
     AuthResponse,
     ForgotPasswordRequest,
+    ForgotPasswordResponse,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
@@ -122,8 +123,8 @@ def logout(_: dict = Depends(_get_current_user)) -> dict:
     return {"message": "Successfully logged out"}
 
 
-@router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest) -> dict:
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
     """
     Accept password-reset requests in local/dev mode.
 

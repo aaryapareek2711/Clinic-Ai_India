@@ -77,7 +77,7 @@ class Settings:
         value.strip()
         for value in os.getenv(
             "ALLOWED_AUDIO_MIME_TYPES",
-            "audio/wav,audio/mpeg,audio/mp3,audio/x-wav,audio/mp4,audio/webm,audio/m4a,audio/x-m4a",
+            "audio/wav,audio/mpeg,audio/mp3,audio/x-wav,audio/mp4,audio/webm,audio/m4a,audio/x-m4a,audio/ogg,audio/opus",
         ).split(",")
         if value.strip()
     ]

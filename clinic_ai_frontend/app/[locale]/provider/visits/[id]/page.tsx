@@ -12,7 +12,7 @@ import MedicationReview from "@/components/appoint-ready/MedicationReview";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Bot, FileText, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, Loader2, Bot, FileText, ChevronRight, ChevronLeft, Activity, AlertTriangle, Pill, Target, Phone, Send, CheckCircle2, Circle, Play, XCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from 'next/navigation';
 import { workspaceBaseFromPathname } from '@/lib/workspace/resolver';
@@ -34,6 +34,7 @@ interface Visit {
   reason_for_visit?: string;
   scheduled_start?: string;
   actual_start?: string;
+  actual_end?: string;
   subjective?: string;
   objective?: string;
   assessment?: string;
@@ -149,6 +150,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
   const [postVisitWhatsappOverride, setPostVisitWhatsappOverride] = useState('');
   const [isSendingPostVisitWhatsapp, setIsSendingPostVisitWhatsapp] = useState(false);
   const [hasVitals, setHasVitals] = useState(false);
+  const [workflowAction, setWorkflowAction] = useState<'start' | 'complete' | 'cancel' | null>(null);
 
   useEffect(() => {
     fetchVisit();
@@ -239,6 +241,58 @@ export default function VisitPage({ params }: { params: { id: string } }) {
       toast.error('Failed to load visit');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const applyVisitWorkflowState = (payload: { status: string; actual_start?: string | null; actual_end?: string | null }) => {
+    setVisit((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: payload.status,
+            actual_start: payload.actual_start ?? prev.actual_start,
+            actual_end: payload.actual_end ?? prev.actual_end,
+          }
+        : prev,
+    );
+  };
+
+  const handleStartConsult = async () => {
+    setWorkflowAction('start');
+    try {
+      const response = await apiClient.startVisit(visitId);
+      applyVisitWorkflowState(response);
+      toast.success('Consultation started');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to start consultation');
+    } finally {
+      setWorkflowAction(null);
+    }
+  };
+
+  const handleCompleteVisit = async () => {
+    setWorkflowAction('complete');
+    try {
+      const response = await apiClient.completeVisit(visitId);
+      applyVisitWorkflowState(response);
+      toast.success('Visit marked completed');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to complete visit');
+    } finally {
+      setWorkflowAction(null);
+    }
+  };
+
+  const handleCancelVisit = async () => {
+    setWorkflowAction('cancel');
+    try {
+      const response = await apiClient.cancelVisit(visitId);
+      applyVisitWorkflowState(response);
+      toast.success('Visit cancelled');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to cancel visit');
+    } finally {
+      setWorkflowAction(null);
     }
   };
 
@@ -540,6 +594,58 @@ export default function VisitPage({ params }: { params: { id: string } }) {
                 <p className="text-xs text-gray-500">Chief Complaint</p>
                 <p className="font-semibold text-gray-900">{visit.chief_complaint || 'N/A'}</p>
               </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+              {!['in_progress', 'completed', 'cancelled'].includes(String(visit.status || '').toLowerCase()) && (
+                <Button type="button" variant="outline" onClick={handleStartConsult} disabled={workflowAction !== null}>
+                  {workflowAction === 'start' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-2 h-4 w-4" />
+                      Start consult
+                    </>
+                  )}
+                </Button>
+              )}
+              {!['completed', 'cancelled'].includes(String(visit.status || '').toLowerCase()) && (
+                <Button type="button" variant="outline" onClick={handleCompleteVisit} disabled={workflowAction !== null}>
+                  {workflowAction === 'complete' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Mark completed
+                    </>
+                  )}
+                </Button>
+              )}
+              {!['completed', 'cancelled'].includes(String(visit.status || '').toLowerCase()) && (
+                <Button type="button" variant="outline" onClick={handleCancelVisit} disabled={workflowAction !== null}>
+                  {workflowAction === 'cancel' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Cancel visit
+                    </>
+                  )}
+                </Button>
+              )}
+              <Link href={`${ws}/queue`}>
+                <Button type="button" variant="ghost">
+                  Open queue board
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

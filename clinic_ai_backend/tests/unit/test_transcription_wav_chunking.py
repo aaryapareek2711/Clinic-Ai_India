@@ -32,6 +32,28 @@ def test_pcm_wav_duration_returns_none_for_non_wav() -> None:
     assert TranscriptionWorker._pcm_wav_duration_seconds(b"not a wav file") is None
 
 
+def test_split_pcm_wav_native_multiple_segments_without_ffmpeg() -> None:
+    worker = TranscriptionWorker()
+    wav = _pcm_wav_bytes(42.0)
+    chunks, step = worker._split_wav_into_time_chunks(wav, 15.0, 0.0)
+    assert len(chunks) >= 3
+    assert abs(step - 15.0) < 0.05
+    for piece in chunks:
+        d = TranscriptionWorker._pcm_wav_duration_seconds(piece)
+        assert d is not None
+        assert d <= 16.0
+
+
+def test_split_pcm_wav_native_overlap_covers_full_duration_without_ffmpeg() -> None:
+    worker = TranscriptionWorker()
+    wav = _pcm_wav_bytes(120.0)
+    chunks, step = worker._split_wav_into_time_chunks(wav, chunk_sec=50.0, overlap_sec=2.0)
+    assert len(chunks) >= 3
+    assert abs(step - 48.0) < 0.05
+    last_start = (len(chunks) - 1) * step
+    assert last_start + 50.0 >= 120.0 - 0.5
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 def test_split_wav_into_time_chunks_multiple_segments() -> None:
     """Long PCM WAV is split into time windows under Azure short-audio REST limits."""

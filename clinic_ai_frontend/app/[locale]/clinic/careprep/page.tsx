@@ -6,5 +6,5 @@ export default async function ClinicCarePrepPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  redirect(`/${encodeURIComponent(locale)}/careprep/responses`);
+  redirect(`/${encodeURIComponent(locale)}/careprep`);
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -14,9 +14,8 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, isLoading, error, isAuthenticated, user, clearError } = useAuthStore();
-
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const usernameRef = useRef<HTMLInputElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -33,20 +32,33 @@ export default function LoginPage() {
     }
   }, [error, clearError]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!username || !password) {
+  const submitLogin = async (submittedUsername: string, submittedPassword: string) => {
+    if (!submittedUsername || !submittedPassword) {
       toast.error('Please enter both username and password');
       return;
     }
 
     try {
-      await login(username, password);
+      await login(submittedUsername, submittedPassword);
       toast.success('Login successful!');
     } catch (err) {
       // Error already handled by store
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const submittedUsername = String(formData.get('username') || usernameRef.current?.value || '').trim();
+    const submittedPassword = String(formData.get('password') || passwordRef.current?.value || '');
+    await submitLogin(submittedUsername, submittedPassword);
+  };
+
+  const handleButtonClick = async () => {
+    const submittedUsername = String(usernameRef.current?.value || '').trim();
+    const submittedPassword = String(passwordRef.current?.value || '');
+    await submitLogin(submittedUsername, submittedPassword);
   };
 
   return (
@@ -85,18 +97,18 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <Input
                 label="Username or Email"
+                name="username"
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                ref={usernameRef}
                 placeholder="Enter your username"
                 autoComplete="username"
               />
 
               <Input
                 label="Password"
+                name="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                ref={passwordRef}
                 placeholder="Enter your password"
                 autoComplete="current-password"
               />
@@ -107,6 +119,7 @@ export default function LoginPage() {
                 size="lg"
                 className="w-full"
                 loading={isLoading}
+                onClick={handleButtonClick}
               >
                 Sign In
               </Button>
@@ -126,13 +139,9 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-              <p className="text-xs font-semibold text-slate-700 mb-2">Demo Credentials:</p>
-              <div className="space-y-1 text-xs text-slate-600">
-                <p><span className="font-medium">Patient:</span> newpatient / SecurePass123!</p>
-                <p><span className="font-medium">Doctor:</span> drjane2 / SecurePass123!</p>
-              </div>
+            <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
+              <p className="font-semibold text-slate-700 mb-1">Access note</p>
+              <p>Use a valid clinic account to sign in. If you do not have one, create an account or use forgot password.</p>
             </div>
           </div>
 

@@ -8,7 +8,6 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { LanguageSwitcher } from '@/components/ui/language-switcher';
 import { RegionalComplianceBadges } from '@/components/RegionalComplianceBadges';
 import { RegionSwitcher } from '@/components/ui/RegionSwitcher';
 import {
@@ -303,7 +302,6 @@ export default function LandingPage() {
             {/* Region/Language Switchers & CTA Buttons */}
             <div className="flex items-center space-x-3">
               <RegionSwitcher variant="compact" />
-              <LanguageSwitcher />
               <Link href="/login">
                 <Button variant="ghost" size="base">
                   {tNav('login')}

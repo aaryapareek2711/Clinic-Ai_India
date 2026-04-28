@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations, useLocale } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, CheckCircle2, AlertCircle, Calendar, User, ChevronRight, Stethoscope, FileText, ArrowLeft, Globe } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
-import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 interface CarePrepFormPageProps {
     params: {
@@ -44,7 +43,6 @@ export default function CarePrepFormPage({ params }: CarePrepFormPageProps) {
     const { token } = params;
     const t = useTranslations('patient.careprep');
     const tCommon = useTranslations('common');
-    const locale = useLocale();
 
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -215,8 +213,6 @@ export default function CarePrepFormPage({ params }: CarePrepFormPageProps) {
                         <span className="font-bold text-gray-900">CarePrep</span>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
-                        {/* Language Switcher for patient form */}
-                        <LanguageSwitcher />
                         <span className="hidden sm:inline">Patient ID: {context?.patient_id.slice(0, 8)}</span>
                     </div>
                 </div>

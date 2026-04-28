@@ -15,12 +15,13 @@ import {
   BarChart3,
   Stethoscope,
   Bell,
-  User
+  User,
+  ListOrdered,
+  GitBranchPlus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { RegionLanguageSwitcher } from '@/components/ui/RegionLanguageSwitcher';
 import { RegionProvider } from '@/contexts/RegionContext';
-import { normalizeWorkspacePath } from '@/lib/workspace/resolver';
+import { localizedWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace/resolver';
 
 interface NavItem {
   href: string;
@@ -32,6 +33,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/clinic/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/clinic/queue', label: 'Queue Board', icon: ListOrdered },
+  { href: '/clinic/follow-through', label: 'Follow-through', icon: GitBranchPlus },
   { href: '/clinic/calendar', label: 'Calendar', icon: Calendar },
   { href: '/clinic/visits', label: 'Visits', icon: Stethoscope },
   { href: '/clinic/patients', label: 'Patients', icon: User },
@@ -48,6 +51,7 @@ export default function ProviderLayout({
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuthStore();
   const [isReady, setIsReady] = useState(false);
+  const withLocale = (href: string) => localizedWorkspacePath(pathname, href);
 
   useEffect(() => {
     // Wait for hydration to complete
@@ -94,7 +98,7 @@ export default function ProviderLayout({
       <aside className="hidden w-72 flex-col bg-slate-900 md:flex">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center border-b border-slate-800 px-6">
-          <Link href="/clinic/dashboard" className="flex items-center space-x-3">
+          <Link href={withLocale('/clinic/dashboard')} className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
               <Activity className="w-5 h-5 text-white" />
             </div>
@@ -116,7 +120,7 @@ export default function ProviderLayout({
             {navItems.map((item) => (
               <Link
                 key={item.href}
-                href={item.href}
+                href={withLocale(item.href)}
                 className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${isActive(item.href)
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -144,7 +148,7 @@ export default function ProviderLayout({
                 Administration
               </p>
               <Link
-                href="/provider/admin/subscription"
+                href={withLocale('/provider/admin/subscription')}
                 className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname?.includes('/provider/admin/subscription')
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -156,7 +160,7 @@ export default function ProviderLayout({
                 </div>
               </Link>
               <Link
-                href="/provider/admin/analytics"
+                href={withLocale('/provider/admin/analytics')}
                 className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname?.includes('/provider/admin/analytics')
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -204,9 +208,6 @@ export default function ProviderLayout({
             </h1>
           </div>
           <div className="flex items-center gap-4">
-            {/* Region-aware language switcher */}
-            <RegionLanguageSwitcher variant="dropdown" />
-
             <button className="relative p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>

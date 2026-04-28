@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,7 @@ import { apiClient } from '@/lib/api/client';
 import toast from 'react-hot-toast';
 
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -81,6 +83,20 @@ export default function ForgotPasswordPage() {
           {submitted && (
             <div className="mt-4 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-900">
               Request submitted. Please check your email inbox and spam folder.
+            </div>
+          )}
+
+          {resetToken && (
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-900">
+              <p className="mb-3">Reset token generated for this environment. Continue directly to set a new password.</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => router.push(`/reset-password?token=${encodeURIComponent(resetToken)}`)}
+              >
+                Continue to reset password
+              </Button>
             </div>
           )}
 

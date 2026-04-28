@@ -38,6 +38,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   date: 'Date',
   time: 'Time',
 };
+const ITEMS_PER_PAGE = 10;
 
 const toLocalDate = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -89,6 +90,7 @@ export default function VisitsPage() {
   const [timeToHour, setTimeToHour] = useState('');
   const [timeToMinute, setTimeToMinute] = useState('');
   const [timeToPeriod, setTimeToPeriod] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -229,6 +231,29 @@ export default function VisitsPage() {
 
     return true;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    filter,
+    query,
+    enabledFilters,
+    patientNameFilter,
+    patientIdFilter,
+    visitIdFilter,
+    mobileFilter,
+    dateFrom,
+    dateTo,
+    timeFromHour,
+    timeFromMinute,
+    timeFromPeriod,
+    timeToHour,
+    timeToMinute,
+    timeToPeriod,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredVisits.length / ITEMS_PER_PAGE));
+  const paginatedVisits = filteredVisits.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const stats = {
     total: visits.length,
@@ -434,7 +459,7 @@ export default function VisitsPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-200">
-              {filteredVisits.map((visit) => (
+              {paginatedVisits.map((visit) => (
                 <div
                   key={visit.id}
                   className="p-6 hover:bg-gray-50 transition cursor-pointer"
@@ -497,6 +522,35 @@ export default function VisitsPage() {
                   </div>
                 </div>
               ))}
+              <div className="p-4 border-t flex items-center justify-between">
+                <p className="text-xs text-slate-600">
+                  Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-
+                  {Math.min(currentPage * ITEMS_PER_PAGE, filteredVisits.length)} of {filteredVisits.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-slate-600">
+                    Page {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
       </div>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import wave
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -383,6 +385,9 @@ class TranscriptionWorker:
         overlap_sec = max(0.0, float(overlap_sec or 0.0))
         overlap_sec = min(overlap_sec, chunk_sec * 0.45)
         step_sec = max(0.5, chunk_sec - overlap_sec)
+        native_chunks = self._split_pcm_wav_bytes_native(wav_bytes, chunk_sec, step_sec)
+        if native_chunks is not None:
+            return native_chunks, step_sec
         ffmpeg_bin = shutil.which("ffmpeg")
         if not ffmpeg_bin:
             return [wav_bytes], chunk_sec
@@ -430,6 +435,60 @@ class TranscriptionWorker:
                 start += step_sec
                 idx += 1
             return (chunks if chunks else [wav_bytes]), step_sec
+
+    @staticmethod
+    def _split_pcm_wav_bytes_native(
+        wav_bytes: bytes, chunk_sec: float, step_sec: float
+    ) -> list[bytes] | None:
+        """Split standard PCM WAV bytes without ffmpeg.
+
+        This supports frontend-generated 16 kHz mono WAV uploads so long consultations
+        can still be chunked when ffmpeg is unavailable on the backend host.
+        """
+        try:
+            with wave.open(io.BytesIO(wav_bytes), "rb") as src:
+                comptype = src.getcomptype()
+                n_channels = src.getnchannels()
+                sample_width = src.getsampwidth()
+                frame_rate = src.getframerate()
+                total_frames = src.getnframes()
+                if comptype != "NONE" or frame_rate <= 0 or n_channels <= 0 or sample_width <= 0:
+                    return None
+                duration = total_frames / float(frame_rate)
+                if duration <= chunk_sec + 0.1:
+                    return [wav_bytes]
+
+                frames = src.readframes(total_frames)
+
+            bytes_per_frame = n_channels * sample_width
+            if bytes_per_frame <= 0 or len(frames) < bytes_per_frame:
+                return None
+
+            chunk_frames = max(1, int(round(chunk_sec * frame_rate)))
+            step_frames = max(1, int(round(step_sec * frame_rate)))
+            chunks: list[bytes] = []
+            start_frame = 0
+
+            while start_frame < total_frames:
+                end_frame = min(total_frames, start_frame + chunk_frames)
+                start_byte = start_frame * bytes_per_frame
+                end_byte = end_frame * bytes_per_frame
+                frame_slice = frames[start_byte:end_byte]
+                if not frame_slice:
+                    break
+
+                out = io.BytesIO()
+                with wave.open(out, "wb") as dst:
+                    dst.setnchannels(n_channels)
+                    dst.setsampwidth(sample_width)
+                    dst.setframerate(frame_rate)
+                    dst.writeframes(frame_slice)
+                chunks.append(out.getvalue())
+                start_frame += step_frames
+
+            return chunks if chunks else [wav_bytes]
+        except wave.Error:
+            return None
 
     def _short_audio_recognize_one_payload(
         self, *, audio_payload: bytes, content_type: str, primary_locale: str
@@ -968,6 +1027,8 @@ class TranscriptionWorker:
             return ".m4a"
         if "webm" in mime:
             return ".webm"
+        if "ogg" in mime or "opus" in mime:
+            return ".ogg"
         return ".bin"
 
     def _speech_host_candidates(self) -> list[str]:
