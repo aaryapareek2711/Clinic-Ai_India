@@ -221,13 +221,21 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
         ).sort("scheduled_start", 1)
     )
 
+    patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
+    patient_map: dict[str, dict] = {}
+    if patient_ids:
+        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0}):
+            pid = str(patient.get("patient_id") or "").strip()
+            if pid:
+                patient_map[pid] = patient
+
     appointments: list[dict] = []
     for visit in records:
         patient_id = str(visit.get("patient_id") or "")
         resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
         if not resolved_visit_id:
             continue
-        patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0}) or {}
+        patient = patient_map.get(patient_id, {})
         patient_name = (patient.get("name") or "").strip() or "Unknown Patient"
         scheduled_start = visit.get("scheduled_start")
         chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
@@ -267,13 +275,21 @@ def list_provider_visits(
         query["status"] = status_filter
 
     records = list(db.visits.find(query, {"_id": 0}).sort("created_at", -1))
+    patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
+    patient_map: dict[str, dict] = {}
+    if patient_ids:
+        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0}):
+            pid = str(patient.get("patient_id") or "").strip()
+            if pid:
+                patient_map[pid] = patient
+
     out: list[dict] = []
     for visit in records:
         resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
         if not resolved_visit_id:
             continue
         internal_patient_id = str(visit.get("patient_id") or "")
-        patient = db.patients.find_one({"patient_id": internal_patient_id}, {"_id": 0}) or {}
+        patient = patient_map.get(internal_patient_id, {})
         patient_name = str(patient.get("name") or "").strip() or "Unknown patient"
         patient_phone_number = str(patient.get("phone_number") or "").strip()
         scheduled_start = visit.get("scheduled_start")
