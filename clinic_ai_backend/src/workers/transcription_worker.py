@@ -557,11 +557,12 @@ class TranscriptionWorker:
             len(audio_payload),
             (last_detail or "")[:300],
         )
-        # Long silent stretches or a very short tail window can legitimately return no words; fail loud only
-        # for a near-full chunk (~25s+ PCM) so we never hide a broken STT path for most of the visit.
-        if len(audio_payload) < 800_000:
+        # Silent/no-speech windows are valid in real consultations (pauses, waiting periods, background prep).
+        # Keep chunk processing resilient by skipping this chunk; if *all* chunks are empty,
+        # _call_azure_speech still raises a clear NON_RETRIABLE_NO_TEXT failure for the full job.
+        if last_detail == "exhausted_no_segments":
             logger.warning(
-                "transcription_chunk_stt_empty_soft job_id=%s chunk=%s/%s bytes=%s (treating as silent tail)",
+                "transcription_chunk_stt_empty_soft job_id=%s chunk=%s/%s bytes=%s (treating as no-speech window)",
                 job_id,
                 chunk_idx + 1,
                 chunk_total,

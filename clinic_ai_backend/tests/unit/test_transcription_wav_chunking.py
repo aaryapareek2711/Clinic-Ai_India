@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import shutil
 import wave
+from types import SimpleNamespace
 
 import pytest
 
@@ -84,3 +85,27 @@ def test_split_wav_overlap_reduces_step_between_windows() -> None:
     assert abs(step - 48.0) < 0.05
     last_start = (len(chunks) - 1) * step
     assert last_start + 50.0 >= 120.0 - 0.5, "overlapped windows should cover full source duration"
+
+
+def test_stt_chunk_retries_soft_skip_exhausted_no_segments() -> None:
+    worker = TranscriptionWorker.__new__(TranscriptionWorker)
+    worker.settings = SimpleNamespace(transcription_chunk_max_stt_retries=2)
+
+    def _fake_short_audio_recognize_one_payload(**_kwargs):
+        return (None, None, None, None, "exhausted_no_segments")
+
+    worker._short_audio_recognize_one_payload = _fake_short_audio_recognize_one_payload  # type: ignore[attr-defined]
+
+    result = worker._stt_recognize_chunk_with_retries(
+        audio_payload=_pcm_wav_bytes(40.0),
+        content_type="audio/wav",
+        primary_locale="en-IN",
+        job_id="job-1",
+        chunk_idx=0,
+        chunk_total=5,
+        wall_start_s=0.0,
+        wall_end_s=40.0,
+    )
+
+    assert result["language_detected"] == "en-IN"
+    assert result["segments"] == []
