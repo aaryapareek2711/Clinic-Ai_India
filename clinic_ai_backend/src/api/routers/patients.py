@@ -23,7 +23,17 @@ router = APIRouter(prefix="/api/patients", tags=["Patients"])
 def list_patients() -> list[PatientSummaryResponse]:
     """Return normalized patient records for frontend patient picker."""
     db = get_database()
-    records = db.patients.find({}, {"_id": 0}).sort("updated_at", -1)
+    records = list(db.patients.find({}, {"_id": 0}).sort("updated_at", -1))
+    patient_ids = [str(record.get("patient_id") or "").strip() for record in records if str(record.get("patient_id") or "").strip()]
+    latest_visit_by_patient: dict[str, dict] = {}
+    if patient_ids:
+        for visit in db.visits.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "visit_id": 1, "id": 1, "scheduled_start": 1, "created_at": 1},
+        ).sort("created_at", -1):
+            pid = str(visit.get("patient_id") or "").strip()
+            if pid and pid not in latest_visit_by_patient:
+                latest_visit_by_patient[pid] = visit
     patients: list[PatientSummaryResponse] = []
 
     for record in records:
@@ -36,6 +46,11 @@ def list_patients() -> list[PatientSummaryResponse]:
         year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
         estimated_dob = f"{year:04d}-01-01"
         opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
+        latest_visit = latest_visit_by_patient.get(internal_patient_id) if internal_patient_id else None
+        latest_visit_id = (
+            str((latest_visit or {}).get("visit_id") or (latest_visit or {}).get("id") or "").strip() or None
+        )
+        latest_visit_scheduled_start = (latest_visit or {}).get("scheduled_start")
 
         patients.append(
             PatientSummaryResponse(
@@ -51,6 +66,8 @@ def list_patients() -> list[PatientSummaryResponse]:
                 phone_number=str(record.get("phone_number") or "").strip() or None,
                 created_at=str(record.get("created_at") or "") or None,
                 updated_at=str(record.get("updated_at") or "") or None,
+                latest_visit_id=latest_visit_id,
+                latest_visit_scheduled_start=latest_visit_scheduled_start,
             )
         )
 
