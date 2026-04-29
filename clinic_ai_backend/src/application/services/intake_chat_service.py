@@ -13,7 +13,6 @@ from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisi
 from src.core.config import get_settings
 
 
-STOP_WORDS = {"stop", "enough", "exit", "quit", "band", "rok do", "bas"}
 NON_TEXT_MESSAGE_TRIGGER = "__non_text_message__"
 MIN_FOLLOW_UP_QUESTIONS = 3
 logger = logging.getLogger(__name__)
@@ -142,7 +141,7 @@ class IntakeChatService:
         if self._is_probable_duplicate_reply(session, cleaned):
             return
         self._remember_inbound_text(session["_id"], cleaned)
-        if cleaned.lower() in STOP_WORDS:
+        if self._should_end_intake_via_llm(session=session, message_text=cleaned):
             self.db.intake_sessions.update_one(
                 {"_id": session["_id"]},
                 {"$set": {"status": "stopped", "updated_at": datetime.now(timezone.utc)}},
@@ -808,6 +807,29 @@ class IntakeChatService:
                 }
             },
         )
+
+    def _should_end_intake_via_llm(self, session: dict, message_text: str) -> bool:
+        """Let LLM decide whether patient intends to stop intake."""
+        status = str(session.get("status") or "")
+        if status not in {"awaiting_illness", "in_progress"}:
+            return False
+        try:
+            decision = self.openai.detect_patient_opt_out(
+                message_text=message_text,
+                language=str(session.get("language") or "en"),
+                recent_answers=list(session.get("answers") or []),
+            )
+        except Exception:
+            logger.exception(
+                "intake_opt_out_detection_failed visit_id=%s session_id=%s",
+                str(session.get("visit_id") or ""),
+                str(session.get("_id") or ""),
+            )
+            return False
+        if not bool(decision.get("is_opt_out")):
+            return False
+        confidence = float(decision.get("confidence") or 0.0)
+        return confidence >= 0.5
 
     @staticmethod
     def _closing_message(language: str, patient_name: str | None) -> str:

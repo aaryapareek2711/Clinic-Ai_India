@@ -178,6 +178,19 @@ class _FakeWhatsApp:
         self.sent.append(("template", to_number, template_name, language_code, body_values or []))
 
 
+class _FakeOpenAIOptOut:
+    def __init__(self, *, is_opt_out: bool, confidence: float) -> None:
+        self.is_opt_out = is_opt_out
+        self.confidence = confidence
+
+    def detect_patient_opt_out(self, *, message_text: str, language: str, recent_answers: list[dict] | None = None) -> dict:
+        return {
+            "is_opt_out": self.is_opt_out,
+            "confidence": self.confidence,
+            "reason": f"stub for {language}:{message_text}:{len(recent_answers or [])}",
+        }
+
+
 def test_generate_next_turn_exception_uses_global_fallback_metadata() -> None:
     service = IntakeChatService.__new__(IntakeChatService)
     service._planner_fallback_topic = lambda _session: "associated_symptoms"
@@ -501,7 +514,7 @@ def test_stop_message_uses_rebound_session_destination() -> None:
     }
     service.db = fake_db
     service.whatsapp = _FakeWhatsApp()
-    service.openai = OpenAIQuestionClient()
+    service.openai = _FakeOpenAIOptOut(is_opt_out=True, confidence=0.95)
 
     service.handle_patient_reply(
         from_number="919222222222",
