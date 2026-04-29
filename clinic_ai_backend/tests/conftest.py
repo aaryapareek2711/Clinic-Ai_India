@@ -131,6 +131,7 @@ class InMemoryDatabase:
         self.patient_vitals = InMemoryCollection()
         self.clinical_notes = InMemoryCollection()
         self.follow_up_reminders = InMemoryCollection()
+        self.follow_through_lab_records = InMemoryCollection()
         self.visit_transcription_sessions = InMemoryCollection()
 
 
@@ -153,6 +154,7 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     monkeypatch.setattr("src.adapters.db.mongo.client.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.workflow.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.transcription.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.api.routers.followthrough.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.patients.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.visits.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.contextai.get_database", lambda: fake_db)

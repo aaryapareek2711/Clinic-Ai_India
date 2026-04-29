@@ -189,3 +189,36 @@ def test_follow_through_continuity_update_completes_visit(app_client, patched_db
     visit = patched_db.visits.find_one({"visit_id": "CONSULT-20260428-004"})
     assert visit is not None
     assert visit.get("status") == "completed"
+
+
+def test_follow_through_accepts_case_insensitive_visit_lookup(app_client, patched_db) -> None:
+    now = datetime.now(timezone.utc)
+    patched_db.patients.insert_one(
+        {
+            "patient_id": "patient-5",
+            "name": "Case Lookup",
+            "phone_number": "5555555555",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    patched_db.visits.insert_one(
+        {
+            "visit_id": "CONSULT-20260429-167",
+            "patient_id": "patient-5",
+            "status": "in_progress",
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    created = app_client.post(
+        "/api/follow-through/lab-records",
+        json={
+            "visit_id": "consult-20260429-167",
+            "source": "whatsapp",
+            "raw_text": "Glucose 210",
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["visit_id"] == "CONSULT-20260429-167"

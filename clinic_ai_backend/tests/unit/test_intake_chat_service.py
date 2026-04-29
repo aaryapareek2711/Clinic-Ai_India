@@ -525,3 +525,41 @@ def test_stop_message_uses_rebound_session_destination() -> None:
     assert service.whatsapp.sent
     assert service.whatsapp.sent[0][0] == "text"
     assert service.whatsapp.sent[0][1] == "919222222222"
+
+
+def test_duplicate_reply_without_message_id_generates_only_one_next_question() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "session-9",
+        "visit_id": "visit-9",
+        "to_number": "919333333333",
+        "patient_name": "Patient",
+        "language": "en",
+        "status": "awaiting_illness",
+        "answers": [],
+    }
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    call_count = {"n": 0}
+
+    def _fake_generate_and_send_next_turn(_session: dict) -> None:
+        call_count["n"] += 1
+
+    service._generate_and_send_next_turn = _fake_generate_and_send_next_turn  # type: ignore[method-assign]
+
+    service.handle_patient_reply(
+        from_number="919333333333",
+        message_text="Fever from 2 days",
+        message_id=None,
+    )
+    service.handle_patient_reply(
+        from_number="919333333333",
+        message_text="Fever from 2 days",
+        message_id=None,
+    )
+
+    assert call_count["n"] == 1

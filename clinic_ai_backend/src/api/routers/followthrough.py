@@ -70,10 +70,34 @@ def _public_lab_record(doc: dict) -> dict:
     }
 
 
+def _find_visit_for_follow_through(raw_visit_id: str) -> dict | None:
+    """Resolve a visit from common ID variants entered by staff."""
+    db = get_database()
+    normalized = str(raw_visit_id or "").strip()
+    if not normalized:
+        return None
+
+    direct = (
+        db.visits.find_one({"visit_id": normalized})
+        or db.visits.find_one({"id": normalized})
+        or db.visits.find_one({"appointment_id": normalized})
+    )
+    if direct:
+        return direct
+
+    normalized_lower = normalized.lower()
+    for visit in db.visits.find({}):
+        for key in ("visit_id", "id", "appointment_id"):
+            candidate = str(visit.get(key) or "").strip()
+            if candidate and candidate.lower() == normalized_lower:
+                return visit
+    return None
+
+
 @router.post("/lab-records")
 def create_lab_record(payload: CreateLabRecordRequest) -> dict:
     db = get_database()
-    visit = db.visits.find_one({"visit_id": payload.visit_id}) or db.visits.find_one({"id": payload.visit_id})
+    visit = _find_visit_for_follow_through(payload.visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
 

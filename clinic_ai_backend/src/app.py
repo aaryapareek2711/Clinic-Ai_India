@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routers import (
     auth,
     contextai,
+    followthrough,
     health,
     notes,
     patient_chat,
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(contextai.router)
     app.include_router(templates.router)
     app.include_router(notes.router)
+    app.include_router(followthrough.router)
     return app
 
 

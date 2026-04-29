@@ -138,6 +138,8 @@ class IntakeChatService:
             cleaned = NON_TEXT_MESSAGE_TRIGGER
         if cleaned == NON_TEXT_MESSAGE_TRIGGER and status != "awaiting_conversation_start":
             return
+        if not self._claim_inbound_text(session, cleaned):
+            return
         if self._is_probable_duplicate_reply(session, cleaned):
             return
         self._remember_inbound_text(session["_id"], cleaned)
@@ -807,6 +809,35 @@ class IntakeChatService:
                 }
             },
         )
+
+    def _claim_inbound_text(self, session: dict, message_text: str) -> bool:
+        """
+        Guard against replayed inbound payloads without stable message_id.
+
+        Some WhatsApp webhook deliveries can replay the same patient text quickly
+        (network retries / duplicate endpoint delivery). If we process both, one
+        patient reply can advance the flow twice and emit two questions.
+        """
+        normalized = self._normalize_for_similarity(message_text)
+        if not normalized:
+            return True
+        now = datetime.now(timezone.utc)
+        last_fp = str(session.get("last_inbound_fingerprint", "") or "").strip()
+        last_at = self._parse_datetime(session.get("last_inbound_fingerprint_at"))
+        if last_fp == normalized and last_at is not None:
+            if (now - last_at).total_seconds() <= 15:
+                return False
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "last_inbound_fingerprint": normalized,
+                    "last_inbound_fingerprint_at": now.isoformat(),
+                    "updated_at": now,
+                }
+            },
+        )
+        return True
 
     def _should_end_intake_via_llm(self, session: dict, message_text: str) -> bool:
         """Let LLM decide whether patient intends to stop intake."""
