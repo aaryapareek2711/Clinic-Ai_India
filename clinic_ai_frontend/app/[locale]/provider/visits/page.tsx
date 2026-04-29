@@ -466,7 +466,7 @@ export default function VisitsPage() {
                   onClick={() => {
                     if (!visit.scheduled_start) {
                       toast.error('Appointment is not fixed yet. Please schedule it first.');
-                      router.push(`${ws}/fix-appointment/${encodeURIComponent(visit.id)}`);
+                      router.push(`${ws}/book-appointment/${encodeURIComponent(visit.id)}`);
                       return;
                     }
                     router.push(`${ws}/visits/${encodeURIComponent(visit.id)}`);

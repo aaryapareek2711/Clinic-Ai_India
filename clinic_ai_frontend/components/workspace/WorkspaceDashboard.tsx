@@ -322,7 +322,7 @@ export default function WorkspaceDashboard() {
                     <p className="text-xs text-slate-500">{item.reason}</p>
                     <p className="text-xs text-amber-700">Visit ID: {item.id}</p>
                   </div>
-                  <Link href={withLocale(`${ws}/fix-appointment/${encodeURIComponent(item.workflowVisitId || item.id)}`)}>
+                  <Link href={withLocale(`${ws}/book-appointment/${encodeURIComponent(item.workflowVisitId || item.id)}`)}>
                     <Button size="sm" variant="outline">
                       Book appointment
                     </Button>

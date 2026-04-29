@@ -251,16 +251,16 @@ export default function ProviderPatientsPage() {
     }
   };
 
-  const handleFixAppointment = async (patientId: string) => {
+  const handleBookAppointment = async (patientId: string) => {
     try {
       const response = await apiClient.getLatestVisitForPatient(patientId);
       if (!response?.visit_id) {
         toast.error('No visit found for this patient');
         return;
       }
-      router.push(`${ws}/fix-appointment/${encodeURIComponent(response.visit_id)}`);
+      router.push(`${ws}/book-appointment/${encodeURIComponent(response.visit_id)}`);
     } catch (error: any) {
-      console.error('Error opening fix appointment page:', error);
+      console.error('Error opening book appointment page:', error);
       toast.error(error?.response?.data?.detail || 'Failed to open book appointment');
     }
   };
@@ -488,7 +488,7 @@ export default function ProviderPatientsPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleFixAppointment(p.patient_id)}
+                      onClick={() => handleBookAppointment(p.patient_id)}
                     >
                       {p.latest_visit_scheduled_start ? 'Edit Appointment' : 'Book Appointment'}
                     </Button>

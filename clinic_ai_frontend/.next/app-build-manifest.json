@@ -1,9 +1,9 @@
 {
   "pages": {
-    "/[locale]/clinic/registered-patients/page": [
+    "/[locale]/clinic/manage-appointments/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/clinic/registered-patients/page.js"
+      "static/chunks/app/[locale]/clinic/manage-appointments/page.js"
     ],
     "/[locale]/clinic/layout": [
       "static/chunks/webpack.js",
@@ -21,26 +21,6 @@
       "static/chunks/main-app.js",
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
-    ],
-    "/clinic/fix-appointment/[visitId]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/clinic/fix-appointment/[visitId]/page.js"
-    ],
-    "/[locale]/clinic/fix-appointment/[visitId]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/clinic/fix-appointment/[visitId]/page.js"
-    ],
-    "/[locale]/clinic/queue/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/clinic/queue/page.js"
-    ],
-    "/[locale]/clinic/manage-appointments/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/clinic/manage-appointments/page.js"
     ],
     "/login/page": [
       "static/chunks/webpack.js",
@@ -62,50 +42,35 @@
       "static/chunks/main-app.js",
       "static/chunks/app/[locale]/clinic/dashboard/page.js"
     ],
-    "/forgot-password/page": [
+    "/[locale]/clinic/registered-patients/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/forgot-password/page.js"
+      "static/chunks/app/[locale]/clinic/registered-patients/page.js"
     ],
-    "/[locale]/forgot-password/page": [
+    "/[locale]/clinic/book-appointment/[visitId]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/forgot-password/page.js"
+      "static/chunks/app/[locale]/clinic/book-appointment/[visitId]/page.js"
     ],
-    "/reset-password/page": [
+    "/[locale]/clinic/patients/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/reset-password/page.js"
+      "static/chunks/app/[locale]/clinic/patients/page.js"
     ],
-    "/[locale]/reset-password/page": [
+    "/clinic/book-appointment/[visitId]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/reset-password/page.js"
+      "static/chunks/app/clinic/book-appointment/[visitId]/page.js"
     ],
-    "/careprep/page": [
+    "/[locale]/clinic/queue/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/careprep/page.js"
+      "static/chunks/app/[locale]/clinic/queue/page.js"
     ],
     "/[locale]/clinic/follow-through/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/[locale]/clinic/follow-through/page.js"
-    ],
-    "/[locale]/clinic/visits/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/clinic/visits/page.js"
-    ],
-    "/[locale]/careprep/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/careprep/page.js"
-    ],
-    "/[locale]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/[locale]/page.js"
     ]
   }
 }

@@ -221,7 +221,7 @@ export default function VisitPage({ params }: { params: { id: string } }) {
 
       if (!resolvedVisit?.scheduled_start) {
         toast.error('Appointment is not fixed yet. Please schedule it first.');
-        router.push(`${ws}/fix-appointment/${encodeURIComponent(resolvedVisitId)}`);
+        router.push(`${ws}/book-appointment/${encodeURIComponent(resolvedVisitId)}`);
         return;
       }
     } catch (error: any) {

@@ -121,7 +121,7 @@ export default function RegisteredPatientsPage() {
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
-              <p className="text-sm font-medium text-slate-900 mt-1">Fix appointment now/later</p>
+              <p className="text-sm font-medium text-slate-900 mt-1">Book appointment now/later</p>
             </div>
           </div>
 
@@ -210,12 +210,12 @@ export default function RegisteredPatientsPage() {
               <div className="mt-2 rounded-md border border-green-300 bg-white p-3">
                 <p className="font-semibold text-slate-900 mb-1">Next action</p>
                 <p className="text-slate-700">
-                  Fix the appointment before opening the visit workspace (vitals, transcription, clinical note).
+                  Book the appointment before opening the visit workspace (vitals, transcription, clinical note).
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Link href={`${ws}/fix-appointment/${encodeURIComponent(result.visit_id)}`}>
+                  <Link href={`${ws}/book-appointment/${encodeURIComponent(result.visit_id)}`}>
                     <Button type="button" leftIcon={<CalendarClock className="h-4 w-4" />}>
-                      Fix appointment
+                      Book appointment
                     </Button>
                   </Link>
                   <Link href={`${ws}/manage-appointments`}>
