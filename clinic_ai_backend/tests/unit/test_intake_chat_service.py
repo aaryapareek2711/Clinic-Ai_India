@@ -428,3 +428,87 @@ def test_resolve_session_via_patient_phone_when_to_number_differs() -> None:
     assert service.whatsapp.sent
     assert service.whatsapp.sent[0][0] == "text"
     assert "main health problem" in service.whatsapp.sent[0][2].lower()
+
+
+def test_first_question_replies_to_inbound_sender_number() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "session-6",
+        "visit_id": "visit-6",
+        # stale destination saved in session
+        "to_number": "0000000000",
+        "patient_name": "Patient",
+        "language": "en",
+        "status": "awaiting_conversation_start",
+        "answers": [],
+    }
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.handle_patient_reply(
+        from_number="+91 98765 43210",
+        message_text="Hi",
+        message_id="wamid-6",
+    )
+
+    assert service.whatsapp.sent
+    assert service.whatsapp.sent[0][0] == "text"
+    # response should target normalized inbound sender
+    assert service.whatsapp.sent[0][1] == "919876543210"
+
+
+def test_inbound_reply_rebinds_session_to_number() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "session-7",
+        "visit_id": "visit-7",
+        "to_number": "1234567890",
+        "patient_name": "Patient",
+        "language": "en",
+        "status": "awaiting_conversation_start",
+        "answers": [],
+    }
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.handle_patient_reply(
+        from_number="919111111111",
+        message_text="Hello",
+        message_id="wamid-7",
+    )
+
+    assert fake_db.intake_sessions.record["to_number"] == "919111111111"
+
+
+def test_stop_message_uses_rebound_session_destination() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "session-8",
+        "visit_id": "visit-8",
+        "to_number": "1234567890",
+        "patient_name": "Patient",
+        "language": "en",
+        "status": "awaiting_illness",
+        "answers": [],
+    }
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.handle_patient_reply(
+        from_number="919222222222",
+        message_text="stop",
+        message_id="wamid-8",
+    )
+
+    assert service.whatsapp.sent
+    assert service.whatsapp.sent[0][0] == "text"
+    assert service.whatsapp.sent[0][1] == "919222222222"

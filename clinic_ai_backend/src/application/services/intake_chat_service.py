@@ -120,6 +120,14 @@ class IntakeChatService:
             )
             return
 
+        # Keep session destination aligned with the latest successful inbound sender format.
+        if normalized_from and str(session.get("to_number") or "") != normalized_from:
+            self.db.intake_sessions.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"to_number": normalized_from, "updated_at": datetime.now(timezone.utc)}},
+            )
+            session["to_number"] = normalized_from
+
         if message_id and not self._claim_message(session["_id"], message_id):
             return
 
@@ -144,7 +152,7 @@ class IntakeChatService:
                 if session.get("language") == "en"
                 else "Dhanyavaad. Hum aapke diye gaye jawaabon ke saath aage badhenge."
             )
-            self.whatsapp.send_text(from_number, end_msg)
+            self.whatsapp.send_text(session["to_number"], end_msg)
             self._auto_generate_pre_visit_summary(session)
             return
 
