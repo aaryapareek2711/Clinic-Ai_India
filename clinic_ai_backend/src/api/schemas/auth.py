@@ -24,14 +24,6 @@ class UserRoleUpdateRequest(BaseModel):
     role: str = Field(min_length=1, max_length=40)
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
-
-
-class ForgotPasswordResponse(BaseModel):
-    message: str
-
-
 class UserResponse(BaseModel):
     id: str
     email: str

@@ -119,7 +119,6 @@ class InMemoryCollection:
 
 class InMemoryDatabase:
     def __init__(self) -> None:
-        self.users = InMemoryCollection()
         self.audio_files = InMemoryCollection()
         self.transcription_jobs = InMemoryCollection()
         self.transcription_results = InMemoryCollection()
@@ -132,7 +131,6 @@ class InMemoryDatabase:
         self.patient_vitals = InMemoryCollection()
         self.clinical_notes = InMemoryCollection()
         self.follow_up_reminders = InMemoryCollection()
-        self.follow_through_lab_records = InMemoryCollection()
         self.visit_transcription_sessions = InMemoryCollection()
 
 
@@ -157,8 +155,6 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     monkeypatch.setattr("src.api.routers.transcription.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.patients.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.visits.get_database", lambda: fake_db)
-    monkeypatch.setattr("src.api.routers.followthrough.get_database", lambda: fake_db)
-    monkeypatch.setattr("src.api.routers.auth.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.contextai.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.external.queue.producer.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.external.queue.consumer.get_database", lambda: fake_db)

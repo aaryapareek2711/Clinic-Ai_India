@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from src.core.config import Settings
+from src.core.language_support import uses_hindi_template_family
 
 
 def resolve_follow_up_template_name(settings: Settings) -> str | None:
@@ -17,8 +18,7 @@ def resolve_follow_up_template_name(settings: Settings) -> str | None:
 
 def follow_up_template_language_code(settings: Settings, preferred_language: str) -> str:
     """Language code for follow-up sends (uses follow-up template language envs)."""
-    lang = str(preferred_language or "en").strip().lower()
-    if lang == "hi":
+    if uses_hindi_template_family(preferred_language):
         return settings.whatsapp_followup_template_lang_hi
     return settings.whatsapp_followup_template_lang_en
 

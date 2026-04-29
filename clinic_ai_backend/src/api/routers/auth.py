@@ -1,7 +1,7 @@
 """Authentication routes backed by MongoDB users collection."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,8 +10,6 @@ from fastapi.security import OAuth2PasswordBearer
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
     AuthResponse,
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
@@ -121,31 +119,6 @@ def me(current_user: dict = Depends(_get_current_user)) -> UserResponse:
 @router.post("/logout")
 def logout(_: dict = Depends(_get_current_user)) -> dict:
     return {"message": "Successfully logged out"}
-
-
-@router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
-    """
-    Accept password-reset requests in local/dev mode.
-
-    For security, this endpoint always returns a generic success message
-    whether or not the email exists.
-    """
-    db = get_database()
-    user_doc = db.users.find_one({"email": payload.email})
-    if user_doc:
-        db.users.update_one(
-            {"id": str(user_doc["id"])},
-            {
-                "$set": {
-                    "password_reset_requested_at": datetime.now(timezone.utc),
-                    "password_reset_token": str(uuid4()),
-                    "password_reset_expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-        )
-    return {"message": "If this account exists, reset instructions were sent."}
 
 
 @router.get("/users", response_model=list[UserResponse])

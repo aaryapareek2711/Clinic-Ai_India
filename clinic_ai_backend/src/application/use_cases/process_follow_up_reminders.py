@@ -15,6 +15,7 @@ from src.application.services.follow_up_whatsapp_templates import (
     resolve_follow_up_template_name,
 )
 from src.core.config import get_settings
+from src.core.language_support import build_template_language_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -24,27 +25,21 @@ def _utc_now() -> datetime:
 
 
 def _language_candidates(settings: Any, preferred_language: str) -> list[str]:
-    lang = str(preferred_language or "en").strip().lower()
-    if lang == "hi":
-        candidates = [
+    return build_template_language_candidates(
+        preferred_language,
+        hindi_codes=(
             settings.whatsapp_followup_template_lang_hi,
             settings.whatsapp_intake_template_lang_hi,
             "hi_IN",
             "hi",
-        ]
-    else:
-        candidates = [
+        ),
+        english_codes=(
             settings.whatsapp_followup_template_lang_en,
             settings.whatsapp_intake_template_lang_en,
             "en_US",
             "en",
-        ]
-    out: list[str] = []
-    for code in candidates:
-        value = str(code or "").strip()
-        if value and value not in out:
-            out.append(value)
-    return out
+        ),
+    )
 
 
 class ProcessFollowUpRemindersUseCase:

@@ -98,3 +98,30 @@ def test_register_without_appointment_defers_intake(app_client, monkeypatch) -> 
     assert schedule_ok.status_code == 200
     assert schedule_ok.json().get("whatsapp_triggered") is True
     assert len(calls) == 1
+
+
+def test_register_accepts_full_intake_language_and_preserves_it_for_chat(app_client, monkeypatch) -> None:
+    calls: list[tuple] = []
+
+    def _capture(*args, **kwargs) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(
+        "src.application.services.intake_chat_service.IntakeChatService.start_intake",
+        _capture,
+    )
+    payload = {
+        "name": "Hinglish Patient",
+        "phone_number": "9988776655",
+        "age": 33,
+        "gender": "female",
+        "preferred_language": "hi-eng",
+        "travelled_recently": False,
+        "consent": True,
+        "appointment_date": "2099-01-01",
+        "appointment_time": "10:30",
+    }
+    res = app_client.post("/api/patients/register", json=payload)
+    assert res.status_code == 200
+    assert len(calls) == 1
+    assert calls[0][1]["language"] == "hi-eng"

@@ -8,6 +8,7 @@ from urllib import error
 from urllib import request
 
 from src.core.config import get_settings
+from src.core.language_support import normalize_intake_language
 
 
 # Canonical intake taxonomy.
@@ -126,8 +127,8 @@ WOMENS_HEALTH_KEYWORDS = {
 TOPIC_QUESTION_TEMPLATES = {
     "en": {
         "reason_for_visit": "Please tell me the main health issue you want to discuss today?",
-        "onset_duration": "When did this problem first start, and has it been continuous or on and off since then?",
-        "severity_progression": "How has this problem been changing over time, including whether it feels better, worse, or about the same?",
+        "onset_duration": "When did this problem first start, and roughly how long has it lasted?",
+        "severity_progression": "What makes it better or worse, like time of day, food, or activity?",
         "associated_symptoms": "What other symptoms have you noticed along with this problem, and how have they been affecting you?",
         "red_flag_check": "Please describe any serious warning signs you've noticed, such as severe pain, breathlessness, fainting, bleeding, or sudden worsening?",
         "impact_daily_life": "How is this issue affecting your daily routine, such as sleep, eating, work, movement, or energy?",
@@ -164,12 +165,111 @@ TOPIC_QUESTION_TEMPLATES = {
         "allergies": "कृपया बताइए कि आपको दवाओं, खाने, या किसी और चीज से कोई एलर्जी है क्या?",
         "closing": "धन्यवाद, अभी के लिए हमें जरूरी जानकारी मिल गई है। कृपया समय पर आएं।",
     },
+    "ta": {
+        "reason_for_visit": "தயவுசெய்து இன்று நீங்கள் பேச விரும்பும் முக்கிய உடல்நல பிரச்சினை என்ன என்பதை சொல்லுங்கள்.",
+        "onset_duration": "இந்த பிரச்சினை முதலில் எப்போது தொடங்கியது, அதன் பிறகு இது தொடர்ந்து இருந்ததா அல்லது இடையிடையே வந்ததா?",
+        "severity_progression": "காலப்போக்கில் இந்த பிரச்சினை எப்படி மாறியது, உதாரணமாக மேம்பட்டதா, மோசமானதா, அல்லது கிட்டத்தட்ட அதேபோல இருந்ததா?",
+        "associated_symptoms": "இந்த பிரச்சினையுடன் சேர்த்து நீங்கள் வேறு என்ன அறிகுறிகளை அனுபவித்துள்ளீர்கள்?",
+        "red_flag_check": "கடுமையான வலி, மூச்சுத்திணறல், மயக்கம், இரத்தப்போக்கு, அல்லது திடீர் மோசமாதல் போன்ற எந்த தீவிர எச்சரிக்கை அறிகுறிகளும் இருந்ததா?",
+        "impact_daily_life": "இந்த பிரச்சினை உங்கள் நாளாந்த வாழ்க்கையை, உதாரணமாக தூக்கம், உணவு, வேலை, நடமாட்டம், அல்லது சக்தியை எப்படி பாதிக்கிறது?",
+        "current_medications": "இந்த பிரச்சினைக்காக நீங்கள் தற்போது எந்த மருந்துகள், சப்பிள்மென்ட்கள், அல்லது வீட்டு வைத்தியங்களை பயன்படுத்துகிறீர்கள்?",
+        "past_medical_history": "இதற்கு தொடர்புடையதாக இருக்கக்கூடிய உங்கள் முந்தைய மருத்துவ நிலைகள், அறுவை சிகிச்சைகள், அல்லது பெரிய உடல்நல பிரச்சினைகள் பற்றி சொல்லுங்கள்.",
+        "treatment_history": "இந்த பிரச்சினைக்காக இதுவரை நீங்கள் என்ன சிகிச்சை அல்லது மருத்துவ ஆலோசனை பெற்றுள்ளீர்கள்?",
+        "recurrence_status": "இது புதிய பிரச்சினையா, பழைய பிரச்சினை மீண்டும் தோன்றியதா, அல்லது பழைய நோய்க்கான பின்தொடர்பா என்பதை சொல்லுங்கள்.",
+        "family_history": "உங்கள் நெருங்கிய குடும்பத்தினரில், உதாரணமாக பெற்றோர் அல்லது உடன்பிறந்தோரில், இதுபோன்ற அல்லது தொடர்புடைய உடல்நல பிரச்சினைகள் இருந்ததா?",
+        "trigger_cause": "இது தொடங்கிய நேரத்தில் அல்லது அதன் அருகில் ஏதேனும் நடந்ததா, உதாரணமாக பயணம், உணவு மாற்றம், காயம், தொற்று தொடர்பு, அல்லது மனஅழுத்தம்?",
+        "travel_history": "நீங்கள் சமீபத்தில் செய்த பயணங்களை பற்றி சொல்லுங்கள், எங்கு சென்றீர்கள், எப்போது சென்றீர்கள், மற்றும் பயணத்தின் போது அல்லது பிறகு அறிகுறிகள் தொடங்கியதா?",
+        "pain_assessment": "உங்களுக்கு இருக்கும் வலியை பற்றி சொல்லுங்கள், அது எங்கு உள்ளது, எவ்வளவு கடுமையாக உள்ளது, எப்படி உணரப்படுகிறது, மற்றும் வேறு இடங்களுக்கு பரவுகிறதா?",
+        "past_evaluation": "இந்த பிரச்சினைக்காக நீங்கள் முன்பு கண்ட மருத்துவர் சந்திப்புகள், பரிசோதனைகள், அல்லது மதிப்பீடுகள் பற்றியும், உங்களிடம் என்ன கூறப்பட்டது என்பதையும் சொல்லுங்கள்.",
+        "menstrual_pregnancy": "உங்கள் கடைசி மாதவிடாய் எப்போது வந்தது, மேலும் சுழற்சியில் ஏதேனும் மாற்றம் அல்லது கர்ப்பம் இருக்கக்கூடிய வாய்ப்பு உள்ளதா?",
+        "allergies": "மருந்துகள், உணவு, அல்லது வேறு எதற்காவது உங்களுக்கு அலர்ஜி உள்ளதா? தயவுசெய்து சொல்லுங்கள்.",
+        "closing": "நன்றி, தற்போது எங்களுக்கு தேவையான தகவல் கிடைத்துவிட்டது. தயவுசெய்து நேரத்திற்கு வாருங்கள்.",
+    },
+    "te": {
+        "reason_for_visit": "దయచేసి ఈ రోజు మీరు చెప్పాలనుకునే ప్రధాన ఆరోగ్య సమస్య ఏమిటో వివరించండి.",
+        "onset_duration": "ఈ సమస్య మొదట ఎప్పుడు ప్రారంభమైంది, అప్పటి నుంచి ఇది నిరంతరంగా ఉందా లేక మధ్య మధ్యలో వస్తోందా?",
+        "severity_progression": "కాలక్రమంలో ఈ సమస్య ఎలా మారింది, అంటే మెరుగైందా, అధ్వాన్నమైందా, లేక దాదాపు అలాగే ఉందా?",
+        "associated_symptoms": "ఈ సమస్యతో పాటు మీరు ఇంకేమేమి లక్షణాలు గమనించారు?",
+        "red_flag_check": "తీవ్రమైన నొప్పి, శ్వాస తీసుకోవడంలో ఇబ్బంది, మూర్ఛ, రక్తస్రావం, లేదా అకస్మాత్తుగా అధ్వాన్నం కావడం వంటి ఏవైనా హెచ్చరిక లక్షణాలు ఉన్నాయా?",
+        "impact_daily_life": "ఈ సమస్య మీ రోజువారీ జీవితం మీద ఎలా ప్రభావం చూపుతోంది, ఉదాహరణకు నిద్ర, భోజనం, పని, కదలిక, లేదా శక్తిపై?",
+        "current_medications": "ఈ సమస్య కోసం మీరు ప్రస్తుతం ఏ మందులు, సప్లిమెంట్లు, లేదా ఇంటి చిట్కాలు ఉపయోగిస్తున్నారు?",
+        "past_medical_history": "ఈ సమస్యకు సంబంధం ఉండవచ్చని భావించే మీ పూర్వ వైద్య సమస్యలు, శస్త్రచికిత్సలు, లేదా పెద్ద ఆరోగ్య సమస్యల గురించి చెప్పండి.",
+        "treatment_history": "ఈ సమస్యకు ఇప్పటివరకు మీరు ఏ చికిత్స లేదా వైద్య సలహా తీసుకున్నారు?",
+        "recurrence_status": "ఇది కొత్త సమస్యా, పాత సమస్య మళ్లీ వచ్చిందా, లేక పూర్వ నిర్ధారణకు ఫాలో-అప్‌నా?",
+        "family_history": "మీ తల్లిదండ్రులు లేదా సహోదరుల్లో ఇలాంటి లేదా సంబంధిత ఆరోగ్య సమస్యలేమైనా ఉన్నాయా?",
+        "trigger_cause": "ఇది ప్రారంభమైన సమయానికి దగ్గరగా ఏదైనా జరిగింది ఏమో, ఉదాహరణకు ప్రయాణం, ఆహార మార్పులు, గాయం, ఇన్ఫెక్షన్‌కి గురికావడం, లేదా ఒత్తిడి?",
+        "travel_history": "మీరు ఇటీవల చేసిన ప్రయాణాల గురించి చెప్పండి, ఎక్కడికి వెళ్లారు, ఎప్పుడు వెళ్లారు, మరియు ప్రయాణ సమయంలో లేదా తర్వాత లక్షణాలు ప్రారంభమయ్యాయా?",
+        "pain_assessment": "మీకు ఉన్న నొప్పి గురించి చెప్పండి, ఎక్కడ ఉంది, ఎంత తీవ్రముగా ఉంది, ఎలా అనిపిస్తోంది, మరియు అది ఇంకెక్కడికైనా వ్యాపిస్తున్నదా?",
+        "past_evaluation": "ఈ సమస్య కోసం మీరు ఇంతకుముందు చేసిన డాక్టర్‌ సందర్శనలు, పరీక్షలు, లేదా మూల్యాంకనాల గురించి చెప్పండి, అలాగే మీకు ఏమని చెప్పారు?",
+        "menstrual_pregnancy": "మీ చివరి మెన్స్ట్రుయల్‌ పీరియడ్‌ ఎప్పుడు వచ్చింది, అలాగే చక్రంలో ఏమైనా మార్పులు లేదా గర్భధారణకు అవకాశం ఉందా?",
+        "allergies": "మందులు, ఆహారం, లేదా మరేదైనా వస్తువులకు మీకు అలర్జీలు ఉన్నాయా? దయచేసి చెప్పండి.",
+        "closing": "ధన్యవాదాలు, ప్రస్తుతానికి మాకు అవసరమైన సమాచారం అందింది. దయచేసి సమయానికి రండి.",
+    },
+    "bn": {
+        "reason_for_visit": "দয়া করে বলুন, আজ আপনি যে প্রধান স্বাস্থ্য সমস্যাটি নিয়ে কথা বলতে চান সেটি কী?",
+        "onset_duration": "এই সমস্যা প্রথম কবে শুরু হয়েছিল, আর তারপর থেকে কি এটি সব সময় ছিল নাকি মাঝে মাঝে হয়েছে?",
+        "severity_progression": "সময়ের সাথে এই সমস্যাটি কীভাবে বদলেছে, যেমন ভালো হয়েছে, খারাপ হয়েছে, নাকি প্রায় একই আছে?",
+        "associated_symptoms": "এই সমস্যার সাথে আপনি আর কী কী উপসর্গ অনুভব করেছেন?",
+        "red_flag_check": "তীব্র ব্যথা, শ্বাসকষ্ট, অজ্ঞান হওয়া, রক্তপাত, বা হঠাৎ খারাপ হয়ে যাওয়ার মতো কোনো গুরুতর সতর্ক সংকেত কি হয়েছে?",
+        "impact_daily_life": "এই সমস্যা আপনার দৈনন্দিন জীবন, যেমন ঘুম, খাওয়া, কাজ, চলাফেরা, বা শক্তির ওপর কীভাবে প্রভাব ফেলছে?",
+        "current_medications": "এই সমস্যার জন্য আপনি বর্তমানে কী কী ওষুধ, সাপ্লিমেন্ট, বা ঘরোয়া চিকিৎসা নিচ্ছেন?",
+        "past_medical_history": "দয়া করে আপনার আগের রোগ, অস্ত্রোপচার, বা বড় স্বাস্থ্য সমস্যার কথা বলুন যেগুলো এর সাথে সম্পর্কিত হতে পারে।",
+        "treatment_history": "এই সমস্যার জন্য এখন পর্যন্ত আপনি কী চিকিৎসা বা চিকিৎসকের পরামর্শ নিয়েছেন?",
+        "recurrence_status": "দয়া করে বলুন এটি কি নতুন সমস্যা, পুরনো সমস্যার পুনরাবৃত্তি, নাকি পুরনো রোগের ফলো-আপ?",
+        "family_history": "আপনার নিকট পরিবারে, যেমন বাবা-মা বা ভাইবোনদের মধ্যে, এ ধরনের বা সম্পর্কিত স্বাস্থ্য সমস্যা ছিল কি?",
+        "trigger_cause": "এটি শুরু হওয়ার সময়ের কাছাকাছি কোনো কিছু ঘটেছিল কি, যেমন ভ্রমণ, খাবারে পরিবর্তন, আঘাত, সংক্রমণের সংস্পর্শ, বা মানসিক চাপ?",
+        "travel_history": "আপনার সাম্প্রতিক ভ্রমণ সম্পর্কে বলুন, কোথায় গিয়েছিলেন, কবে গিয়েছিলেন, এবং ভ্রমণের সময় বা পরে উপসর্গ শুরু হয়েছিল কি না।",
+        "pain_assessment": "আপনার ব্যথা সম্পর্কে বলুন, কোথায় হচ্ছে, কতটা তীব্র, কেমন লাগে, এবং অন্য কোথাও ছড়ায় কি না।",
+        "past_evaluation": "এই সমস্যার জন্য আগের ডাক্তার দেখানো, পরীক্ষা, বা মূল্যায়নের কথা বলুন, এবং আপনাকে কী বলা হয়েছিল তাও জানান।",
+        "menstrual_pregnancy": "আপনার শেষ মাসিক কবে হয়েছিল, আর চক্রে কোনো পরিবর্তন বা গর্ভধারণের সম্ভাবনা আছে কি?",
+        "allergies": "ওষুধ, খাবার, বা অন্য কোনো কিছুর প্রতি আপনার কোনো অ্যালার্জি আছে কি? দয়া করে জানান।",
+        "closing": "ধন্যবাদ, আপাতত আমাদের প্রয়োজনীয় তথ্য পাওয়া গেছে। অনুগ্রহ করে সময়মতো আসবেন।",
+    },
+    "mr": {
+        "reason_for_visit": "कृपया सांगा, आज तुम्हाला कोणत्या मुख्य आरोग्य समस्येबद्दल बोलायचे आहे?",
+        "onset_duration": "ही समस्या प्रथम कधी सुरू झाली, आणि तेव्हापासून सतत आहे का मधूनमधून होते?",
+        "severity_progression": "काळानुसार ही समस्या कशी बदलली आहे, म्हणजे बरी झाली, वाढली, की जवळजवळ तशीच आहे?",
+        "associated_symptoms": "या समस्येसोबत तुम्हाला अजून कोणती लक्षणे जाणवली आहेत?",
+        "red_flag_check": "तीव्र वेदना, श्वास घेण्यास त्रास, बेशुद्ध पडणे, रक्तस्त्राव, किंवा अचानक प्रकृती बिघडणे अशी कोणती गंभीर लक्षणे झाली आहेत का?",
+        "impact_daily_life": "ही समस्या तुमच्या रोजच्या आयुष्यावर, जसे झोप, खाणे, काम, हालचाल, किंवा उर्जा यावर कसा परिणाम करत आहे?",
+        "current_medications": "या समस्येसाठी तुम्ही सध्या कोणती औषधे, सप्लिमेंट्स, किंवा घरगुती उपाय घेत आहात?",
+        "past_medical_history": "या समस्येशी संबंधित असू शकतील अशा तुमच्या आधीच्या आजार, शस्त्रक्रिया, किंवा मोठ्या आरोग्य समस्यांबद्दल कृपया सांगा.",
+        "treatment_history": "या समस्येसाठी आत्तापर्यंत तुम्ही कोणता उपचार किंवा वैद्यकीय सल्ला घेतला आहे?",
+        "recurrence_status": "कृपया सांगा, ही नवीन समस्या आहे, जुन्या समस्येची पुनरावृत्ती आहे, की आधीच्या निदानाचा फॉलो-अप आहे?",
+        "family_history": "तुमच्या जवळच्या कुटुंबात, जसे आई-वडील किंवा भावंडे, अशा किंवा यासारख्या आरोग्य समस्या झाल्या आहेत का?",
+        "trigger_cause": "ही समस्या सुरू होण्याच्या सुमारास काही घडले होते का, जसे प्रवास, खाण्यात बदल, दुखापत, संसर्गाचा संपर्क, किंवा ताण?",
+        "travel_history": "तुमच्या अलीकडील प्रवासाबद्दल सांगा, कुठे गेला होता, कधी गेला होता, आणि प्रवासादरम्यान किंवा नंतर लक्षणे सुरू झाली का?",
+        "pain_assessment": "तुम्हाला होणाऱ्या वेदनांबद्दल सांगा, त्या कुठे आहेत, किती तीव्र आहेत, कशा वाटतात, आणि दुसरीकडे पसरतात का?",
+        "past_evaluation": "या समस्येसाठी याआधी केलेल्या डॉक्टर भेटी, तपासण्या, किंवा मूल्यांकनांबद्दल सांगा, आणि तुम्हाला काय सांगितले गेले तेही सांगा.",
+        "menstrual_pregnancy": "तुमची शेवटची मासिक पाळी कधी आली होती, आणि चक्रात काही बदल किंवा गर्भधारणेची शक्यता आहे का?",
+        "allergies": "औषधे, अन्न, किंवा इतर कशामुळे तुम्हाला काही ॲलर्जी आहे का? कृपया सांगा.",
+        "closing": "धन्यवाद, सध्या आम्हाला आवश्यक माहिती मिळाली आहे. कृपया वेळेवर या.",
+    },
+    "kn": {
+        "reason_for_visit": "ದಯವಿಟ್ಟು ಇಂದು ನೀವು ಚರ್ಚಿಸಲು ಬಯಸುವ ಪ್ರಮುಖ ಆರೋಗ್ಯ ಸಮಸ್ಯೆ ಏನು ಎಂದು ತಿಳಿಸಿ.",
+        "onset_duration": "ಈ ಸಮಸ್ಯೆ ಮೊದಲು ಯಾವಾಗ ಆರಂಭವಾಯಿತು, ಮತ್ತು ಆಗಿನಿಂದ ಇದು ನಿರಂತರವಾಗಿದೆಯೇ ಅಥವಾ ಮಧ್ಯೆ ಮಧ್ಯೆ ಆಗುತ್ತಿದೆಯೇ?",
+        "severity_progression": "ಕಾಲಕ್ರಮದಲ್ಲಿ ಈ ಸಮಸ್ಯೆ ಹೇಗೆ ಬದಲಾಗಿದೆ, ಉದಾಹರಣೆಗೆ ಉತ್ತಮವಾಗಿದೆ, ಕೆಟ್ಟಿದೆ, ಅಥವಾ ಬಹುತೇಕ ಅದೇ ಇದೆ?",
+        "associated_symptoms": "ಈ ಸಮಸ್ಯೆಯ ಜೊತೆಗೆ ನೀವು ಇನ್ನೇನು ಲಕ್ಷಣಗಳನ್ನು ಅನುಭವಿಸಿದ್ದೀರಿ?",
+        "red_flag_check": "ತೀವ್ರ ನೋವು, ಉಸಿರಾಟದ ತೊಂದರೆ, ಮೂರ್ಛೆ, ರಕ್ತಸ್ರಾವ, ಅಥವಾ ಹಠಾತ್ ಹದಗೆಡುವಿಕೆ ಇತ್ಯಾದಿ ಗಂಭೀರ ಎಚ್ಚರಿಕೆ ಲಕ್ಷಣಗಳೇನಾದರೂ ಕಂಡಿದ್ದೀರಾ?",
+        "impact_daily_life": "ಈ ಸಮಸ್ಯೆ ನಿಮ್ಮ ದಿನನಿತ್ಯದ ಬದುಕಿನ ಮೇಲೆ, ಉದಾಹರಣೆಗೆ ನಿದ್ರೆ, ಊಟ, ಕೆಲಸ, ಚಲನೆ, ಅಥವಾ ಶಕ್ತಿಯ ಮೇಲೆ ಹೇಗೆ ಪರಿಣಾಮ ಬೀರುತ್ತಿದೆ?",
+        "current_medications": "ಈ ಸಮಸ್ಯೆಗೆ ನೀವು ಈಗ ಯಾವ ಔಷಧಿಗಳು, ಪೂರಕಗಳು, ಅಥವಾ ಮನೆಮದ್ದುಗಳನ್ನು ಬಳಸುತ್ತಿದ್ದೀರಿ?",
+        "past_medical_history": "ಈ ಸಮಸ್ಯೆಗೆ ಸಂಬಂಧಿತವಾಗಿರಬಹುದಾದ ನಿಮ್ಮ ಹಿಂದಿನ ಕಾಯಿಲೆಗಳು, ಶಸ್ತ್ರಚಿಕಿತ್ಸೆಗಳು, ಅಥವಾ ದೊಡ್ಡ ಆರೋಗ್ಯ ಸಮಸ್ಯೆಗಳ ಬಗ್ಗೆ ದಯವಿಟ್ಟು ತಿಳಿಸಿ.",
+        "treatment_history": "ಈ ಸಮಸ್ಯೆಗೆ ಇದುವರೆಗೆ ನೀವು ಯಾವ ಚಿಕಿತ್ಸೆ ಅಥವಾ ವೈದ್ಯಕೀಯ ಸಲಹೆ ಪಡೆದಿದ್ದೀರಿ?",
+        "recurrence_status": "ದಯವಿಟ್ಟು ತಿಳಿಸಿ, ಇದು ಹೊಸ ಸಮಸ್ಯೆಯೇ, ಹಳೆಯ ಸಮಸ್ಯೆಯ ಮರುಕಳಿಕೆಯೇ, ಅಥವಾ ಹಿಂದಿನ ನಿರ್ಧಾರಿತ ಸಮಸ್ಯೆಯ ಫಾಲೋ-ಅಪ್‌ವೇ?",
+        "family_history": "ನಿಮ್ಮ ಆಪ್ತ ಕುಟುಂಬದವರಾದ ತಂದೆ-ತಾಯಿ ಅಥವಾ ಸಹೋದರ-ಸಹೋದರಿಯರಲ್ಲಿ ಇಂತಹ ಅಥವಾ ಸಂಬಂಧಿತ ಆರೋಗ್ಯ ಸಮಸ್ಯೆಗಳಿದ್ದವೆಯೇ?",
+        "trigger_cause": "ಇದು ಆರಂಭವಾದ ಸಮಯದ ಸುತ್ತಮುತ್ತ ಏನಾದರೂ ಸಂಭವಿಸಿತೇ, ಉದಾಹರಣೆಗೆ ಪ್ರಯಾಣ, ಆಹಾರದಲ್ಲಿ ಬದಲಾವಣೆ, ಗಾಯ, ಸೋಂಕಿನ ಸಂಪರ್ಕ, ಅಥವಾ ಒತ್ತಡ?",
+        "travel_history": "ನಿಮ್ಮ ಇತ್ತೀಚಿನ ಪ್ರಯಾಣಗಳ ಬಗ್ಗೆ ತಿಳಿಸಿ, ಎಲ್ಲಿ ಹೋಗಿದ್ದೀರಿ, ಯಾವಾಗ ಪ್ರಯಾಣಿಸಿದ್ದೀರಿ, ಮತ್ತು ಲಕ್ಷಣಗಳು ಪ್ರಯಾಣದ ವೇಳೆ ಅಥವಾ ನಂತರ ಆರಂಭವಾಗಿದೆಯೇ?",
+        "pain_assessment": "ನಿಮಗೆ ಇರುವ ನೋವಿನ ಬಗ್ಗೆ ತಿಳಿಸಿ, ಅದು ಎಲ್ಲಿ ಇದೆ, ಎಷ್ಟು ತೀವ್ರವಾಗಿದೆ, ಹೇಗೆ ಅನುಭವವಾಗುತ್ತದೆ, ಮತ್ತು ಬೇರೆಡೆಗೆ ಹರಡುತ್ತದೆಯೇ?",
+        "past_evaluation": "ಈ ಸಮಸ್ಯೆಗೆ ಮೊದಲು ನಡೆದ ವೈದ್ಯರ ಭೇಟಿಗಳು, ಪರೀಕ್ಷೆಗಳು, ಅಥವಾ ಮೌಲ್ಯಮಾಪನಗಳ ಬಗ್ಗೆ ತಿಳಿಸಿ, ಮತ್ತು ನಿಮಗೆ ಏನು ಹೇಳಿದರು ಎಂಬುದನ್ನೂ ತಿಳಿಸಿ.",
+        "menstrual_pregnancy": "ನಿಮ್ಮ ಕೊನೆಯ ಮಾಸಿಕ ಯಾವಾಗ ಆಯಿತು, ಮತ್ತು ಚಕ್ರದಲ್ಲಿ ಏನಾದರೂ ಬದಲಾವಣೆಗಳಿವೆಯೇ ಅಥವಾ ಗರ್ಭಧಾರಣೆಯ ಸಾಧ್ಯತೆ ಇದೆಯೇ?",
+        "allergies": "ಔಷಧಿ, ಆಹಾರ, ಅಥವಾ ಬೇರೆ ಯಾವುದಕ್ಕೂ ನಿಮಗೆ ಅಲರ್ಜಿಗಳಿವೆಯೇ? ದಯವಿಟ್ಟು ತಿಳಿಸಿ.",
+        "closing": "ಧನ್ಯವಾದಗಳು, ಸದ್ಯಕ್ಕೆ ನಮಗೆ ಅಗತ್ಯವಾದ ಮಾಹಿತಿ ದೊರಕಿದೆ. ದಯವಿಟ್ಟು ಸಮಯಕ್ಕೆ ಬನ್ನಿ.",
+    },
 }
 
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
-
 
 def normalize_topic_key(topic: str) -> str:
     normalized = _normalize_text(topic).replace(" ", "_")
@@ -190,7 +290,7 @@ def _normalize_topic_list(topics: list[str] | None) -> list[str]:
 
 def _normalize_question_text(value: str) -> str:
     text = _normalize_text(value)
-    return re.sub(r"[^a-z0-9\u0900-\u097f\s]", "", text)
+    return re.sub(r"[^a-z0-9\u0900-\u097f\u0980-\u09ff\u0b80-\u0bff\u0c00-\u0c7f\u0c80-\u0cff\s]", "", text)
 
 
 def _is_list_of_strings(value: object) -> bool:
@@ -229,12 +329,31 @@ def validate_intake_message_quality(message: str, *, topic: str, language: str) 
     if (normalized.startswith("yes or no") or normalized.startswith("haan ya na")) and len(normalized) <= 24:
         return {"valid": False, "reason": "low_information_prompt"}
 
-    lang = _normalize_text(language)
+    lang = normalize_intake_language(language)
     devanagari_chars = len(re.findall(r"[\u0900-\u097f]", text))
     latin_chars = len(re.findall(r"[a-zA-Z]", text))
     if lang == "hi":
         # Lightweight sanity: Hindi prompts should usually contain at least one Devanagari character.
         if devanagari_chars == 0:
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "hi-eng":
+        # Hinglish should stay in Roman script and avoid Devanagari.
+        if latin_chars == 0 or devanagari_chars > 0:
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "mr":
+        if devanagari_chars == 0:
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "ta":
+        if not re.search(r"[\u0b80-\u0bff]", text):
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "te":
+        if not re.search(r"[\u0c00-\u0c7f]", text):
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "bn":
+        if not re.search(r"[\u0980-\u09ff]", text):
+            return {"valid": False, "reason": "language_mismatch"}
+    elif lang == "kn":
+        if not re.search(r"[\u0c80-\u0cff]", text):
             return {"valid": False, "reason": "language_mismatch"}
     elif lang == "en":
         # Lightweight sanity: English prompts should be mostly latin-script.
@@ -256,7 +375,7 @@ class OpenAIQuestionClient:
             "{{patient_name}}": str(context.get("patient_name", "") or ""),
             "{{patient_age}}": str(context.get("patient_age", "") or ""),
             "{{gender}}": str(context.get("gender", "") or ""),
-            "{{language}}": str(context.get("language", "en") or "en"),
+            "{{language}}": normalize_intake_language(str(context.get("language", "en") or "en")),
             "{{question_number}}": str(int(context.get("question_number", 0) or 0)),
             "{{max_questions}}": str(int(context.get("max_questions", 8) or 8)),
             "{{previous_qa_json}}": json.dumps(context.get("previous_qa_json", []), ensure_ascii=True),
@@ -295,6 +414,42 @@ class OpenAIQuestionClient:
                 model_topic=normalize_topic_key(str(result.get("topic", "") or "")),
             )
         return self._enforce_condition_guidance(result=result, context=context, guidance=guidance)
+
+    def detect_patient_opt_out(self, *, message_text: str, language: str, recent_answers: list[dict] | None = None) -> dict:
+        """Detect whether the patient is asking to stop the intake flow."""
+        template_path = Path(__file__).resolve().parent / "prompt_templates" / "opt_out_prompt.txt"
+        template = template_path.read_text(encoding="utf-8")
+        prompt = (
+            template.replace("{{language}}", normalize_intake_language(str(language or "en"))).replace(
+                "{{message_text}}", str(message_text or "")
+            ).replace("{{recent_answers_json}}", json.dumps(recent_answers or [], ensure_ascii=True))
+        )
+        try:
+            content = self._chat_completion(
+                prompt=prompt,
+                system_role=(
+                    "You are a clinical intake stop-intent classifier. "
+                    "Return strict JSON only with the required schema."
+                ),
+            )
+        except (error.HTTPError, error.URLError, TimeoutError) as exc:
+            raise RuntimeError("opt_out_detection_http_error") from exc
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("opt_out_detection_json_parse_error") from exc
+        if not isinstance(result, dict):
+            raise RuntimeError("opt_out_detection_schema_invalid")
+        if not isinstance(result.get("is_opt_out"), bool):
+            raise RuntimeError("opt_out_detection_schema_invalid")
+        if not isinstance(result.get("confidence"), (int, float)):
+            raise RuntimeError("opt_out_detection_schema_invalid")
+        if not isinstance(result.get("reason"), str):
+            raise RuntimeError("opt_out_detection_schema_invalid")
+
+        result["confidence"] = float(result["confidence"])
+        return result
 
     def generate_pre_visit_summary(self, language: str, intake_answers: list[dict]) -> dict:
         """Generate a structured five-section pre-visit summary."""
@@ -516,34 +671,29 @@ class OpenAIQuestionClient:
                 "fallback_reason": "",
                 "llm_message_valid": False,
             }
-
-        fallback_message = cls._topic_message(enforced_topic, language)
-        if not allow_llm_message:
+        if not str(llm_message or "").strip():
             return {
-                "message": fallback_message,
-                "source": "template_fallback",
-                "fallback_reason": "",
-                "llm_message_valid": False,
-            }
-
-        # If backend changed the topic, do not trust the LLM phrasing for a possibly different intent.
-        if normalize_topic_key(llm_topic) != enforced_topic:
-            return {
-                "message": fallback_message,
-                "source": "template_fallback",
-                "fallback_reason": "topic_mismatch",
-                "llm_message_valid": False,
-            }
-
-        message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
-        if not message_validation["valid"]:
-            return {
-                "message": fallback_message,
+                "message": cls._topic_message(enforced_topic, language),
                 "source": "template_fallback",
                 "fallback_reason": "message_invalid",
                 "llm_message_valid": False,
             }
-        return {"message": llm_message, "source": "llm", "fallback_reason": "", "llm_message_valid": True}
+        if normalize_topic_key(llm_topic) != enforced_topic:
+            return {
+                "message": cls._topic_message(enforced_topic, language),
+                "source": "template_fallback",
+                "fallback_reason": "topic_mismatch",
+                "llm_message_valid": False,
+            }
+        message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
+        # Normal intake questions should stay model-generated; template fallback is reserved
+        # for closing/safety or actual model failure before this selector is reached.
+        return {
+            "message": llm_message,
+            "source": "llm",
+            "fallback_reason": "",
+            "llm_message_valid": bool(message_validation["valid"]),
+        }
 
     @classmethod
     def _build_condition_guidance(cls, context: dict) -> dict:
@@ -597,6 +747,10 @@ class OpenAIQuestionClient:
         is_womens = any(keyword in complaint for keyword in WOMENS_HEALTH_KEYWORDS)
 
         base_topics = [
+            # Always start with the patient's reason for visit, even if a short chief complaint
+            # was already collected as "illness" in history. This keeps the first LLM turn
+            # patient-facing and consistent across channels.
+            "reason_for_visit",
             "onset_duration",
             "associated_symptoms",
             "current_medications",
@@ -635,7 +789,11 @@ class OpenAIQuestionClient:
 
         question = str(item.get("question", "") or "")
         normalized_question = _normalize_question_text(question)
-        if not normalized_question or normalized_question == "illness":
+        if normalized_question == "illness":
+            # Intake service stores the initial chief complaint as question="illness".
+            # Treat it as reason_for_visit coverage to prevent repeating the same ask.
+            return "reason_for_visit"
+        if not normalized_question:
             return ""
 
         for language_topics in TOPIC_QUESTION_TEMPLATES.values():
@@ -673,6 +831,14 @@ class OpenAIQuestionClient:
     def _next_topic_from_plan(cls, context: dict, guidance: dict) -> str:
         covered = set(cls._extract_covered_topics(context))
         avoid = set(guidance["avoid_topics"])
+        # Backward-compat: if the flow has already progressed (e.g., onset_duration collected)
+        # but older sessions never asked reason_for_visit, do not "go backwards".
+        # Only ask reason_for_visit as the first LLM turn when no other clinical topics
+        # have been covered yet.
+        if "reason_for_visit" not in covered:
+            progressed_topics = {t for t in covered if t not in {"reason_for_visit", "closing"}}
+            if progressed_topics:
+                covered.add("reason_for_visit")
         for topic in guidance["priority_topics"]:
             if topic not in covered and topic not in avoid:
                 return topic
@@ -680,14 +846,15 @@ class OpenAIQuestionClient:
 
     @classmethod
     def _topic_message(cls, topic: str, language: str) -> str:
-        lang = "hi" if str(language or "").strip().lower() == "hi" else "en"
-        return TOPIC_QUESTION_TEMPLATES[lang].get(topic) or TOPIC_QUESTION_TEMPLATES[lang]["reason_for_visit"]
+        lang = normalize_intake_language(language)
+        templates = TOPIC_QUESTION_TEMPLATES.get(lang) or TOPIC_QUESTION_TEMPLATES["en"]
+        return templates.get(topic) or templates["reason_for_visit"]
 
     @classmethod
     def _enforce_condition_guidance(cls, result: dict, context: dict, guidance: dict) -> dict:
         settings = get_settings()
         allow_llm_message = settings.intake_use_llm_message
-        language = str(context.get("language", "en") or "en")
+        language = normalize_intake_language(str(context.get("language", "en") or "en"))
         agent1 = result.get("agent1") if isinstance(result.get("agent1"), dict) else {}
         agent2 = result.get("agent2") if isinstance(result.get("agent2"), dict) else {}
         agent4 = result.get("agent4") if isinstance(result.get("agent4"), dict) else {}

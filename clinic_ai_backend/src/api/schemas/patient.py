@@ -2,6 +2,10 @@
 from pydantic import BaseModel, Field
 from pydantic import field_validator
 
+from src.core.language_support import intake_language_validation_message
+from src.core.language_support import is_supported_intake_language
+from src.core.language_support import normalize_intake_language
+
 
 class PatientRegisterRequest(BaseModel):
     """Request body for staff-driven patient registration."""
@@ -26,12 +30,10 @@ class PatientRegisterRequest(BaseModel):
     @classmethod
     def validate_preferred_language(cls, value: str) -> str:
         """Accept language aliases and normalize to supported app values."""
-        normalized = (value or "").strip()
-        if normalized == "en_US":
-            return "en"
-        if normalized in {"en", "hi"}:
-            return normalized
-        raise ValueError("preferred_language must be one of: en, hi, en_US")
+        raw_value = (value or "").strip()
+        if raw_value and not is_supported_intake_language(raw_value):
+            raise ValueError(intake_language_validation_message(extra_values=("en_US",)))
+        return normalize_intake_language(raw_value)
 
 
 class PatientRegisterResponse(BaseModel):
@@ -59,8 +61,6 @@ class PatientSummaryResponse(BaseModel):
     phone_number: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    latest_visit_id: str | None = None
-    latest_visit_scheduled_start: str | None = None
 
 
 class CreateVisitFromPatientRequest(BaseModel):

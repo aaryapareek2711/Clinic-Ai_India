@@ -22,7 +22,7 @@ def test_uses_universal_hardcoded_sequence_for_first_topic() -> None:
     )
 
     assert guidance["condition_category"] == "chronic_or_hereditary"
-    assert result["agent1"]["priority_topics"][0] == "onset_duration"
+    assert result["agent1"]["priority_topics"][0] == "reason_for_visit"
     assert result["topic"] == "onset_duration"
     assert "when did this problem first start" in result["message"].lower()
 
@@ -71,7 +71,7 @@ def test_uses_travel_history_when_recent_travel_is_true() -> None:
         }
     )
 
-    assert guidance["priority_topics"][5] == "travel_history"
+    assert guidance["priority_topics"][6] == "travel_history"
 
 
 def test_uses_family_history_branch_for_chronic_cases() -> None:
@@ -82,8 +82,8 @@ def test_uses_family_history_branch_for_chronic_cases() -> None:
         }
     )
 
-    assert guidance["priority_topics"][6] == "family_history"
-    assert guidance["priority_topics"][7] == "past_evaluation"
+    assert guidance["priority_topics"][7] == "family_history"
+    assert guidance["priority_topics"][8] == "past_evaluation"
 
 
 def test_uses_pain_assessment_branch_for_pain_cases() -> None:
@@ -94,7 +94,7 @@ def test_uses_pain_assessment_branch_for_pain_cases() -> None:
         }
     )
 
-    assert guidance["priority_topics"][6] == "pain_assessment"
+    assert guidance["priority_topics"][7] == "pain_assessment"
 
 
 def test_infers_covered_topic_from_question_text_without_topic_field() -> None:
@@ -179,7 +179,7 @@ def test_select_intake_message_falls_back_when_topic_changes() -> None:
     assert selection["fallback_reason"] == "topic_mismatch"
 
 
-def test_select_intake_message_falls_back_when_flag_disabled() -> None:
+def test_select_intake_message_keeps_llm_message_when_flag_disabled() -> None:
     settings = get_settings()
     settings.intake_use_llm_message = False
 
@@ -191,8 +191,8 @@ def test_select_intake_message_falls_back_when_flag_disabled() -> None:
         allow_llm_message=settings.intake_use_llm_message,
     )
 
-    assert selection["message"] == OpenAIQuestionClient._topic_message("associated_symptoms", "en")
-    assert selection["source"] == "template_fallback"
+    assert selection["message"] == "Can you describe all symptoms you noticed with this issue?"
+    assert selection["source"] == "llm"
     assert selection["fallback_reason"] == ""
 
 
@@ -220,7 +220,7 @@ def test_generate_intake_turn_raises_for_missing_agent_block(monkeypatch: pytest
     assert exc_info.value.reason_code == "agent_blocks_missing"
 
 
-def test_generate_intake_turn_uses_template_fallback_for_invalid_message_format(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_intake_turn_keeps_llm_message_even_if_validation_flags_it(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = get_settings()
     settings.intake_use_llm_message = True
     client = OpenAIQuestionClient()
@@ -246,8 +246,10 @@ def test_generate_intake_turn_uses_template_fallback_for_invalid_message_format(
         }
     )
 
-    assert result["last_message_source"] == "template_fallback"
-    assert result["last_fallback_reason"] == "message_invalid"
+    assert result["message"] == "Tell me symptoms now"
+    assert result["last_message_source"] == "llm"
+    assert result["last_fallback_reason"] == ""
+    assert result["llm_message_valid"] is False
 
 
 def test_generate_intake_turn_normalizes_topic_alias_to_canonical(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -303,3 +305,56 @@ def test_hindi_message_sanity_check_rejects_non_devanagari() -> None:
 
     assert validation["valid"] is False
     assert validation["reason"] == "language_mismatch"
+
+
+def test_topic_message_uses_selected_language_templates() -> None:
+    assert "அறிகுறிகளை" in OpenAIQuestionClient._topic_message("associated_symptoms", "ta")
+    assert "లక్షణాలు" in OpenAIQuestionClient._topic_message("associated_symptoms", "te")
+    assert "উপসর্গ" in OpenAIQuestionClient._topic_message("associated_symptoms", "bn")
+    assert "लक्षणे" in OpenAIQuestionClient._topic_message("associated_symptoms", "mr")
+    assert "ಲಕ್ಷಣ" in OpenAIQuestionClient._topic_message("associated_symptoms", "kn")
+
+
+def test_script_validation_rejects_wrong_script_for_new_languages() -> None:
+    assert validate_intake_message_quality("What symptoms are you feeling?", topic="associated_symptoms", language="ta")[
+        "reason"
+    ] == "language_mismatch"
+    assert validate_intake_message_quality("What symptoms are you feeling?", topic="associated_symptoms", language="te")[
+        "reason"
+    ] == "language_mismatch"
+    assert validate_intake_message_quality("What symptoms are you feeling?", topic="associated_symptoms", language="bn")[
+        "reason"
+    ] == "language_mismatch"
+    assert validate_intake_message_quality("What symptoms are you feeling?", topic="associated_symptoms", language="mr")[
+        "reason"
+    ] == "language_mismatch"
+    assert validate_intake_message_quality("What symptoms are you feeling?", topic="associated_symptoms", language="kn")[
+        "reason"
+    ] == "language_mismatch"
+
+
+def test_detect_patient_opt_out_returns_structured_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = OpenAIQuestionClient()
+    monkeypatch.setattr(
+        client,
+        "_chat_completion",
+        lambda **_: json.dumps({"is_opt_out": True, "confidence": 0.91, "reason": "patient asked to stop"}),
+    )
+
+    result = client.detect_patient_opt_out(message_text="please stop now", language="en")
+
+    assert result["is_opt_out"] is True
+    assert result["confidence"] == pytest.approx(0.91)
+    assert result["reason"] == "patient asked to stop"
+
+
+def test_detect_patient_opt_out_raises_for_invalid_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = OpenAIQuestionClient()
+    monkeypatch.setattr(
+        client,
+        "_chat_completion",
+        lambda **_: json.dumps({"is_opt_out": "yes", "confidence": 0.5, "reason": "bad"}),
+    )
+
+    with pytest.raises(RuntimeError, match="opt_out_detection_schema_invalid"):
+        client.detect_patient_opt_out(message_text="stop", language="en")

@@ -14,38 +14,27 @@ from src.application.services.follow_up_whatsapp_templates import (
 from src.application.services.intake_chat_service import IntakeChatService
 from src.application.utils.follow_up_dates import parse_next_visit_at
 from src.core.config import get_settings
+from src.core.language_support import build_template_language_candidates
 
 logger = logging.getLogger(__name__)
 
 
 def _language_candidates(preferred_language: str, settings) -> list[str]:
-    lang = str(preferred_language or "en").strip().lower()
-    candidates: list[str] = []
-    if lang == "hi":
-        candidates.extend(
-            [
-                settings.whatsapp_followup_template_lang_hi,
-                settings.whatsapp_intake_template_lang_hi,
-                "hi_IN",
-                "hi",
-            ]
-        )
-    else:
-        candidates.extend(
-            [
-                settings.whatsapp_followup_template_lang_en,
-                settings.whatsapp_intake_template_lang_en,
-                "en_US",
-                "en",
-            ]
-        )
-    # Preserve order, drop blanks and duplicates.
-    out: list[str] = []
-    for code in candidates:
-        value = str(code or "").strip()
-        if value and value not in out:
-            out.append(value)
-    return out
+    return build_template_language_candidates(
+        preferred_language,
+        hindi_codes=(
+            settings.whatsapp_followup_template_lang_hi,
+            settings.whatsapp_intake_template_lang_hi,
+            "hi_IN",
+            "hi",
+        ),
+        english_codes=(
+            settings.whatsapp_followup_template_lang_en,
+            settings.whatsapp_intake_template_lang_en,
+            "en_US",
+            "en",
+        ),
+    )
 
 
 def send_post_visit_summary_whatsapp(*, patient: dict, whatsapp_payload: str) -> bool:
@@ -65,24 +54,21 @@ def send_post_visit_summary_whatsapp(*, patient: dict, whatsapp_payload: str) ->
     if not to_number:
         logger.info("post_visit_whatsapp_skipped reason=no_patient_phone")
         return False
-    lang = str(patient.get("preferred_language") or "en").strip().lower()
-    language_codes: list[str] = []
-    if lang == "hi":
-        language_codes = [
-            str(settings.whatsapp_post_visit_template_lang_hi or "").strip(),
-            str(settings.whatsapp_intake_template_lang_hi or "").strip(),
+    language_codes = build_template_language_candidates(
+        str(patient.get("preferred_language") or "en"),
+        hindi_codes=(
+            settings.whatsapp_post_visit_template_lang_hi,
+            settings.whatsapp_intake_template_lang_hi,
             "hi_IN",
             "hi",
-        ]
-    else:
-        language_codes = [
-            str(settings.whatsapp_post_visit_template_lang_en or "").strip(),
-            str(settings.whatsapp_intake_template_lang_en or "").strip(),
+        ),
+        english_codes=(
+            settings.whatsapp_post_visit_template_lang_en,
+            settings.whatsapp_intake_template_lang_en,
             "en_US",
             "en",
-        ]
-    # Preserve order, drop blanks and duplicates.
-    language_codes = [c for i, c in enumerate(language_codes) if c and c not in language_codes[:i]]
+        ),
+    )
     param_count = max(0, int(settings.whatsapp_post_visit_template_param_count))
     body = (whatsapp_payload or "").strip()
     body_values = [body[:900]] if param_count > 0 and body else []

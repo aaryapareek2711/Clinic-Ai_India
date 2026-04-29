@@ -29,13 +29,6 @@ from src.core.config import get_settings
 router = APIRouter(prefix="/api/notes", tags=["Transcription"])
 _upload_log = logging.getLogger(__name__)
 
-def _require_scheduled_visit(db, visit_id: str) -> None:
-    visit = db.visits.find_one({"visit_id": visit_id}) or db.visits.find_one({"id": visit_id}) or {}
-    if not visit:
-        raise HTTPException(status_code=404, detail="Visit not found")
-    if not visit.get("scheduled_start"):
-        raise HTTPException(status_code=409, detail="APPOINTMENT_NOT_FIXED")
-
 
 def _as_utc_aware(value: datetime) -> datetime:
     """Mongo/BSON often returns naive UTC datetimes; normalize for arithmetic with aware UTC."""
@@ -61,7 +54,6 @@ async def upload_transcription_audio(
     """Upload audio, create job and enqueue async processing (visit session when visit_id is set)."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
-    _require_scheduled_visit(db, visit_id)
     previsit = db.pre_visit_summaries.find_one(
         {"patient_id": internal_patient_id, "visit_id": visit_id},
         sort=[("updated_at", -1)],

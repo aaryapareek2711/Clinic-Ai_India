@@ -5,7 +5,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.api.schemas.notes import (
@@ -25,14 +24,6 @@ from src.application.use_cases.send_post_visit_summary_whatsapp_to_patient impor
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
-
-def _require_scheduled_visit(visit_id: str) -> None:
-    db = get_database()
-    visit = db.visits.find_one({"visit_id": visit_id}) or db.visits.find_one({"id": visit_id}) or {}
-    if not visit:
-        raise HTTPException(status_code=404, detail="Visit not found")
-    if not visit.get("scheduled_start"):
-        raise HTTPException(status_code=409, detail="APPOINTMENT_NOT_FIXED")
 
 
 def _encode_note_patient_id(doc: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +109,6 @@ def get_clinical_note_template(body: ClinicalNoteTemplateRequest) -> dict[str, A
 def generate_clinical_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
     """Generate clinical note (default note type)."""
     request.patient_id = resolve_internal_patient_id(request.patient_id, allow_raw_fallback=True)
-    _require_scheduled_visit(request.visit_id)
     default_type = get_settings().default_note_type
     note_type: NoteType = request.note_type or default_type
     return _generate_by_type(note_type=note_type, request=request)
@@ -126,7 +116,6 @@ def generate_clinical_note(request: NoteGenerateRequest) -> NoteGenerateResponse
 
 def generate_india_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
     """Generate India clinical note explicitly."""
-    _require_scheduled_visit(request.visit_id)
     doc = GenerateIndiaClinicalNoteUseCase().execute(
         patient_id=request.patient_id,
         visit_id=request.visit_id,
@@ -140,7 +129,6 @@ def generate_india_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
 def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
     """Generate legacy SOAP note explicitly."""
     try:
-        _require_scheduled_visit(request.visit_id)
         doc = GenerateSoapNoteUseCase().execute(
             patient_id=request.patient_id,
             visit_id=request.visit_id,
@@ -155,7 +143,6 @@ def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
 def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateResponse:
     """Generate patient-facing post-visit summary explicitly."""
     try:
-        _require_scheduled_visit(request.visit_id)
         doc = GeneratePostVisitSummaryUseCase().execute(
             patient_id=request.patient_id,
             visit_id=request.visit_id,

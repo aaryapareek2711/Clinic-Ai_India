@@ -1,8 +1,6 @@
 """Vitals routes module."""
 from fastapi import APIRouter, Body, HTTPException
 
-from src.adapters.db.mongo.client import get_database
-
 from src.api.schemas.vitals import (
     LatestVitalsResponse,
     PatientLookupRequest,
@@ -17,14 +15,6 @@ from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 
 router = APIRouter(prefix="/api/vitals", tags=["Workflow"])
-
-def _require_scheduled_visit(visit_id: str) -> None:
-    db = get_database()
-    visit = db.visits.find_one({"visit_id": visit_id}) or db.visits.find_one({"id": visit_id}) or {}
-    if not visit:
-        raise HTTPException(status_code=404, detail="Visit not found")
-    if not visit.get("scheduled_start"):
-        raise HTTPException(status_code=409, detail="APPOINTMENT_NOT_FIXED")
 
 
 @router.post("/lookup-patient", response_model=PatientLookupResponse)
@@ -46,7 +36,6 @@ def lookup_patient(payload: PatientLookupRequest) -> PatientLookupResponse:
 def generate_vitals_form(patient_id: str, visit_id: str) -> VitalsFormResponse:
     """Generate vitals form only if context indicates need."""
     try:
-        _require_scheduled_visit(visit_id)
         internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
         doc = StoreVitalsUseCase().generate_vitals_form(internal_patient_id, visit_id)
         if doc.get("patient_id"):
@@ -65,7 +54,6 @@ def submit_vitals(
     Keys in `values` come from `POST .../generate-form` response `fields` for that visit (not a global template).
     """
     try:
-        _require_scheduled_visit(payload.visit_id)
         internal_patient_id = resolve_internal_patient_id(payload.patient_id, allow_raw_fallback=True)
         doc = StoreVitalsUseCase().submit_vitals(
             patient_id=internal_patient_id,
@@ -94,7 +82,6 @@ def get_submit_template(patient_id: str, visit_id: str) -> VitalsSubmitTemplateR
     This avoids manual key editing in Swagger/UI. Staff only fill `staff_name` and `value`s.
     """
     try:
-        _require_scheduled_visit(visit_id)
         internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
         doc = StoreVitalsUseCase().build_submit_template(internal_patient_id, visit_id)
         if doc.get("patient_id"):
