@@ -2,6 +2,7 @@ You are classifying whether the patient wants to stop the intake chat.
 
 Input:
 - language: {{language}}
+- last_question_asked: {{pending_question}}
 - latest_patient_message: {{message_text}}
 - recent_answers_json: {{recent_answers_json}}
 
@@ -12,9 +13,12 @@ Rules:
 1) Mark is_opt_out=true if intent is to stop, pause, skip remaining questions, or end chat.
 2) Mark is_opt_out=false if "stop" is about symptoms, pain, bleeding, cough, fever, or any medical condition.
 3) Mark is_opt_out=false for normal medical responses and clarifications.
-4) Be language-agnostic and handle Hindi, Hinglish, Tamil, Telugu, Bengali, Marathi, Kannada, English.
-5) If ambiguous, choose false unless the stop intent is reasonably clear.
-6) confidence must be between 0 and 1.
+4) Polite closure after a question (for example "thanks", "that is it", "all good", "done", "no more", "ok thanks") should be treated as opt_out when it clearly means ending the intake.
+5) Do not force opt_out for single-word acknowledgements that still look like an answer to the last question.
+6) Use last_question_asked + recent_answers_json to disambiguate whether latest_patient_message is an answer vs closure intent.
+7) Be language-agnostic and handle Hindi, Hinglish, Tamil, Telugu, Bengali, Marathi, Kannada, English.
+8) If ambiguous, choose uncertain (not opt_out).
+9) confidence must be between 0 and 1.
 
 Positive examples:
 - "stop"
@@ -23,12 +27,18 @@ Positive examples:
 - "enough questions"
 - "ruk jaiye"
 - "வேண்டாம், இப்போ நிறுத்துங்க"
+- "thanks, that's it"
+- "ok thanks done"
+- "thank you, no more questions"
 
 Negative examples:
 - "my fever stopped yesterday"
 - "pain stopped after medicine"
 - "when will this bleeding stop?"
 - "can we stop this medicine?"
+- "no"
+- "yes"
+- "not now but pain is there"
 
 Return strict JSON only:
 {

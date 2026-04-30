@@ -898,6 +898,7 @@ class IntakeChatService:
             decision = self.openai.detect_patient_opt_out(
                 message_text=message_text,
                 language=str(session.get("language") or "en"),
+                pending_question=str(session.get("pending_question") or ""),
                 recent_answers=list(session.get("answers") or []),
             )
         except Exception:
@@ -913,7 +914,7 @@ class IntakeChatService:
             return False
         confidence = float(decision.get("confidence") or 0.0)
         # Pure LLM gating: only stop on high-confidence opt-out intent.
-        return confidence >= 0.85
+        return confidence >= 0.7
 
     @staticmethod
     def _closing_message(language: str, patient_name: str | None) -> str:

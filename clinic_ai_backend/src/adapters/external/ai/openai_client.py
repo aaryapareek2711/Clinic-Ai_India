@@ -415,14 +415,23 @@ class OpenAIQuestionClient:
             )
         return self._enforce_condition_guidance(result=result, context=context, guidance=guidance)
 
-    def detect_patient_opt_out(self, *, message_text: str, language: str, recent_answers: list[dict] | None = None) -> dict:
+    def detect_patient_opt_out(
+        self,
+        *,
+        message_text: str,
+        language: str,
+        pending_question: str = "",
+        recent_answers: list[dict] | None = None,
+    ) -> dict:
         """Detect whether the patient is asking to stop the intake flow."""
         template_path = Path(__file__).resolve().parent / "prompt_templates" / "opt_out_prompt.txt"
         template = template_path.read_text(encoding="utf-8")
         prompt = (
             template.replace("{{language}}", normalize_intake_language(str(language or "en"))).replace(
                 "{{message_text}}", str(message_text or "")
-            ).replace("{{recent_answers_json}}", json.dumps(recent_answers or [], ensure_ascii=True))
+            ).replace("{{pending_question}}", str(pending_question or "")).replace(
+                "{{recent_answers_json}}", json.dumps(recent_answers or [], ensure_ascii=True)
+            )
         )
         try:
             content = self._chat_completion(
