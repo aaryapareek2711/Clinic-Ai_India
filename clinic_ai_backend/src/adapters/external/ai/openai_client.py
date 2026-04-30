@@ -795,7 +795,55 @@ class OpenAIQuestionClient:
             topic = cls._infer_topic_from_qa(qa)
             if topic and topic not in covered:
                 covered.append(topic)
+        for topic in cls._infer_topics_from_narrative_context(context):
+            if topic not in covered:
+                covered.append(topic)
         return covered
+
+    @classmethod
+    def _infer_topics_from_narrative_context(cls, context: dict) -> list[str]:
+        inferred: list[str] = []
+        chief_complaint = _normalize_text(str(context.get("chief_complaint", "") or ""))
+        qa_items = context.get("previous_qa_json", []) or []
+        answer_texts = [_normalize_text(str((qa or {}).get("answer", "") or "")) for qa in qa_items]
+        non_empty_answers = [text for text in answer_texts if text]
+        narrative = " ".join([chief_complaint] + non_empty_answers).strip()
+        if not narrative:
+            return inferred
+
+        if cls._looks_like_symptom_description(chief_complaint) and "associated_symptoms" not in inferred:
+            inferred.append("associated_symptoms")
+        if re.search(r"\b(started|since|for|from|ago|days?|weeks?|months?|years?)\b", narrative) and re.search(
+            r"\b\d+\b", narrative
+        ):
+            inferred.append("onset_duration")
+        if re.search(r"\b(on and off|better|worse|same|improv|night|morning|after food|with activity)\b", narrative):
+            inferred.append("severity_progression")
+        if re.search(
+            r"\b(medicine|medicines|tablet|tablets|capsule|metformin|insulin|treatment|home remedy|supplement)\b",
+            narrative,
+        ):
+            inferred.append("current_medications")
+        if re.search(r"\b(history|surgery|diagnos|operation|chronic|diabetes|hypertension|asthma|thyroid)\b", narrative):
+            inferred.append("past_medical_history")
+        if re.search(r"\b(work|sleep|eating|daily routine|movement|energy|walking)\b", narrative):
+            inferred.append("impact_daily_life")
+        if re.search(r"\b(travel|food change|injury|infection|stress|trigger|after eating)\b", narrative):
+            inferred.append("trigger_cause")
+        if re.search(r"\b(doctor|clinic|hospital|test|scan|report|evaluation|blood test)\b", narrative):
+            inferred.append("past_evaluation")
+        return _normalize_topic_list(inferred)
+
+    @classmethod
+    def _looks_like_symptom_description(cls, text: str) -> bool:
+        if not text:
+            return False
+        normalized = _normalize_text(text)
+        symptom_hits = sum(1 for token in SYMPTOM_SIGNAL_KEYWORDS if token in normalized)
+        has_connector = any(
+            marker in normalized for marker in ("with", "along with", "including", "such as", "like", ",")
+        )
+        return symptom_hits >= 2 and has_connector
 
     @classmethod
     def _infer_topic_from_qa(cls, qa: dict | None) -> str:

@@ -9,6 +9,7 @@ from src.api.routers import (
     contextai,
     followthrough,
     health,
+    intake,
     notes,
     patient_chat,
     patients,
@@ -20,11 +21,13 @@ from src.api.routers import (
     workflow,
 )
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
+from src.core.ai_factory import prompt_registry
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Start/stop background transcription workers with app lifecycle."""
+    prompt_registry.initialize()
     start_background_workers()
     try:
         yield
@@ -60,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(templates.router)
     app.include_router(notes.router)
     app.include_router(followthrough.router)
+    app.include_router(intake.router)
     return app
 
 
