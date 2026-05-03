@@ -122,6 +122,13 @@ class PostVisitWhatsAppSendRequest(BaseModel):
         default=None,
         description="Optional WhatsApp destination for this send only; otherwise uses patient.phone_number.",
     )
+    preferred_language: str | None = Field(
+        default=None,
+        description=(
+            "When set, drives Meta template language for this send (hi / en / hi-eng) "
+            "and overrides patient.preferred_language for routing only."
+        ),
+    )
 
 
 class PostVisitWhatsAppSendResponse(BaseModel):

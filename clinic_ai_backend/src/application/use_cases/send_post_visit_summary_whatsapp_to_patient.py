@@ -22,6 +22,7 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
     patient_id: str,
     visit_id: str,
     phone_number_override: str | None = None,
+    preferred_language: str | None = None,
 ) -> dict[str, Any]:
     """
     Load the latest persisted post-visit summary for this visit and send:
@@ -57,19 +58,16 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
     if not whatsapp_payload:
         whatsapp_payload = GeneratePostVisitSummaryUseCase._build_whatsapp_payload(payload=payload)
 
-    resolved_language = GeneratePostVisitSummaryUseCase._resolve_language(
-        patient_preferred_language=patient.get("preferred_language"),
-        request_language=None,
-    )
+    resolved_language = str(patient_for_send.get("preferred_language") or "").strip().lower()
     if not resolved_language:
         resolved_language = "en"
 
-    summary_sent = send_post_visit_summary_whatsapp(patient=patient, whatsapp_payload=whatsapp_payload)
+    summary_sent = send_post_visit_summary_whatsapp(patient=patient_for_send, whatsapp_payload=whatsapp_payload)
     follow_up_sent = False
     # Enforce order: follow-up template is allowed only after summary send succeeds.
     if summary_sent:
         follow_up_sent = send_immediate_follow_up_template_whatsapp(
-            patient=patient,
+            patient=patient_for_send,
             payload=payload,
             preferred_language=resolved_language,
         )

@@ -196,6 +196,7 @@ def send_post_visit_summary_whatsapp_route(
             patient_id=resolve_internal_patient_id(body.patient_id, allow_raw_fallback=True),
             visit_id=body.visit_id,
             phone_number_override=body.phone_number,
+            preferred_language=body.preferred_language,
         )
         if result.get("patient_id"):
             result["patient_id"] = encode_patient_id(str(result["patient_id"]))

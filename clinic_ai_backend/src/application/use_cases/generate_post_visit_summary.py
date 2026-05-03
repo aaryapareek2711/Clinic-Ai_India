@@ -20,6 +20,7 @@ LANGUAGE_NAMES = {
     "en": "English",
     "en_us": "English",
     "hi": "Hindi",
+    "hi-eng": "Hindi and English (short, patient-friendly mixed wording for WhatsApp)",
 }
 
 
