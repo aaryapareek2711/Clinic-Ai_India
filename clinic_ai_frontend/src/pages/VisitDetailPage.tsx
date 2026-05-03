@@ -155,81 +155,9 @@ export default function VisitDetailPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-[#f4fcf0] font-sans text-[#171d16] antialiased">
-      <aside className="fixed left-0 top-0 z-50 flex h-full w-[240px] flex-col border-r border-gray-800 bg-[#111827] py-6">
-        <div className="mb-8 px-6">
-          <h1 className="font-bold text-xl tracking-tight text-white">MedGenie</h1>
-          <p className="font-medium text-xs text-[#16a34a]">Provider</p>
-        </div>
-        <nav className="flex flex-1 flex-col space-y-1 px-2">
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            onClick={() => navigate('/dashboard')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </button>
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            onClick={() => navigate('/calendar')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            Calendar
-          </button>
-          <button className="sidebar-active mx-2 flex items-center rounded-lg px-4 py-2 font-inter text-sm antialiased" type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            Visits
-          </button>
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            onClick={() => navigate('/templates')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">description</span>
-            Templates
-          </button>
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            onClick={() => navigate('/settings')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Settings
-          </button>
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">credit_card</span>
-            Subscription
-          </button>
-          <button
-            className="flex items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">bar_chart</span>
-            Analytics
-          </button>
-        </nav>
-        <div className="mt-auto px-2">
-          <button
-            className="flex w-full items-center rounded-lg px-4 py-2 font-inter text-sm text-gray-400 antialiased transition-colors duration-200 hover:bg-gray-800 hover:text-white"
-            onClick={() => navigate('/login')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">logout</span>
-            Logout
-          </button>
-        </div>
-      </aside>
-
+    <div className="min-h-screen font-sans text-[#171d16] antialiased">
       <header className="fixed right-0 top-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
         <div className="flex items-center space-x-6">
-          <button className="text-gray-500 transition-opacity hover:opacity-80" type="button">
-            <span className="material-symbols-outlined">language</span>
-          </button>
           <button
             className="relative text-gray-500 transition-opacity hover:opacity-80"
             onClick={() => setIsNotificationsOpen(true)}
@@ -248,7 +176,7 @@ export default function VisitDetailPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] min-h-screen pt-16">
+      <main className="min-h-screen pt-16">
         {!visitId && (
           <div className="p-8">
             <p className="rounded-xl border border-[#bdcaba] bg-white p-6 text-sm text-[#3e4a3d]">
@@ -451,14 +379,6 @@ export default function VisitDetailPage() {
       >
         <span className="material-symbols-outlined">add</span>
       </button>
-
-      <style>{`
-        .sidebar-active {
-          background-color: #2563eb;
-          color: white !important;
-          border-left: 4px solid white;
-        }
-      `}</style>
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>

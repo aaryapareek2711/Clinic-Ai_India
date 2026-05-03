@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsPage() {
@@ -7,46 +8,9 @@ function SettingsPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] antialiased min-h-screen font-manrope">
-      <aside className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col py-6 text-sm z-50">
-        <div className="px-6 mb-8 flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#16a34a] rounded flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-xl">medical_services</span>
-          </div>
-          <div>
-            <div className="text-xl font-bold text-white leading-none">MedGenie</div>
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mt-1">Provider</div>
-          </div>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span> Dashboard
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span> Calendar
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span> Visits
-          </button>
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">description</span> Templates
-          </a>
-          <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white active:scale-[0.98] transition-all w-[calc(100%-1rem)]" type="button">
-            <span className="material-symbols-outlined mr-3">settings</span> Settings
-          </button>
-        </nav>
-        <div className="mt-auto px-4">
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg" href="#">
-            <span className="material-symbols-outlined mr-3">logout</span> Logout
-          </a>
-        </div>
-      </aside>
-
+    <div className="text-[#171d16] antialiased min-h-screen font-manrope">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
         <div className="flex items-center gap-6">
-          <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
-            <span className="material-symbols-outlined">language</span>
-          </button>
           <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
@@ -65,55 +29,100 @@ function SettingsPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] pt-16 min-h-screen">
-        <section className="bg-[#111827] text-white pt-12 pb-24 px-8 relative overflow-hidden">
-          <div className="absolute inset-0 opacity-10 pointer-events-none">
-            <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <path d="M0 100 C 20 0 50 0 100 100" fill="none" stroke="white" strokeWidth="0.5" />
-            </svg>
-          </div>
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-8 relative z-10">
-            <div className="relative">
-              <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-[#16a34a] to-[#2563eb] flex items-center justify-center border-4 border-white shadow-xl">
-                <span className="text-4xl font-extrabold tracking-tighter text-white">RK</span>
-              </div>
-              <div className="absolute bottom-1 right-1 w-8 h-8 bg-[#006b2c] rounded-full border-4 border-[#111827] flex items-center justify-center">
-                <span className="material-symbols-outlined text-white text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
-              </div>
-            </div>
-            <div className="text-center md:text-left flex-1">
-              <div className="flex items-center gap-4 justify-center md:justify-start">
-                <h1 className="text-[28px] leading-tight tracking-[-0.02em] font-bold">Dr. Rajesh Kumar</h1>
-                <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-bold uppercase tracking-widest border border-white/20">Active</span>
-              </div>
-              <p className="text-white/70 mt-1">Senior Consultant Oncology &amp; Palliative Care</p>
-              <div className="flex flex-wrap items-center gap-6 mt-4 text-sm text-white/60">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-[#7ffc97]">badge</span>
-                  <span>Reg No: MED-8923-GNE-2024</span>
+      <main className="min-h-screen pt-16">
+        <div className="bg-[#f4fcf0] px-5 pb-4 pt-8 sm:px-8">
+          <SettingsHeadingNav showTabs={false} variant="wide" />
+        </div>
+
+        <section className="relative z-0 overflow-hidden bg-gradient-to-b from-[#0f172a] via-[#111827] to-[#0b1120] px-5 pb-10 pt-6 text-white sm:px-7 sm:pt-7">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-15%,rgba(34,197,94,0.1),transparent_50%)]"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-24 top-8 h-[14rem] w-[14rem] rounded-full border border-white/[0.06] sm:h-[18rem] sm:w-[18rem]"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent"
+          />
+
+          <div className="relative z-10 mx-auto max-w-7xl">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+              <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-6 lg:gap-8">
+                <div className="relative shrink-0">
+                  <div className="flex h-[5.5rem] w-[5.5rem] items-center justify-center rounded-full bg-gradient-to-br from-[#22c55e] via-[#16a34a] to-[#2563eb] shadow-lg shadow-black/30 ring-2 ring-white/[0.12] ring-offset-2 ring-offset-[#111827] sm:h-24 sm:w-24">
+                    <span className="select-none text-2xl font-bold tracking-tight text-white drop-shadow-sm sm:text-[1.75rem]">RK</span>
+                  </div>
+                  <span
+                    aria-label="Verified profile"
+                    className="material-symbols-outlined absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#0f172a] bg-[#14532d] text-[14px] text-emerald-200 shadow sm:h-7 sm:w-7 sm:text-[15px]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    verified
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-[#7ffc97]">location_on</span>
-                  <span>Metro City General, Wing B</span>
+
+                <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-left">
+                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-start sm:gap-x-3">
+                    <h1 className="text-balance text-xl font-bold tracking-tight sm:text-2xl md:text-[1.75rem]">
+                      Dr. Rajesh Kumar
+                    </h1>
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-white/[0.12] bg-white/[0.08] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/95">
+                      Active
+                    </span>
+                  </div>
+                  <p className="mx-auto max-w-xl text-sm leading-snug text-slate-300 sm:mx-0">
+                    Senior Consultant Oncology &amp; Palliative Care
+                  </p>
+                  <dl className="mx-auto mt-3 flex max-w-xl flex-col gap-2 sm:mx-0 sm:flex-row sm:flex-wrap">
+                    <div className="flex flex-1 justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 backdrop-blur-sm sm:flex-initial sm:justify-start">
+                      <div className="flex items-start gap-2">
+                        <span className="material-symbols-outlined mt-px text-[1rem] text-emerald-300/90">badge</span>
+                        <div className="min-w-0 text-left leading-tight">
+                          <dt className="sr-only">Registration number</dt>
+                          <dd className="text-[12px] font-medium text-white/95">MED-8923-GNE-2024</dd>
+                          <dd className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Reg. no.</dd>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-1 justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 backdrop-blur-sm sm:flex-initial sm:justify-start">
+                      <div className="flex items-start gap-2">
+                        <span className="material-symbols-outlined mt-px text-[1rem] text-emerald-300/90">location_on</span>
+                        <div className="min-w-0 text-left leading-tight">
+                          <dt className="sr-only">Primary site</dt>
+                          <dd className="text-[12px] font-medium text-white/95">Metro City General, Wing B</dd>
+                          <dd className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Site</dd>
+                        </div>
+                      </div>
+                    </div>
+                  </dl>
                 </div>
               </div>
-            </div>
-            <div className="flex gap-4">
-              <button
-                className="px-6 py-3 bg-[#16a34a] text-white font-semibold rounded-lg hover:opacity-90 transition-all flex items-center gap-2"
-                onClick={() => navigate('/settings/edit-profile')}
-                type="button"
-              >
-                <span className="material-symbols-outlined">edit</span> Edit Profile
-              </button>
-              <button className="p-3 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-all" type="button">
-                <span className="material-symbols-outlined">share</span>
-              </button>
+
+              <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-center lg:justify-end">
+                <button
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#16a34a] px-4 text-[13px] font-semibold text-white shadow-md shadow-emerald-950/25 transition hover:bg-[#15803d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
+                  onClick={() => navigate('/settings/edit-profile')}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[1.125rem]">edit</span>
+                  Edit Profile
+                </button>
+                <button
+                  aria-label="Share profile"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.06] text-white transition hover:bg-white/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/30"
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[1.125rem]">share</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="max-w-7xl mx-auto px-8 -mt-16 pb-12">
+        <section className="relative z-10 mx-auto max-w-7xl bg-[#f4fcf0] px-8 pb-12 pt-8">
           <div className="grid grid-cols-12 gap-8">
             <div className="col-span-12 lg:col-span-4 space-y-6">
               <div className="bg-white border border-gray-200 rounded-xl p-8 transition-shadow">
@@ -278,19 +287,6 @@ function SettingsPage() {
                     <span className="material-symbols-outlined text-sm">expand_more</span>
                     Load Older Activities
                   </button>
-                </div>
-              </div>
-
-              <div className="bg-[#111827] rounded-xl p-8 flex items-center justify-between text-white overflow-hidden relative">
-                <div className="relative z-10">
-                  <div className="text-xl font-bold mb-2">HIPAA &amp; GDPR Compliant</div>
-                  <p className="text-gray-400 text-sm max-w-md">
-                    Your data is encrypted using AES-256 standard. MedGenie ensures that all provider interactions are logged and secure within the National Digital Health Mission framework.
-                  </p>
-                </div>
-                <span className="material-symbols-outlined text-7xl text-white/10 absolute -right-4 -bottom-4 rotate-12">shield_with_heart</span>
-                <div className="relative z-10 px-6 py-2 border-2 border-[#16a34a] rounded-lg text-[#16a34a] font-bold text-xs tracking-widest uppercase">
-                  Secure Shell
                 </div>
               </div>
             </div>

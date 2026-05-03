@@ -1,8 +1,21 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NotificationsDrawer from './NotificationsDrawer'
 
-const patients = [
+type PatientRow = {
+  name: string
+  language: string
+  languageTone: string
+  id: string
+  genderIcon: string
+  genderAge: string
+  mobile: string
+  visitDate: string
+  visitType: string
+  image: string
+}
+
+const patients: PatientRow[] = [
   {
     name: 'Eleanor Shellstrop',
     language: 'English',
@@ -57,83 +70,35 @@ const patients = [
   },
 ]
 
+type PatientSort = 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
+
+function visitTimestamp(visitDate: string): number {
+  const t = new Date(visitDate).getTime()
+  return Number.isNaN(t) ? 0 : t
+}
+
+function sortPatientRows(rows: PatientRow[], sort: PatientSort): PatientRow[] {
+  const copy = [...rows]
+  copy.sort((a, b) => {
+    if (sort === 'visit_latest') return visitTimestamp(b.visitDate) - visitTimestamp(a.visitDate)
+    if (sort === 'visit_oldest') return visitTimestamp(a.visitDate) - visitTimestamp(b.visitDate)
+    if (sort === 'name_az') return a.name.localeCompare(b.name)
+    if (sort === 'name_za') return b.name.localeCompare(a.name)
+    return a.id.localeCompare(b.id)
+  })
+  return copy
+}
+
 function PatientsPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [patientSort, setPatientSort] = useState<PatientSort>('visit_latest')
+
+  const sortedPatients = useMemo(() => sortPatientRows(patients, patientSort), [patientSort])
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] min-h-screen font-manrope">
-      <aside className="h-screen w-64 fixed left-0 top-0 flex flex-col border-r border-gray-800 bg-[#111827] text-sm z-50">
-        <div className="flex flex-col h-full py-6">
-          <div className="px-6 mb-8 flex items-center gap-3">
-            <div className="w-8 h-8 bg-teal-600 rounded-lg flex items-center justify-center">
-              <span className="material-symbols-outlined text-white">medical_services</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight text-white">MedGenie</h1>
-              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Clinical Portal</p>
-            </div>
-          </div>
-
-          <nav className="flex-1 space-y-1 px-3">
-            <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors rounded-lg"
-              onClick={() => navigate('/dashboard')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">dashboard</span>
-              <span>Dashboard</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-3 py-2 bg-[#2563eb] text-white font-semibold border-l-4 border-white transition-all rounded-lg"
-              type="button"
-            >
-              <span className="material-symbols-outlined">group</span>
-              <span>Patients</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors rounded-lg"
-              onClick={() => navigate('/visits')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">medical_services</span>
-              <span>Visits</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors rounded-lg"
-              onClick={() => navigate('/calendar')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">calendar_today</span>
-              <span>Schedule</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors rounded-lg"
-              onClick={() => navigate('/settings')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">settings</span>
-              <span>Settings</span>
-            </button>
-          </nav>
-
-          <div className="px-3 mt-auto">
-            <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-xl">
-              <img
-                alt="Provider Profile"
-                className="w-10 h-10 rounded-full object-cover border-2 border-white"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuVbujRH0BJpNqXXEGoIqLWBwk-QJENPn0t_9TEVyS7Wa35NpK2uRWmQgZec2kdDbLyhjBclbjULHEHsh3Kgvbdt_AQmTTUgwxeOTIwaeHx_m1cs83Hjca_wiIo8_AkPLf1PjEORU2U4AkSt1gF6WM2Mk2TbmOsxKRPFC2YC9Zmw3a34n2MKtn4Qo93PSASoVZeyMwwWKnb74KDkEQRhWf-aiUVoB6ZDBSX6uZ1jvPqYcCjMjKWoLy03cSlOEBGUSQuMNVCH214sSy"
-              />
-              <div className="overflow-hidden">
-                <p className="text-xs font-bold text-white truncate">Dr. James Wilson</p>
-                <p className="text-[10px] text-teal-400 font-medium">Senior Physician</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 ml-64">
+    <div className="text-[#171d16] min-h-screen font-manrope">
+      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8">
         <div className="flex items-center gap-6 w-1/2">
           <div className="relative w-full max-w-md group">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-teal-600 transition-colors">search</span>
@@ -153,7 +118,7 @@ function PatientsPage() {
         </div>
       </header>
 
-      <main className="ml-64 p-8 min-h-[calc(100vh-4rem)]">
+      <main className="p-8 min-h-[calc(100vh-4rem)]">
         <div className="mb-8 flex justify-between items-end">
           <div>
             <nav className="flex items-center gap-2 text-xs font-medium text-slate-400 mb-2">
@@ -164,12 +129,25 @@ function PatientsPage() {
             <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">Patient Directory</h2>
             <p className="text-slate-500 mt-1">Manage and monitor 1,248 registered medical profiles.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-all" type="button">
-              <span className="material-symbols-outlined text-[18px]">sort</span>
-              Sort by: Latest
-              <span className="material-symbols-outlined text-[18px]">expand_more</span>
-            </button>
+          <div className="relative min-w-[240px]">
+            <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
+              sort
+            </span>
+            <select
+              aria-label="Sort patients"
+              className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              value={patientSort}
+              onChange={(e) => setPatientSort(e.target.value as PatientSort)}
+            >
+              <option value="visit_latest">Last visit: newest first</option>
+              <option value="visit_oldest">Last visit: oldest first</option>
+              <option value="name_az">Name: A → Z</option>
+              <option value="name_za">Name: Z → A</option>
+              <option value="id_az">Patient ID: A → Z</option>
+            </select>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+              expand_more
+            </span>
           </div>
         </div>
 
@@ -186,7 +164,7 @@ function PatientsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#bdcaba]">
-              {patients.map((patient) => (
+              {sortedPatients.map((patient) => (
                 <tr
                   key={patient.id}
                   className="hover:bg-slate-50/80 transition-colors cursor-pointer group"

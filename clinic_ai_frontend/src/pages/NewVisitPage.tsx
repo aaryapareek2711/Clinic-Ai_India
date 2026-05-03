@@ -2,57 +2,20 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NotificationsDrawer from './NotificationsDrawer'
 
+const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
+const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
+
 function NewVisitPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [visitTimeHour, setVisitTimeHour] = useState<string>('9')
+  const [visitTimeMinute, setVisitTimeMinute] = useState<string>('00')
+  const [visitTimePeriod, setVisitTimePeriod] = useState<'AM' | 'PM'>('AM')
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] antialiased min-h-screen font-manrope">
-      <nav className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] flex flex-col py-6 border-r border-gray-800 z-50">
-        <div className="px-6 mb-8 flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#16a34a] rounded flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-lg">medical_services</span>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight leading-none">MedGenie</h1>
-            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mt-1">Provider</p>
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col space-y-1 px-2">
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            <span className="text-sm">Dashboard</span>
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg w-full" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            <span className="text-sm">Calendar</span>
-          </button>
-          <button className="bg-[#2563eb] text-white rounded-lg flex items-center px-4 py-2 border-l-4 border-white transition-all scale-[0.98] w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            <span className="text-sm">Visits</span>
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg w-full" onClick={() => navigate('/templates')} type="button">
-            <span className="material-symbols-outlined mr-3">description</span>
-            <span className="text-sm">Templates</span>
-          </button>
-        </div>
-        <div className="mt-auto px-2 space-y-1">
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg w-full" onClick={() => navigate('/settings')} type="button">
-            <span className="material-symbols-outlined mr-3">settings</span>
-            <span className="text-sm">Settings</span>
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg w-full" onClick={() => navigate('/login')} type="button">
-            <span className="material-symbols-outlined mr-3">logout</span>
-            <span className="text-sm">Logout</span>
-          </button>
-        </div>
-      </nav>
-
+    <div className="text-[#171d16] antialiased min-h-screen font-manrope">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
         <div className="flex items-center gap-6">
-          <button className="text-gray-500 hover:opacity-80 transition-opacity flex items-center" type="button">
-            <span className="material-symbols-outlined">language</span>
-          </button>
           <button className="text-gray-500 hover:opacity-80 transition-opacity flex items-center relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-[#ba1a1a] ring-2 ring-white" />
@@ -72,7 +35,7 @@ function NewVisitPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] pt-16 min-h-screen">
+      <main className="pt-16 min-h-screen">
         <div className="p-8 max-w-7xl mx-auto">
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -111,7 +74,7 @@ function NewVisitPage() {
                     </div>
                     <div className="space-y-2">
                       <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Mobile Number</label>
-                      <input className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent transition-all" placeholder="+1 (555) 000-0000" type="tel" />
+                      <input className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent transition-all" placeholder="+91 98765 43210" type="tel" />
                     </div>
                     <div className="space-y-2">
                       <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Age</label>
@@ -130,10 +93,12 @@ function NewVisitPage() {
                     <div className="space-y-2">
                       <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Language Preference</label>
                       <select className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent appearance-none bg-white" defaultValue="english">
-                        <option value="english">English (US)</option>
-                        <option value="spanish">Spanish</option>
-                        <option value="french">French</option>
-                        <option value="mandarin">Mandarin</option>
+                        <option value="english">English</option>
+                        <option value="hindi">Hindi</option>
+                        <option value="kannada">Kannada</option>
+                        <option value="tamil">Tamil</option>
+                        <option value="telugu">Telugu</option>
+                        <option value="marathi">Marathi</option>
                       </select>
                     </div>
                   </div>
@@ -144,17 +109,6 @@ function NewVisitPage() {
                     </div>
                   </div>
                 </form>
-              </div>
-
-              <div className="bg-[#111827] rounded-xl p-8 text-white flex items-center justify-between overflow-hidden relative">
-                <div className="relative z-10 max-w-sm">
-                  <h4 className="text-lg font-semibold mb-2">Automated Medical History</h4>
-                  <p className="text-gray-400 text-sm">MedGenie can automatically sync previous laboratory results and medications using the national patient database.</p>
-                </div>
-                <div className="relative z-10">
-                  <button className="bg-[#2563eb] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors" type="button">Check DB</button>
-                </div>
-                <div className="absolute right-0 top-0 w-32 h-full bg-gradient-to-l from-[#006b2c]/20 to-transparent" />
               </div>
             </div>
 
@@ -194,37 +148,61 @@ function NewVisitPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Time Slot Dropdown</label>
-                    <div className="relative">
-                      <select className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent appearance-none bg-white" defaultValue="0900">
-                        <option value="0900">09:00 AM - General Checkup</option>
-                        <option value="1030">10:30 AM - Consultation</option>
-                        <option value="1300">01:00 PM - Follow-up</option>
-                        <option value="1530">03:30 PM - Emergency Slot</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-gray-400">
-                        <span className="material-symbols-outlined">expand_more</span>
+                  <div className="space-y-3">
+                    <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Time</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="relative">
+                        <select
+                          aria-label="Hour"
+                          className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent appearance-none bg-white text-sm font-medium"
+                          value={visitTimeHour}
+                          onChange={(e) => setVisitTimeHour(e.target.value)}
+                        >
+                          {HOURS_12.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="absolute inset-y-0 right-2 flex items-center pointer-events-none text-gray-400">
+                          <span className="material-symbols-outlined text-lg">expand_more</span>
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <select
+                          aria-label="Minute"
+                          className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent appearance-none bg-white text-sm font-medium"
+                          value={visitTimeMinute}
+                          onChange={(e) => setVisitTimeMinute(e.target.value)}
+                        >
+                          {MINUTES_STEP_15.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="absolute inset-y-0 right-2 flex items-center pointer-events-none text-gray-400">
+                          <span className="material-symbols-outlined text-lg">expand_more</span>
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <select
+                          aria-label="AM or PM"
+                          className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent appearance-none bg-white text-sm font-medium"
+                          value={visitTimePeriod}
+                          onChange={(e) => setVisitTimePeriod(e.target.value as 'AM' | 'PM')}
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                        <span className="absolute inset-y-0 right-2 flex items-center pointer-events-none text-gray-400">
+                          <span className="material-symbols-outlined text-lg">expand_more</span>
+                        </span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-2">
-                      <div className="p-3 border border-[#00873a] bg-[#00873a]/5 rounded-lg flex flex-col">
-                        <span className="text-[10px] text-[#006b2c] uppercase font-bold tracking-wider">Morning</span>
-                        <span className="text-sm font-medium">2 Slots Open</span>
-                      </div>
-                      <div className="p-3 border border-gray-100 bg-gray-50 rounded-lg flex flex-col">
-                        <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Afternoon</span>
-                        <span className="text-sm font-medium">Fully Booked</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 mt-auto">
-                    <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Visit Type</label>
-                    <div className="flex gap-3">
-                      <button className="flex-1 py-2 rounded-lg border-2 border-[#006b2c] text-[#006b2c] font-semibold text-sm" type="button">Physical</button>
-                      <button className="flex-1 py-2 rounded-lg border-2 border-transparent bg-gray-100 text-gray-500 font-semibold text-sm" type="button">Virtual</button>
-                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Time options will align with this provider&apos;s working hours.
+                    </p>
                   </div>
                 </div>
               </div>

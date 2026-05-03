@@ -11,6 +11,7 @@ from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
     AuthResponse,
     UserLoginRequest,
+    UserProfileUpdateRequest,
     UserRegisterRequest,
     UserResponse,
     UserRoleUpdateRequest,
@@ -30,6 +31,9 @@ def _as_user_response(user_doc: dict) -> UserResponse:
         full_name=str(user_doc.get("full_name") or ""),
         phone=user_doc.get("phone"),
         role=str(user_doc.get("role") or "doctor"),
+        job_title=user_doc.get("job_title"),
+        medical_license_number=user_doc.get("medical_license_number"),
+        avatar_url=user_doc.get("avatar_url"),
         is_active=bool(user_doc.get("is_active", True)),
         is_verified=bool(user_doc.get("is_verified", True)),
         tenant_id=user_doc.get("tenant_id"),
@@ -114,6 +118,40 @@ def login(payload: UserLoginRequest) -> AuthResponse:
 @router.get("/me", response_model=UserResponse)
 def me(current_user: dict = Depends(_get_current_user)) -> UserResponse:
     return _as_user_response(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_my_profile(
+    payload: UserProfileUpdateRequest,
+    current_user: dict = Depends(_get_current_user),
+) -> UserResponse:
+    """Update editable fields on the authenticated user."""
+    updates: dict = {}
+    for key in ("full_name", "phone", "job_title", "medical_license_number", "avatar_url"):
+        val = getattr(payload, key)
+        if val is None:
+            continue
+        cleaned = val.strip() if isinstance(val, str) else val
+        if key == "full_name" and cleaned == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="full_name cannot be empty",
+            )
+        if key != "full_name" and isinstance(cleaned, str) and cleaned == "":
+            updates[key] = None  # clear optional strings in MongoDB
+        else:
+            updates[key] = cleaned
+
+    if not updates:
+        return _as_user_response(current_user)
+
+    db = get_database()
+    updates["updated_at"] = datetime.now(timezone.utc)
+    db.users.update_one({"id": current_user["id"]}, {"$set": updates})
+    refreshed = db.users.find_one({"id": current_user["id"]})
+    if not refreshed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return _as_user_response(refreshed)
 
 
 @router.post("/logout")

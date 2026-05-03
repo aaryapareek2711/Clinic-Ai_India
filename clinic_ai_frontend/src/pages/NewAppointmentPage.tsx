@@ -2,52 +2,18 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NotificationsDrawer from './NotificationsDrawer'
 
+const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
+const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
+
 function NewAppointmentPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [appointmentHour, setAppointmentHour] = useState<string>('10')
+  const [appointmentMinute, setAppointmentMinute] = useState<string>('00')
+  const [appointmentPeriod, setAppointmentPeriod] = useState<'AM' | 'PM'>('AM')
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] antialiased overflow-hidden h-screen">
-      <aside className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col py-6 z-50">
-        <div className="px-6 mb-10 flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#16a34a] rounded flex items-center justify-center">
-            <span className="material-symbols-outlined text-white">medical_services</span>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white leading-none">MedGenie</h1>
-            <p className="text-gray-500 text-[10px] uppercase tracking-widest mt-1">Provider</p>
-          </div>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </button>
-          <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white scale-[0.98] transition-all w-[calc(100%-1rem)]" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            Calendar
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            Visits
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/templates')} type="button">
-            <span className="material-symbols-outlined mr-3">description</span>
-            Templates
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/settings')} type="button">
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Settings
-          </button>
-        </nav>
-        <div className="mt-8 pt-6 border-t border-gray-800">
-          <button className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/login')} type="button">
-            <span className="material-symbols-outlined mr-3">logout</span>
-            Logout
-          </button>
-        </div>
-      </aside>
-
+    <div className="text-[#171d16] antialiased overflow-hidden h-screen">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-40">
         <div className="flex items-center gap-4">
           <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-full transition-all" onClick={() => navigate('/calendar')} type="button">
@@ -57,9 +23,6 @@ function NewAppointmentPage() {
         </div>
         <div className="flex items-center gap-6">
           <div className="flex gap-4">
-            <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-full transition-opacity" type="button">
-              <span className="material-symbols-outlined">language</span>
-            </button>
             <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-full transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
               <span className="absolute top-2 right-2 w-2 h-2 bg-[#ba1a1a] rounded-full" />
@@ -80,7 +43,7 @@ function NewAppointmentPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] pt-16 h-screen overflow-hidden flex">
+      <main className="pt-16 h-screen overflow-hidden flex">
         <section className="w-1/2 border-r border-gray-200 flex flex-col p-8 overflow-hidden bg-white">
           <div className="mb-6">
             <h3 className="text-[18px] leading-[1.4] font-semibold text-[#171d16] mb-2">Select Existing Patient</h3>
@@ -158,12 +121,56 @@ function NewAppointmentPage() {
 
                 <div>
                   <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase mb-3">Select Time</label>
-                  <input
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#2563eb] focus:border-transparent outline-none transition-all font-medium"
-                    defaultValue="10:00"
-                    step={300}
-                    type="time"
-                  />
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="relative">
+                      <select
+                        aria-label="Hour"
+                        className="w-full px-3 py-3 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#2563eb] focus:border-transparent outline-none appearance-none transition-all"
+                        value={appointmentHour}
+                        onChange={(e) => setAppointmentHour(e.target.value)}
+                      >
+                        {HOURS_12.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
+                        <span className="material-symbols-outlined text-lg">expand_more</span>
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <select
+                        aria-label="Minute"
+                        className="w-full px-3 py-3 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#2563eb] focus:border-transparent outline-none appearance-none transition-all"
+                        value={appointmentMinute}
+                        onChange={(e) => setAppointmentMinute(e.target.value)}
+                      >
+                        {MINUTES_STEP_15.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
+                        <span className="material-symbols-outlined text-lg">expand_more</span>
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <select
+                        aria-label="AM or PM"
+                        className="w-full px-3 py-3 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#2563eb] focus:border-transparent outline-none appearance-none transition-all"
+                        value={appointmentPeriod}
+                        onChange={(e) => setAppointmentPeriod(e.target.value as 'AM' | 'PM')}
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
+                        <span className="material-symbols-outlined text-lg">expand_more</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
               </div>

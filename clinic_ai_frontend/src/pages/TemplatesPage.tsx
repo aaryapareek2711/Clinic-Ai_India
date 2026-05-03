@@ -1,53 +1,83 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import CreateTemplateModal from '../components/CreateTemplateModal'
 import NotificationsDrawer from './NotificationsDrawer'
 
+const RECOMMENDED_TEMPLATES = [
+  {
+    id: 'general-opd',
+    specialty: 'general',
+    updatedOrder: 0,
+    tag: 'POPULAR',
+    tagClass: 'bg-blue-100 text-blue-700',
+    iconWrap: 'bg-blue-50 text-blue-600',
+    icon: 'stethoscope' as const,
+    title: 'General OPD',
+    description: 'Standard Indian OPD structure including Chief Complaints, History, Examination, and Rx.',
+    readMins: 12,
+  },
+  {
+    id: 'diabetes',
+    specialty: 'chronic',
+    updatedOrder: 1,
+    tag: 'CHRONIC',
+    tagClass: 'bg-amber-100 text-amber-700',
+    iconWrap: 'bg-amber-50 text-amber-600',
+    icon: 'blood_pressure' as const,
+    title: 'Diabetes Follow-up',
+    description: 'Optimized for HbA1c tracking, foot exams, and metformin/insulin adjustments.',
+    readMins: 8,
+  },
+  {
+    id: 'pediatric',
+    specialty: 'pediatrics',
+    updatedOrder: 2,
+    tag: 'WELLNESS',
+    tagClass: 'bg-green-100 text-green-700',
+    iconWrap: 'bg-green-50 text-green-600',
+    icon: 'child_care' as const,
+    title: 'Pediatric Wellness',
+    description: 'Growth tracking (height/weight), vaccination status, and milestone assessment.',
+    readMins: 15,
+  },
+] as const
+
 function TemplatesPage() {
-  const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [templateSavedMessage, setTemplateSavedMessage] = useState<string | null>(null)
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false)
+  const [specialtyFilter, setSpecialtyFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<string>('name')
+  const filtersRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isFiltersOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+        setIsFiltersOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [isFiltersOpen])
+
+  const filteredRecommended = useMemo(() => {
+    let list = [...RECOMMENDED_TEMPLATES]
+    if (specialtyFilter !== 'all') {
+      list = list.filter((t) => t.specialty === specialtyFilter)
+    }
+    if (sortBy === 'name') {
+      list.sort((a, b) => a.title.localeCompare(b.title))
+    } else if (sortBy === 'recent') {
+      list.sort((a, b) => b.updatedOrder - a.updatedOrder)
+    }
+    return list
+  }, [specialtyFilter, sortBy])
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] antialiased min-h-screen font-inter">
-      <aside className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col py-6 z-50">
-        <div className="px-6 mb-10">
-          <h1 className="text-xl font-bold text-white">MedGenie</h1>
-          <p className="text-xs text-gray-500 uppercase tracking-widest mt-1">Provider</p>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            <span className="text-sm">Dashboard</span>
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            <span className="text-sm">Calendar</span>
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            <span className="text-sm">Visits</span>
-          </button>
-          <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white transition-all scale-[0.98] w-[calc(100%-1rem)]" type="button">
-            <span className="material-symbols-outlined mr-3">description</span>
-            <span className="text-sm">Templates</span>
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/settings')} type="button">
-            <span className="material-symbols-outlined mr-3">settings</span>
-            <span className="text-sm">Settings</span>
-          </button>
-        </nav>
-        <div className="mt-auto px-2">
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg" href="#">
-            <span className="material-symbols-outlined mr-3">logout</span>
-            <span className="text-sm">Logout</span>
-          </a>
-        </div>
-      </aside>
-
+    <div className="text-[#171d16] antialiased min-h-screen font-inter">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
         <div className="flex items-center gap-6">
-          <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
-            <span className="material-symbols-outlined">language</span>
-          </button>
           <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
@@ -66,29 +96,22 @@ function TemplatesPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] pt-16 min-h-screen">
+      <main className="pt-16 min-h-screen">
         <div className="p-8">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
-              <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
+          {templateSavedMessage && (
+            <div className="mb-4 rounded-xl border border-[#00873a]/30 bg-[#eff6ea] px-4 py-3 text-sm text-[#0f3920]" role="status">
+              {templateSavedMessage}
             </div>
-            <button className="bg-[#16a34a] text-white px-6 py-2.5 rounded-lg font-semibold flex items-center gap-2 hover:opacity-90 active:scale-95 shadow-sm" type="button">
-              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'wght' 600" }}>add</span>
-              <span>+ Create New Template</span>
-            </button>
+          )}
+          <div className="mb-8">
+            <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
+            <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
           </div>
 
           <div className="flex items-center border-b border-[#bdcaba] mb-8">
-            <button className="px-6 py-4 border-b-2 border-[#006b2c] text-[#006b2c] font-semibold flex items-center gap-2" type="button">
+            <div className="py-4 border-b-2 border-[#006b2c] text-[#006b2c] font-semibold flex items-center gap-2">
               My Templates <span className="bg-[#00873a] text-[#f7fff2] text-xs px-2 py-0.5 rounded-full">0</span>
-            </button>
-            <button className="px-6 py-4 text-[#575e70] hover:text-[#006b2c] transition-colors flex items-center gap-2" type="button">
-              Practice <span className="bg-[#e3eadf] text-[#3e4a3d] text-xs px-2 py-0.5 rounded-full">0</span>
-            </button>
-            <button className="px-6 py-4 text-[#575e70] hover:text-[#006b2c] transition-colors flex items-center gap-2" type="button">
-              Community <span className="bg-[#e3eadf] text-[#3e4a3d] text-xs px-2 py-0.5 rounded-full">0</span>
-            </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-4 mb-8">
@@ -100,14 +123,89 @@ function TemplatesPage() {
                 type="text"
               />
             </div>
-            <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white text-[#3e4a3d] hover:bg-[#e9f0e5] hover:text-[#171d16] transition-all" type="button">
-              <span className="material-symbols-outlined">filter_list</span>
-              <span>Filters</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white text-[#3e4a3d] hover:bg-[#e9f0e5] hover:text-[#171d16] transition-all" type="button">
-              <span className="material-symbols-outlined">sort</span>
-              <span>Recent</span>
-            </button>
+            <div className="relative self-start" ref={filtersRef}>
+              <button
+                aria-expanded={isFiltersOpen}
+                aria-haspopup="true"
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white text-[#3e4a3d] hover:bg-[#e9f0e5] hover:text-[#171d16] transition-all ${isFiltersOpen ? 'ring-2 ring-[#2563eb] border-transparent' : ''}`}
+                onClick={() => setIsFiltersOpen((o) => !o)}
+                type="button"
+              >
+                <span className="material-symbols-outlined">filter_list</span>
+                <span>Filters</span>
+                <span className="material-symbols-outlined text-lg text-[#6e7b6c]">{isFiltersOpen ? 'expand_less' : 'expand_more'}</span>
+              </button>
+              {isFiltersOpen && (
+                <div
+                  className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[min(100vw-2rem,20rem)] rounded-xl border border-[#bdcaba] bg-white p-4 shadow-lg"
+                  role="dialog"
+                  aria-label="Template filters"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#6e7b6c] mb-3">Filter by</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-[#171d16]" htmlFor="template-specialty">
+                        Specialty
+                      </label>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-9 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                          id="template-specialty"
+                          value={specialtyFilter}
+                          onChange={(e) => setSpecialtyFilter(e.target.value)}
+                        >
+                          <option value="all">All specialties</option>
+                          <option value="general">General OPD</option>
+                          <option value="pediatrics">Pediatrics</option>
+                          <option value="chronic">Chronic care</option>
+                        </select>
+                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[#6e7b6c]">
+                          <span className="material-symbols-outlined text-xl">expand_more</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-[#171d16]" htmlFor="template-sort">
+                        Sort recommended
+                      </label>
+                      <div className="relative">
+                        <select
+                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-9 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                          id="template-sort"
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value)}
+                        >
+                          <option value="name">Name (A–Z)</option>
+                          <option value="recent">Recently updated</option>
+                        </select>
+                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[#6e7b6c]">
+                          <span className="material-symbols-outlined text-xl">expand_more</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2 border-t border-gray-100 pt-3">
+                    <button
+                      className="rounded-lg px-3 py-2 text-sm font-medium text-[#575e70] hover:bg-gray-50"
+                      onClick={() => {
+                        setSpecialtyFilter('all')
+                        setSortBy('name')
+                      }}
+                      type="button"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#00873a]"
+                      onClick={() => setIsFiltersOpen(false)}
+                      type="button"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col items-center justify-center py-20 bg-white border border-dashed border-[#bdcaba] rounded-2xl">
@@ -118,71 +216,63 @@ function TemplatesPage() {
             <p className="text-[#3e4a3d] text-center max-w-sm mb-8">
               You haven&apos;t created any custom templates yet. Start by creating one from scratch or explore the library.
             </p>
-            <button className="bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold flex items-center gap-2 hover:shadow-lg active:scale-95 transition-all" type="button">
+            <button
+              className="bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold flex items-center gap-2 hover:shadow-lg active:scale-95 transition-all"
+              onClick={() => setIsCreateModalOpen(true)}
+              type="button"
+            >
               <span className="material-symbols-outlined">add_circle</span>
-              <span>+ Create New Template</span>
+              <span>Create New Template</span>
             </button>
           </div>
 
           <div className="mt-16">
             <h4 className="text-[#3e4a3d] uppercase tracking-widest text-[13px] mb-6">Recommended for you</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="bg-white border border-gray-200 rounded-xl p-6 hover:border-[#006b2c] transition-all group cursor-pointer">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-[#00873a]/20 group-hover:text-[#006b2c] transition-colors">
-                    <span className="material-symbols-outlined">stethoscope</span>
+            {filteredRecommended.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-[#bdcaba] bg-white px-6 py-10 text-center text-sm text-[#3e4a3d]">
+                No templates match the selected filters. Try &quot;All specialties&quot; or clear filters.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {filteredRecommended.map((t) => (
+                  <div
+                    key={t.id}
+                    className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-6 transition-all hover:border-[#006b2c]"
+                  >
+                    <div className="mb-4 flex items-start justify-between">
+                      <div
+                        className={`rounded-lg p-3 transition-colors group-hover:bg-[#00873a]/20 group-hover:text-[#006b2c] ${t.iconWrap}`}
+                      >
+                        <span className="material-symbols-outlined">{t.icon}</span>
+                      </div>
+                      <span className={`rounded px-2 py-1 text-xs ${t.tagClass}`}>{t.tag}</span>
+                    </div>
+                    <h5 className="mb-1 text-[18px] font-semibold">{t.title}</h5>
+                    <p className="mb-6 line-clamp-2 text-sm text-[#3e4a3d]">{t.description}</p>
+                    <div className="flex items-center justify-between border-t border-gray-100 pt-4">
+                      <span className="flex items-center gap-1 text-xs text-[#6e7b6c]">
+                        <span className="material-symbols-outlined text-sm">schedule</span>
+                        {t.readMins} min read
+                      </span>
+                      <button className="text-sm font-semibold text-[#006b2c] hover:underline" type="button">
+                        Use Template
+                      </button>
+                    </div>
                   </div>
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">POPULAR</span>
-                </div>
-                <h5 className="text-[18px] font-semibold mb-1">General OPD</h5>
-                <p className="text-sm text-[#3e4a3d] mb-6 line-clamp-2">Standard Indian OPD structure including Chief Complaints, History, Examination, and Rx.</p>
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <span className="text-xs text-[#6e7b6c] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-sm">schedule</span>12 min read
-                  </span>
-                  <button className="text-[#006b2c] font-semibold text-sm hover:underline" type="button">Use Template</button>
-                </div>
+                ))}
               </div>
-
-              <div className="bg-white border border-gray-200 rounded-xl p-6 hover:border-[#006b2c] transition-all group cursor-pointer">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-[#00873a]/20 group-hover:text-[#006b2c] transition-colors">
-                    <span className="material-symbols-outlined">blood_pressure</span>
-                  </div>
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">CHRONIC</span>
-                </div>
-                <h5 className="text-[18px] font-semibold mb-1">Diabetes Follow-up</h5>
-                <p className="text-sm text-[#3e4a3d] mb-6 line-clamp-2">Optimized for HbA1c tracking, foot exams, and metformin/insulin adjustments.</p>
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <span className="text-xs text-[#6e7b6c] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-sm">schedule</span>8 min read
-                  </span>
-                  <button className="text-[#006b2c] font-semibold text-sm hover:underline" type="button">Use Template</button>
-                </div>
-              </div>
-
-              <div className="bg-white border border-gray-200 rounded-xl p-6 hover:border-[#006b2c] transition-all group cursor-pointer">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 bg-green-50 text-green-600 rounded-lg group-hover:bg-[#00873a]/20 group-hover:text-[#006b2c] transition-colors">
-                    <span className="material-symbols-outlined">child_care</span>
-                  </div>
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">WELLNESS</span>
-                </div>
-                <h5 className="text-[18px] font-semibold mb-1">Pediatric Wellness</h5>
-                <p className="text-sm text-[#3e4a3d] mb-6 line-clamp-2">Growth tracking (height/weight), vaccination status, and milestone assessment.</p>
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <span className="text-xs text-[#6e7b6c] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-sm">schedule</span>15 min read
-                  </span>
-                  <button className="text-[#006b2c] font-semibold text-sm hover:underline" type="button">Use Template</button>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </main>
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+
+      <CreateTemplateModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={() => setTemplateSavedMessage('Template saved successfully.')}
+      />
     </div>
   )
 }

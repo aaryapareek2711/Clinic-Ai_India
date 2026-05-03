@@ -47,41 +47,8 @@ function PatientDetailPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] min-h-screen font-manrope">
-      <aside className="h-screen w-64 fixed left-0 top-0 flex flex-col border-r border-gray-800 bg-[#111827] text-sm z-50">
-        <div className="flex flex-col h-full py-6">
-          <div className="px-6 mb-8">
-            <h1 className="text-xl font-extrabold tracking-tight text-white">MedGenie</h1>
-            <p className="text-xs text-gray-500 font-medium">Clinical Portal</p>
-          </div>
-          <nav className="flex-1 space-y-1">
-            <button className="w-full text-left flex items-center px-6 py-3 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors" onClick={() => navigate('/dashboard')} type="button">
-              <span className="material-symbols-outlined mr-3">dashboard</span>
-              Dashboard
-            </button>
-            <button className="w-full text-left flex items-center px-6 py-3 bg-[#2563eb] text-white font-semibold border-l-4 border-white" onClick={() => navigate('/patients')} type="button">
-              <span className="material-symbols-outlined mr-3">group</span>
-              Patients
-            </button>
-            <button className="w-full text-left flex items-center px-6 py-3 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors" onClick={() => navigate('/visits')} type="button">
-              <span className="material-symbols-outlined mr-3">medical_services</span>
-              Visits
-            </button>
-            <button className="w-full text-left flex items-center px-6 py-3 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors" onClick={() => navigate('/calendar')} type="button">
-              <span className="material-symbols-outlined mr-3">calendar_today</span>
-              Schedule
-            </button>
-          </nav>
-          <div className="mt-auto px-6 pt-6 border-t border-gray-800">
-            <button className="w-full text-left flex items-center py-3 text-gray-400 hover:text-white transition-colors" onClick={() => navigate('/settings')} type="button">
-              <span className="material-symbols-outlined mr-3">settings</span>
-              Settings
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <header className="h-16 sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 ml-64 max-w-[calc(100%-16rem)]">
+    <div className="text-[#171d16] min-h-screen font-manrope">
+      <header className="h-16 sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8 w-full max-w-full">
         <div className="flex items-center gap-4 flex-1">
           <div className="relative w-full max-w-md">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
@@ -93,9 +60,6 @@ function PatientDetailPage() {
             <span className="material-symbols-outlined text-slate-600">notifications</span>
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
-          <button className="hover:bg-slate-100 rounded-full p-2 transition-all" type="button">
-            <span className="material-symbols-outlined text-slate-600">clinical_notes</span>
-          </button>
           <div className="h-8 w-px bg-slate-200 mx-2" />
           <img
             alt="User Profile"
@@ -105,28 +69,18 @@ function PatientDetailPage() {
         </div>
       </header>
 
-      <main className="ml-64 p-8 min-h-[calc(100vh-4rem)]">
+      <main className="p-8 min-h-[calc(100vh-4rem)]">
         <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
           <button className="hover:text-[#006b2c] transition-colors" onClick={() => navigate('/patients')} type="button">Patients</button>
           <span className="material-symbols-outlined text-xs">chevron_right</span>
           <span className="text-[#171d16] font-semibold">Arjun Malhotra</span>
         </nav>
 
-        <section className="bg-white rounded-xl border border-[#bdcaba] p-8 mb-8 flex flex-col md:flex-row items-start md:items-center gap-8 relative overflow-hidden">
+        <section className="bg-white rounded-xl border border-[#bdcaba] p-8 mb-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-full opacity-[0.03] pointer-events-none">
             <span className="material-symbols-outlined text-[12rem] rotate-12">patient_list</span>
           </div>
-          <div className="relative">
-            <img
-              alt="Arjun Malhotra"
-              className="w-24 h-24 rounded-2xl object-cover border-4 border-[#e9f0e5] shadow-sm"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDVkB72-WDiBhz03jVF7jIRzBAbdaN0v8a4MGJs2Lj2A8X5Mjqxb7XCSvKcez6Cr84kmZKL9I0LkmpsUUYiSBNMkzV5BjdjuLdejAAe3D-oVnf2foVECOV6E3zriVuwblieM0armN9fDuVbIQC_-WJTCx2dQ5PPB8bOnpa7U9bA5x-XBHaE2yYq8glpWoiONyHm9_UBueKeLv6oR1-eGV7T6sTnbvT5IZTJciJ-aBS5ViCiOnpMO81R0sWSXquzxWZwO5FWViHm9jjo"
-            />
-            <div className="absolute -bottom-2 -right-2 bg-[#006b2c] text-white p-1.5 rounded-lg shadow-sm border-2 border-white">
-              <span className="material-symbols-outlined text-xs">verified</span>
-            </div>
-          </div>
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-4">
             <div>
               <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold mb-1">Arjun Malhotra</h2>
               <div className="flex items-center gap-2">

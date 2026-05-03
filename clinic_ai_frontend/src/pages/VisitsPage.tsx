@@ -1,51 +1,123 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-/** Replace with real IDs from your API; used to open visit management (pre-visit, etc.) */
-const visitRows = [
-  {
-    visitId: 'demo-visit-001',
-    name: 'Jonathan Miller - Follow-up Cardiology',
-    meta: 'ID: #MG-8812 • Patient since 2021',
-    status: 'In Progress',
-    stage: 'Assessment Stage',
-    date: 'Today, 10:30 AM',
-    duration: 'Scheduled: 45 min',
-    tone: 'blue',
-  },
-  {
-    visitId: 'demo-visit-002',
-    name: 'Sarah Jenkins - Routine Wellness Exam',
-    meta: 'ID: #MG-9024 • New Patient',
-    status: 'Scheduled',
-    stage: 'Check-in Pending',
-    date: 'Today, 2:15 PM',
-    duration: 'Scheduled: 30 min',
-    tone: 'amber',
-  },
-  {
-    visitId: 'demo-visit-003',
-    name: 'Michael Ross - Orthopedic Consultation',
-    meta: 'ID: #MG-7731 • Post-Op Recovery',
-    status: 'Completed',
-    stage: 'Billing Finalized',
-    date: 'Yesterday, 4:00 PM',
-    duration: 'Duration: 55 min',
-    tone: 'green',
-  },
-  {
-    visitId: 'demo-visit-004',
-    name: 'Elena Rodriguez - Diabetes Management',
-    meta: 'ID: #MG-8142 • Chronic Care',
-    status: 'In Progress',
-    stage: 'Vitals Recorded',
-    date: 'Today, 11:45 AM',
-    duration: 'Scheduled: 20 min',
-    tone: 'blue',
-  },
-] as const
+import { getApiErrorMessage } from '../lib/apiClient'
+import {
+  DEFAULT_PROVIDER_ID,
+  fetchProviderVisits,
+  type ProviderVisitListItem,
+} from '../services/visitWorkflowApi'
 
 type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
+type RowTone = 'blue' | 'amber' | 'green'
+
+function displayStatus(status: string): string {
+  const s = status.toLowerCase()
+  if (s === 'in_progress') return 'In Progress'
+  if (s === 'in_queue') return 'In Queue'
+  return status
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function toneForStatus(status: string): RowTone {
+  const s = status.toLowerCase()
+  if (s === 'completed' || s === 'closed' || s === 'ended') return 'green'
+  if (s === 'scheduled' || s === 'queued' || s === 'in_queue') return 'amber'
+  return 'blue'
+}
+
+function stageForStatus(status: string): string {
+  const s = status.toLowerCase()
+  if (s === 'scheduled') return 'Check-in pending'
+  if (s === 'in_queue') return 'Waiting'
+  if (s === 'in_progress') return 'Assessment stage'
+  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Billing finalized'
+  return 'Visit'
+}
+
+function matchesVisitTab(v: ProviderVisitListItem, tab: VisitTab): boolean {
+  const s = (v.status || '').toLowerCase()
+  if (tab === 'all') return true
+  if (tab === 'scheduled') return s === 'scheduled' || s === 'queued' || s === 'in_queue'
+  if (tab === 'in-progress') return s === 'in_progress'
+  if (tab === 'completed') return s === 'completed' || s === 'closed' || s === 'ended'
+  return true
+}
+
+function formatVisitRowTimes(v: ProviderVisitListItem): { date: string; duration: string } {
+  const sched = v.scheduled_start
+  if (sched) {
+    try {
+      const d = new Date(sched)
+      if (!Number.isNaN(d.getTime())) {
+        const dateStr = d.toLocaleString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+        const dur =
+          v.duration_minutes != null && v.duration_minutes >= 0
+            ? `Duration: ${v.duration_minutes} min`
+            : 'Scheduled'
+        return { date: dateStr, duration: dur }
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  if (v.duration_minutes != null && v.duration_minutes >= 0) {
+    return { date: 'Completed', duration: `Duration: ${v.duration_minutes} min` }
+  }
+  const created = v.created_at
+  if (created) {
+    try {
+      const d = new Date(created)
+      if (!Number.isNaN(d.getTime())) return { date: d.toLocaleDateString(), duration: 'Visit' }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { date: '—', duration: '' }
+}
+
+function visitRowFromApi(v: ProviderVisitListItem): {
+  visitId: string
+  name: string
+  meta: string
+  status: string
+  stage: string
+  date: string
+  duration: string
+  tone: RowTone
+} {
+  const visitId = (v.visit_id || v.id || '').trim()
+  const subtitle =
+    v.visit_type && v.visit_type.trim() && v.visit_type.toLowerCase() !== 'visit'
+      ? v.visit_type.trim()
+      : v.chief_complaint?.trim() || 'Consultation'
+  const name = `${v.patient_name.trim() || 'Patient'} — ${subtitle}`
+  const pid = v.patient_id?.trim() || ''
+  const meta =
+    pid.length > 0
+      ? `ID: …${pid.slice(-10)}${v.mobile_number ? ` • ${v.mobile_number}` : ''}`
+      : v.mobile_number
+        ? String(v.mobile_number)
+        : 'Patient'
+  const { date, duration } = formatVisitRowTimes(v)
+  return {
+    visitId,
+    name,
+    meta,
+    status: displayStatus(v.status || 'open'),
+    stage: stageForStatus(v.status || ''),
+    date,
+    duration,
+    tone: toneForStatus(v.status || ''),
+  }
+}
 type NotificationTone = 'green' | 'blue' | 'teal' | 'gray'
 
 const notifications = [
@@ -114,13 +186,89 @@ function VisitsPage() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
 
-  const filteredRows = useMemo(() => {
-    if (activeTab === 'scheduled') return visitRows.filter((row) => row.status === 'Scheduled')
-    if (activeTab === 'in-progress') return visitRows.filter((row) => row.status === 'In Progress')
-    if (activeTab === 'completed') return visitRows.filter((row) => row.status === 'Completed')
-    return visitRows
-  }, [activeTab])
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setListError(null)
+    void (async () => {
+      try {
+        const data = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
+        if (!cancelled) setVisits(data)
+      } catch (e) {
+        if (!cancelled) setListError(getApiErrorMessage(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const filteredVisits = useMemo(
+    () => visits.filter((v) => matchesVisitTab(v, activeTab)),
+    [visits, activeTab],
+  )
+
+  const filteredRows = useMemo(() => filteredVisits.map(visitRowFromApi), [filteredVisits])
+
+  const tabStats = useMemo(() => {
+    const norm = (s: string) => s.toLowerCase()
+    const total = visits.length
+    const activeNow = visits.filter((v) => norm(v.status) === 'in_progress').length
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const scheduledToday = visits.filter((v) => {
+      if (!v.scheduled_start) return false
+      const d = new Date(v.scheduled_start)
+      if (Number.isNaN(d.getTime())) return false
+      return d >= startOfToday && d < new Date(startOfToday.getTime() + 86400000)
+    }).length
+    const completed = visits.filter((v) => ['completed', 'closed', 'ended'].includes(norm(v.status))).length
+    const rate = total > 0 ? `${Math.round((completed / total) * 1000) / 10}%` : '—'
+
+    const scheduledCount = visits.filter((v) =>
+      ['scheduled', 'queued', 'in_queue'].includes(norm(v.status)),
+    ).length
+    const inProg = visits.filter((v) => norm(v.status) === 'in_progress').length
+
+    const baseAll = [
+      { label: 'Total Visits', value: String(total), tone: 'text-[#171d16]' },
+      { label: 'Active Now', value: String(activeNow), tone: 'text-[#3b82f6]' },
+      { label: 'Scheduled Today', value: String(scheduledToday), tone: 'text-[#f59e0b]' },
+      { label: 'Completion Rate', value: rate, tone: 'text-[#16a34a]' },
+    ]
+    const baseScheduled = [
+      { label: 'Scheduled (board)', value: String(scheduledCount), tone: 'text-[#f59e0b]' },
+      { label: 'In queue', value: String(visits.filter((v) => norm(v.status) === 'in_queue').length), tone: 'text-[#2563eb]' },
+      { label: 'Upcoming', value: String(scheduledToday), tone: 'text-[#171d16]' },
+      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
+    ]
+    const baseInProgress = [
+      { label: 'Active Visits', value: String(inProg), tone: 'text-[#3b82f6]' },
+      { label: 'Scheduled next', value: String(scheduledCount), tone: 'text-[#171d16]' },
+      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
+      { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
+    ]
+    const baseCompleted = [
+      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
+      { label: 'In progress', value: String(inProg), tone: 'text-[#3b82f6]' },
+      { label: 'Scheduled', value: String(scheduledCount), tone: 'text-[#f59e0b]' },
+      { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
+    ]
+
+    const byTab: Record<VisitTab, { label: string; value: string; tone: string }[]> = {
+      all: baseAll,
+      scheduled: baseScheduled,
+      'in-progress': baseInProgress,
+      completed: baseCompleted,
+    }
+    return byTab
+  }, [visits])
 
   const tabTitles: Record<VisitTab, string> = {
     all: 'All Visits',
@@ -136,69 +284,9 @@ function VisitsPage() {
     completed: 'Review closed visits and finalized documentation',
   }
 
-  const tabStats: Record<VisitTab, { label: string; value: string; tone: string }[]> = {
-    all: [
-      { label: 'Total Visits', value: '1,284', tone: 'text-[#171d16]' },
-      { label: 'Active Now', value: '18', tone: 'text-[#3b82f6]' },
-      { label: 'Scheduled Today', value: '42', tone: 'text-[#f59e0b]' },
-      { label: 'Completion Rate', value: '96.4%', tone: 'text-[#16a34a]' },
-    ],
-    scheduled: [
-      { label: 'Scheduled Today', value: '42', tone: 'text-[#f59e0b]' },
-      { label: 'Checked In', value: '11', tone: 'text-[#2563eb]' },
-      { label: 'Upcoming (2h)', value: '8', tone: 'text-[#171d16]' },
-      { label: 'No Shows', value: '2', tone: 'text-[#ef4444]' },
-    ],
-    'in-progress': [
-      { label: 'Active Visits', value: '18', tone: 'text-[#3b82f6]' },
-      { label: 'Avg Wait Time', value: '09m', tone: 'text-[#171d16]' },
-      { label: 'In Assessment', value: '6', tone: 'text-[#f59e0b]' },
-      { label: 'Pending Notes', value: '5', tone: 'text-[#ef4444]' },
-    ],
-    completed: [
-      { label: 'Completed Today', value: '34', tone: 'text-[#16a34a]' },
-      { label: 'Avg Duration', value: '37m', tone: 'text-[#171d16]' },
-      { label: 'Billing Finalized', value: '29', tone: 'text-[#2563eb]' },
-      { label: 'Follow-ups Needed', value: '7', tone: 'text-[#f59e0b]' },
-    ],
-  }
-
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] min-h-screen">
-      <aside className="w-[240px] fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col h-full py-6 text-sm">
-        <div className="px-6 mb-8">
-          <h1 className="text-xl font-bold text-white">MedGenie</h1>
-          <p className="text-gray-400 text-xs">Provider</p>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            Calendar
-          </button>
-          <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white w-[calc(100%-1rem)]" type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            Visits
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/templates')} type="button">
-            <span className="material-symbols-outlined mr-3">description</span>
-            Templates
-          </button>
-          <button
-            className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full"
-            onClick={() => navigate('/settings')}
-            type="button"
-          >
-            <span className="material-symbols-outlined mr-3">settings</span>
-            Settings
-          </button>
-        </nav>
-      </aside>
-
-      <main className="ml-[240px] min-h-screen">
+    <div className="text-[#171d16] min-h-screen">
+      <main className="min-h-screen">
         <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
           <button className="flex items-center gap-2 text-gray-500 hover:opacity-80 transition-opacity" onClick={() => navigate('/dashboard')} type="button">
             <span className="material-symbols-outlined">arrow_back</span>
@@ -206,7 +294,6 @@ function VisitsPage() {
           </button>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
-              <span className="material-symbols-outlined text-gray-500 cursor-pointer">language</span>
               <button
                 aria-label="Open notifications"
                 className="relative text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors"
@@ -239,6 +326,12 @@ function VisitsPage() {
             <h2 className="text-[28px] font-bold">{tabTitles[activeTab]}</h2>
             <p className="text-[#3e4a3d] mt-1">{tabDescriptions[activeTab]}</p>
           </div>
+
+          {listError && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {listError}
+            </div>
+          )}
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div className="flex bg-[#eff6ea] p-1 rounded-xl w-full max-w-[620px] border border-[#bdcaba]">
@@ -287,15 +380,30 @@ function VisitsPage() {
           </div>
 
           <div className="space-y-4">
-            {filteredRows.map((row) => (
+            {loading && (
+              <div className="rounded-xl border border-gray-200 bg-white px-5 py-8 text-center text-sm text-gray-500">
+                Loading visits…
+              </div>
+            )}
+            {!loading && !listError && filteredRows.length === 0 && (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-5 py-12 text-center">
+                <p className="font-medium text-[#171d16]">No visits to show</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Create a visit in the backend or calendar flow, then refresh this page.
+                </p>
+              </div>
+            )}
+            {!loading &&
+              filteredRows.map((row, idx) => (
               <div
-                key={row.visitId}
+                key={row.visitId || `visit-row-${idx}`}
                 className="group bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between hover:border-[#2563eb] transition-all cursor-pointer"
-                onClick={() =>
+                onClick={() => {
+                  if (!row.visitId) return
                   navigate(
                     `/visits/detail?visitId=${encodeURIComponent(row.visitId)}&tab=pre-visit`,
                   )
-                }
+                }}
               >
                 <div className="flex items-center gap-6 flex-1">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${iconClasses(row.tone)}`}>

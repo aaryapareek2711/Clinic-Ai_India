@@ -66,6 +66,33 @@ export type PreVisitSummaryResponse = {
   sections: PreVisitSections
 }
 
+/** Workspace list from GET /api/visits/provider/{provider_id} */
+export type ProviderVisitListItem = {
+  id: string
+  visit_id: string
+  patient_id: string
+  patient_name: string
+  mobile_number?: string | null
+  visit_type?: string
+  status: string
+  scheduled_start?: string | null
+  actual_start?: string | null
+  actual_end?: string | null
+  duration_minutes?: number | null
+  chief_complaint?: string | null
+  created_at?: string
+}
+
+export const DEFAULT_PROVIDER_ID =
+  (import.meta.env.VITE_PROVIDER_ID as string | undefined)?.trim() || 'default'
+
+export async function fetchProviderVisits(providerId: string): Promise<ProviderVisitListItem[]> {
+  const { data } = await apiClient.get<ProviderVisitListItem[]>(
+    `/api/visits/provider/${encodeURIComponent(providerId)}`,
+  )
+  return data
+}
+
 export async function fetchVisitDetail(visitId: string): Promise<VisitDetailResponse> {
   const { data } = await apiClient.get<VisitDetailResponse>(`/api/visits/${encodeURIComponent(visitId)}`)
   return data

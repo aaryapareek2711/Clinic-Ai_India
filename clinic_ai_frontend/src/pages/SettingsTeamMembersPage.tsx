@@ -1,48 +1,15 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsTeamMembersPage() {
-  const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
-    <div className="bg-[#f4fcf0] text-[#171d16] antialiased overflow-hidden">
-      <aside className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col py-6 text-sm z-50">
-        <div className="px-6 mb-8 flex items-center space-x-3">
-          <div className="w-8 h-8 rounded bg-[#16a34a] flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-xl">medical_services</span>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white leading-tight">MedGenie</h1>
-            <p className="text-gray-500 text-xs uppercase tracking-wider font-semibold">Provider</p>
-          </div>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>Dashboard
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/calendar')} type="button">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>Calendar
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>Visits
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/templates')} type="button">
-            <span className="material-symbols-outlined mr-3">description</span>Templates
-          </button>
-          <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white w-[calc(100%-1rem)]" type="button">
-            <span className="material-symbols-outlined mr-3">settings</span>Settings
-          </button>
-        </nav>
-      </aside>
-
-      <main className="ml-[240px] flex flex-col h-screen overflow-y-auto">
+    <div className="text-[#171d16] antialiased overflow-hidden">
+      <main className="flex flex-col h-screen overflow-y-auto">
         <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
           <div className="flex items-center space-x-6">
-            <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
-              <span className="material-symbols-outlined">language</span>
-            </button>
             <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
               <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
@@ -58,20 +25,11 @@ function SettingsTeamMembersPage() {
           </div>
         </header>
 
-        <div className="mt-16 p-8 flex-1">
-          <div className="max-w-6xl mx-auto">
-            <div className="mb-8">
-              <h2 className="text-[28px] font-bold">Organization Settings</h2>
-              <p className="text-[#3e4a3d] mt-2">Manage your clinical team members and organization-wide configurations.</p>
-            </div>
+        <div className="mt-16 flex-1 bg-[#f4fcf0] p-8">
+          <div className="mx-auto max-w-6xl">
+            <SettingsHeadingNav />
 
-            <nav className="flex space-x-8 mb-8 border-b border-[#bdcaba]">
-              <button className="pb-4 text-gray-500 font-medium hover:text-[#006b2c]" onClick={() => navigate('/settings')} type="button">Profile</button>
-              <button className="pb-4 text-gray-500 font-medium hover:text-[#006b2c]" onClick={() => navigate('/settings/edit-profile')} type="button">Organization</button>
-              <button className="pb-4 text-[#2563eb] font-semibold border-b-2 border-[#2563eb]" type="button">Team Members</button>
-            </nav>
-
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <div className="relative w-72">
                 <span className="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-sm">search</span>
                 <input className="w-full pl-10 pr-4 py-2 text-sm border border-[#bdcaba] rounded-lg focus:ring-2 focus:ring-[#2563eb] focus:border-[#2563eb] bg-white" placeholder="Search members..." type="text" />

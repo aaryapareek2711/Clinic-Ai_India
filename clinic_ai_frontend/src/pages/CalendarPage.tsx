@@ -1,41 +1,54 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NotificationsDrawer from './NotificationsDrawer'
+
+function escapeCsvCell(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+function downloadAppointmentsTemplateCsv(): void {
+  const header = ['patient_name', 'appointment_date', 'start_time', 'end_time', 'visit_type', 'status', 'notes']
+  const row = ['Jane Doe', '2024-10-15', '09:00', '09:30', 'Follow-up', 'Confirmed', 'Example row — replace with real data']
+  const csvLines = [
+    header.map(escapeCsvCell).join(','),
+    row.map(escapeCsvCell).join(','),
+  ]
+  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'medgenie-appointments-import-template.csv'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 function CalendarPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
+  const importCsvRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isImportCsvOpen) return
+    function handlePointerDown(ev: MouseEvent) {
+      if (importCsvRef.current && !importCsvRef.current.contains(ev.target as Node)) {
+        setIsImportCsvOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [isImportCsvOpen])
 
   return (
-    <div className="bg-[#f4fcf0] font-inter text-[#171d16] min-h-screen">
-      <aside className="w-[240px] h-full fixed left-0 top-0 bg-[#111827] border-r border-gray-800 flex flex-col py-6 z-50">
-        <div className="px-6 mb-10">
-          <h1 className="text-xl font-bold text-white">MedGenie</h1>
-          <p className="text-xs text-gray-500 uppercase tracking-widest mt-1">Provider</p>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined mr-3">dashboard</span>
-            Dashboard
-          </button>
-          <a className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white" href="#">
-            <span className="material-symbols-outlined mr-3">calendar_today</span>
-            Calendar
-          </a>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/visits')} type="button">
-            <span className="material-symbols-outlined mr-3">clinical_notes</span>
-            Visit Management
-          </button>
-          <button className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full" onClick={() => navigate('/templates')} type="button">
-            <span className="material-symbols-outlined mr-3">description</span>
-            Templates
-          </button>
-        </nav>
-      </aside>
-
+    <div className="font-inter text-[#171d16] min-h-screen">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
         <div className="flex items-center gap-6">
-          <span className="material-symbols-outlined text-gray-500 cursor-pointer">language</span>
           <button className="text-gray-500 hover:opacity-80 transition-opacity" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
           </button>
@@ -48,15 +61,53 @@ function CalendarPage() {
         </div>
       </header>
 
-      <main className="ml-[240px] pt-16 min-h-screen p-8">
+      <main className="pt-16 min-h-screen p-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h2 className="text-[28px] font-bold">Calendar</h2>
             <p className="text-[#3e4a3d]">Manage your appointments and schedule</p>
           </div>
-          <div className="flex gap-3">
-            <button className="bg-[#111827] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium">Import CSV</button>
-            <button className="bg-[#16a34a] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium" onClick={() => navigate('/new-appointment')} type="button">New Appointment</button>
+          <div className="flex flex-wrap gap-3">
+            <div className="relative" ref={importCsvRef}>
+              <button
+                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white ${isImportCsvOpen ? 'bg-[#1e293b]' : 'bg-[#111827] hover:bg-[#1e293b]'}`}
+                onClick={() => setIsImportCsvOpen((o) => !o)}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[1.125rem]">upload_file</span>
+                Import CSV
+                <span className="material-symbols-outlined text-[1.125rem]">{isImportCsvOpen ? 'expand_less' : 'expand_more'}</span>
+              </button>
+              {isImportCsvOpen ? (
+                <div
+                  className="absolute left-0 top-[calc(100%+0.5rem)] z-50 w-[min(100vw-2rem,20rem)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:left-auto sm:right-0"
+                  role="dialog"
+                  aria-label="Import CSV options"
+                >
+                  <p className="mb-3 text-sm text-[#3e4a3d]">
+                    Download a template CSV with the expected columns, then fill it in for bulk import later.
+                  </p>
+                  <button
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
+                    onClick={() => {
+                      downloadAppointmentsTemplateCsv()
+                      setIsImportCsvOpen(false)
+                    }}
+                    type="button"
+                  >
+                    <span className="material-symbols-outlined text-[1.125rem]">download</span>
+                    Download CSV template
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <button
+              className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-5 py-2.5 font-medium text-white"
+              onClick={() => navigate('/new-appointment')}
+              type="button"
+            >
+              New Appointment
+            </button>
           </div>
         </div>
 
