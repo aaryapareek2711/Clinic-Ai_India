@@ -19,6 +19,11 @@ from src.api.schemas.patient import (
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 
 
+def _is_walk_in_visit_type(value: object) -> bool:
+    s = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return s in {"walk_in", "walkin"}
+
+
 @router.get("", response_model=list[PatientSummaryResponse])
 def list_patients() -> list[PatientSummaryResponse]:
     """Return normalized patient records for frontend patient picker."""
@@ -135,13 +140,16 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         },
         upsert=True,
     )
+    is_walk_in = _is_walk_in_visit_type(payload.visit_type)
+    visit_type_stored = "walk_in" if is_walk_in else (str(payload.visit_type or "").strip() or "scheduled_visit")
+
     db.visits.insert_one(
         {
             "visit_id": visit_id,
             "patient_id": internal_patient_id,
             "provider_id": None,
             "scheduled_start": scheduled_start,
-            "visit_type": payload.visit_type,
+            "visit_type": visit_type_stored,
             "status": "open",
             "created_at": now,
             "updated_at": now,
@@ -150,7 +158,7 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
     whatsapp_triggered = False
     phone_number = str(payload.phone_number or "").strip()
     pending_schedule_for_intake = scheduled_start is None
-    if scheduled_start and phone_number:
+    if scheduled_start and phone_number and not is_walk_in:
         try:
             IntakeChatService().start_intake(
                 patient_id=internal_patient_id,
@@ -168,6 +176,7 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         whatsapp_triggered=whatsapp_triggered,
         existing_patient=existing_patient,
         pending_schedule_for_intake=pending_schedule_for_intake,
+        workflow_skip_previsit=is_walk_in,
     )
 
 

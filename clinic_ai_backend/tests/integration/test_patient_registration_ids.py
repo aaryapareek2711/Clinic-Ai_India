@@ -100,6 +100,39 @@ def test_register_without_appointment_defers_intake(app_client, monkeypatch) -> 
     assert len(calls) == 1
 
 
+def test_register_walk_in_skips_whatsapp_intake_even_with_appointment(app_client, monkeypatch) -> None:
+    calls: list[tuple] = []
+
+    def _capture(*args, **kwargs) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(
+        "src.application.services.intake_chat_service.IntakeChatService.start_intake",
+        _capture,
+    )
+    from datetime import date, timedelta
+
+    ok_day = (date.today() + timedelta(days=1)).isoformat()
+    payload = {
+        "name": "Walk In Test",
+        "phone_number": "9111222333",
+        "age": 28,
+        "gender": "male",
+        "preferred_language": "en",
+        "travelled_recently": False,
+        "consent": True,
+        "appointment_date": ok_day,
+        "appointment_time": "11:00",
+        "visit_type": "walk_in",
+    }
+    res = app_client.post("/api/patients/register", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert calls == []
+    assert data.get("workflow_skip_previsit") is True
+    assert data.get("whatsapp_triggered") is False
+
+
 def test_register_accepts_full_intake_language_and_preserves_it_for_chat(app_client, monkeypatch) -> None:
     calls: list[tuple] = []
 

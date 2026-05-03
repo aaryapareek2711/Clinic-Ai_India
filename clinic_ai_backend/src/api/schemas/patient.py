@@ -44,6 +44,7 @@ class PatientRegisterResponse(BaseModel):
     whatsapp_triggered: bool
     existing_patient: bool = False
     pending_schedule_for_intake: bool = False
+    workflow_skip_previsit: bool = False
 
 
 class PatientSummaryResponse(BaseModel):
