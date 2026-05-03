@@ -1,13 +1,18 @@
 import axios from 'axios'
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://localhost:8000'
+/**
+ * Default to same-origin API paths.
+ * In local `vite` dev, this is proxied to backend via `vite.config.ts`.
+ */
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || ''
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
 
 function backendReachabilityHint(): string {
-  return `Cannot reach the API at ${API_BASE_URL}. Start clinic_ai_backend (e.g. port 8000), set VITE_API_BASE_URL in clinic_ai_frontend/.env if needed, and allow this origin in CORS (e.g. http://localhost:5173).`
+  const target = API_BASE_URL || '(vite proxy -> http://localhost:8000)'
+  return `Cannot reach the API at ${target}. Start clinic_ai_backend (port 8000), or set VITE_API_BASE_URL in clinic_ai_frontend/.env to your running backend URL.`
 }
 
 export function getApiErrorMessage(err: unknown): string {

@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+import { getApiErrorMessage } from '../lib/apiClient'
+import {
+  DEFAULT_PROVIDER_ID,
+  fetchProviderUpcoming,
+  type ProviderUpcomingAppointment,
+} from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function escapeCsvCell(value: string): string {
@@ -12,10 +19,7 @@ function escapeCsvCell(value: string): string {
 function downloadAppointmentsTemplateCsv(): void {
   const header = ['patient_name', 'appointment_date', 'start_time', 'end_time', 'visit_type', 'status', 'notes']
   const row = ['Jane Doe', '2024-10-15', '09:00', '09:30', 'Follow-up', 'Confirmed', 'Example row — replace with real data']
-  const csvLines = [
-    header.map(escapeCsvCell).join(','),
-    row.map(escapeCsvCell).join(','),
-  ]
+  const csvLines = [header.map(escapeCsvCell).join(','), row.map(escapeCsvCell).join(',')]
   const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -28,11 +32,39 @@ function downloadAppointmentsTemplateCsv(): void {
   URL.revokeObjectURL(url)
 }
 
+function cloneMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+function padMonthGrid(year: number, month: number): { blanks: number; daysInMonth: number } {
+  const first = new Date(year, month, 1).getDay()
+  const dim = new Date(year, month + 1, 0).getDate()
+  return { blanks: first, daysInMonth: dim }
+}
+
+function appointmentsOnDay(rows: ProviderUpcomingAppointment[], year: number, month: number, day: number): ProviderUpcomingAppointment[] {
+  return rows.filter((a) => {
+    const t = new Date(a.scheduled_start)
+    if (Number.isNaN(t.getTime())) return false
+    return t.getFullYear() === year && t.getMonth() === month && t.getDate() === day
+  })
+}
+
+function formatShortTime(iso: string): string {
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime())) return ''
+  return t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
 function CalendarPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
   const importCsvRef = useRef<HTMLDivElement>(null)
+  const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
+  const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isImportCsvOpen) return
@@ -45,27 +77,71 @@ function CalendarPage() {
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [isImportCsvOpen])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        if (!cancelled) {
+          setLoading(true)
+          setLoadError(null)
+        }
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+        if (!cancelled) setAppointments(data)
+      } catch (e) {
+        if (!cancelled) setLoadError(getApiErrorMessage(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const year = viewMonth.getFullYear()
+  const month = viewMonth.getMonth()
+  const { blanks, daysInMonth } = useMemo(() => padMonthGrid(year, month), [year, month])
+
+  const monthTitle = viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+
+  const totalCells = Math.ceil((blanks + daysInMonth) / 7) * 7
+
+  const sidebarItems = useMemo(() => {
+    return [...appointments]
+      .filter((a) => a.scheduled_start)
+      .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
+      .slice(0, 12)
+  }, [appointments])
+
+  function prevMonth(): void {
+    setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+  }
+
+  function nextMonth(): void {
+    setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+  }
+
   return (
-    <div className="font-inter text-[#171d16] min-h-screen">
-      <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
+    <div className="min-h-screen font-inter text-[#171d16]">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
         <div className="flex items-center gap-6">
-          <button className="text-gray-500 hover:opacity-80 transition-opacity" onClick={() => setIsNotificationsOpen(true)} type="button">
+          <button className="text-gray-500 transition-opacity hover:opacity-80" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
           </button>
-          <div className="flex items-center gap-3 ml-2">
+          <div className="ml-2 flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm font-semibold">Dr. Profile</p>
-              <p className="text-[10px] text-[#3e4a3d] uppercase">Chief Surgeon</p>
+              <p className="text-sm font-semibold">Schedule</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">Provider calendar</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="pt-16 min-h-screen p-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <main className="min-h-screen p-8 pt-16">
+        <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-[28px] font-bold">Calendar</h2>
-            <p className="text-[#3e4a3d]">Manage your appointments and schedule</p>
+            <p className="text-[#3e4a3d]">Appointments loaded from `/api/visits/provider/{id}/upcoming`</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="relative" ref={importCsvRef}>
@@ -80,13 +156,11 @@ function CalendarPage() {
               </button>
               {isImportCsvOpen ? (
                 <div
-                  className="absolute left-0 top-[calc(100%+0.5rem)] z-50 w-[min(100vw-2rem,20rem)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:left-auto sm:right-0"
+                  className="absolute left-0 top-[calc(100%+0.5rem)] z-50 w-[min(100vw-2rem,20rem)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:right-0 sm:left-auto"
                   role="dialog"
                   aria-label="Import CSV options"
                 >
-                  <p className="mb-3 text-sm text-[#3e4a3d]">
-                    Download a template CSV with the expected columns, then fill it in for bulk import later.
-                  </p>
+                  <p className="mb-3 text-sm text-[#3e4a3d]">Download a template CSV with expected columns.</p>
                   <button
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
                     onClick={() => {
@@ -111,60 +185,122 @@ function CalendarPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-          <div className="xl:col-span-8 bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-xl font-bold">October 2024</h3>
-              <div className="flex bg-[#eff6ea] p-1 rounded-lg">
-                <button className="px-4 py-1.5 text-sm font-medium bg-white text-[#006b2c] rounded-md shadow-sm">Month</button>
-                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]">Week</button>
-                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]">Day</button>
+        {loadError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
+        )}
+
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-8">
+            <div className="flex items-center justify-between border-b border-gray-100 p-6">
+              <div className="flex items-center gap-3">
+                <button aria-label="Previous month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={prevMonth} type="button">
+                  <span className="material-symbols-outlined">chevron_left</span>
+                </button>
+                <h3 className="text-xl font-bold">{monthTitle}</h3>
+                <button aria-label="Next month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={nextMonth} type="button">
+                  <span className="material-symbols-outlined">chevron_right</span>
+                </button>
+              </div>
+              <div className="flex rounded-lg bg-[#eff6ea] p-1">
+                <button className="rounded-md bg-white px-4 py-1.5 text-sm font-medium text-[#006b2c] shadow-sm" type="button">
+                  Month
+                </button>
+                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]" disabled type="button">
+                  Week
+                </button>
+                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]" disabled type="button">
+                  Day
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-7 border-b border-gray-100">
               {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
-                <div key={d} className="py-3 text-center border-r border-gray-100 text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
+                <div key={d} className="border-r border-gray-100 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
                   {d}
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-7 auto-rows-[120px]">
-              {Array.from({ length: 28 }).map((_, i) => (
-                <div key={i} className="p-2 border-r border-b border-gray-100 hover:bg-[#eff6ea] transition-colors last:border-r-0">
-                  <span className="text-sm font-medium">{i + 1}</span>
-                  {i === 2 && <div className="mt-2 text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded border border-blue-200 truncate">09:00 Follow-up: Jane Doe</div>}
-                  {i === 5 && <div className="mt-2 text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200 truncate">10:00 Confirmed: Alice R.</div>}
-                </div>
-              ))}
+            <div className="grid grid-cols-7 auto-rows-[minmax(7rem,auto)]">
+              {Array.from({ length: totalCells }).map((_, i) => {
+                const dayNum = i - blanks + 1
+                const isBlank = dayNum < 1 || dayNum > daysInMonth
+                const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
+
+                const isToday = (() => {
+                  if (isBlank) return false
+                  const now = new Date()
+                  return now.getFullYear() === year && now.getMonth() === month && now.getDate() === dayNum
+                })()
+
+                return (
+                  <div key={i} className={`border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0`}>
+                    {!isBlank && (
+                      <>
+                        <span className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}>{dayNum}</span>
+                        <div className="mt-1 space-y-1">
+                          {dayAppts.slice(0, 3).map((a) => (
+                            <button
+                              key={a.visit_id}
+                              className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-left text-[10px] text-blue-700"
+                              onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                              title={a.chief_complaint}
+                              type="button"
+                            >
+                              {formatShortTime(a.scheduled_start)} · {a.patient_name}
+                            </button>
+                          ))}
+                          {dayAppts.length > 3 && (
+                            <p className="text-[10px] text-[#575e70]">+{dayAppts.length - 3} more</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
             </div>
+            {loading && <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">Loading appointments…</p>}
           </div>
 
-          <div className="xl:col-span-4 flex flex-col gap-8">
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex flex-col gap-8 xl:col-span-4">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <div className="flex items-center justify-between border-b border-gray-100 p-6">
                 <h3 className="text-[18px] font-semibold">Upcoming Appointments</h3>
-                <button className="text-[#006b2c] text-sm font-semibold hover:underline">View All</button>
+                <button className="text-sm font-semibold text-[#006b2c] hover:underline" onClick={() => navigate('/visits')} type="button">
+                  View All
+                </button>
               </div>
               <div className="divide-y divide-gray-50">
-                {[
-                  ['Oct', '08', 'Robert Harrison', '09:30 AM - 10:15 AM', 'Confirmed'],
-                  ['Oct', '09', 'Sarah Miller', '11:00 AM - 11:30 AM', 'Pending'],
-                  ['Oct', '12', 'David Chen', '02:45 PM - 03:15 PM', 'Follow-up'],
-                ].map(([mon, day, name, time, status]) => (
-                  <div key={name} className="p-5 hover:bg-[#eff6ea] transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-blue-50 text-blue-600 w-12 h-12 rounded-lg flex flex-col items-center justify-center font-bold">
-                        <span className="text-[10px] uppercase">{mon}</span>
-                        <span className="text-lg leading-none">{day}</span>
+                {!loading && sidebarItems.length === 0 && (
+                  <div className="p-6 text-sm text-[#575e70]">No upcoming appointments in the backend response.</div>
+                )}
+                {sidebarItems.map((a) => {
+                  const dt = new Date(a.scheduled_start)
+                  const mon = Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { month: 'short' })
+                  const day = Number.isNaN(dt.getTime()) ? '—' : String(dt.getDate())
+                  return (
+                    <button
+                      key={a.visit_id}
+                      className="w-full p-5 text-left transition-colors hover:bg-[#eff6ea]"
+                      onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                      type="button"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-blue-50 font-bold text-blue-600">
+                          <span className="text-[10px] uppercase">{mon}</span>
+                          <span className="text-lg leading-none">{day}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold">{a.patient_name}</p>
+                          <p className="truncate text-sm text-[#3e4a3d]">{formatShortTime(a.scheduled_start)} · {a.appointment_type || 'Visit'}</p>
+                        </div>
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
+                          {(a.status || '').replace(/_/g, ' ') || 'Scheduled'}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate">{name}</p>
-                        <p className="text-sm text-[#3e4a3d]">{time}</p>
-                      </div>
-                      <span className="bg-green-100 text-green-700 text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">{status}</span>
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>

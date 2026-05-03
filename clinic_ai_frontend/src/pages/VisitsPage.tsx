@@ -192,10 +192,12 @@ function VisitsPage() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setListError(null)
     void (async () => {
       try {
+        if (!cancelled) {
+          setLoading(true)
+          setListError(null)
+        }
         const data = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
         if (!cancelled) setVisits(data)
       } catch (e) {

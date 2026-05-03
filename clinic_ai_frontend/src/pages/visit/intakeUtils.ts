@@ -1,7 +1,8 @@
 import type { IntakeSessionResponse } from '../../services/visitWorkflowApi'
 
 export function languageLabel(code: string): string {
-  const c = (code || 'en').toLowerCase()
+  const c = (code || 'en').toLowerCase().replace(/_/g, '-')
+  if (c === 'hi-eng') return 'Hindi & English'
   if (c.startsWith('hi')) return 'Hindi'
   if (c.startsWith('en')) return 'English'
   return code

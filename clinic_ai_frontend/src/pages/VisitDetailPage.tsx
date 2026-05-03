@@ -6,11 +6,21 @@ import {
   fetchIntakeSession,
   fetchLatestClinicalNote,
   fetchPreVisitSummary,
+  fetchTranscriptionStatus,
   fetchVisitDetail,
+  generatePostVisitSummary,
+  generateVitalsForm,
+  sendPostVisitSummaryWhatsApp,
+  type PostVisitPatientLanguage,
+  submitVitals,
+  uploadTranscriptionAudio,
   type ClinicalNoteLatest,
   type IntakeSessionResponse,
+  type PostVisitSummaryResponse,
   type PreVisitSummaryResponse,
+  type TranscriptionStatusResponse,
   type VisitDetailResponse,
+  type VitalsFormResponse,
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import { languageLabel } from './visit/intakeUtils'
@@ -44,6 +54,19 @@ function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
   return 'pre-visit'
 }
 
+function digitsOnlyPhone(raw: string): string {
+  return raw.replace(/\D/g, '').trim()
+}
+
+function formatIndiaWhatsAppDisplay(digits: string): string {
+  const d = digitsOnlyPhone(digits)
+  if (d.length >= 10) {
+    const last10 = d.slice(-10)
+    return `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`
+  }
+  return digits.trim() || '—'
+}
+
 /** Pre-visit step is aimed at visits that have a scheduled slot (board-style workflow). */
 function showScheduledPreVisitBadge(v: VisitDetailResponse | null): boolean {
   if (!v?.scheduled_start) return false
@@ -66,6 +89,22 @@ export default function VisitDetailPage() {
   const [intake, setIntake] = useState<IntakeSessionResponse | null>(null)
   const [preVisit, setPreVisit] = useState<PreVisitSummaryResponse | null>(null)
   const [clinicalNote, setClinicalNote] = useState<ClinicalNoteLatest | null>(null)
+  const [vitalsForm, setVitalsForm] = useState<VitalsFormResponse | null>(null)
+  const [vitalsStaffName, setVitalsStaffName] = useState('Nurse')
+  const [vitalsValues, setVitalsValues] = useState<Record<string, string>>({})
+  const [vitalsMessage, setVitalsMessage] = useState<string | null>(null)
+  const [transcriptionStatus, setTranscriptionStatus] = useState<TranscriptionStatusResponse | null>(null)
+  const [transcriptionMessage, setTranscriptionMessage] = useState<string | null>(null)
+  const [postVisitSummary, setPostVisitSummary] = useState<PostVisitSummaryResponse | null>(null)
+  const [postVisitMessage, setPostVisitMessage] = useState<string | null>(null)
+  const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
+  const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
+  const [recapPatientLang, setRecapPatientLang] = useState<PostVisitPatientLanguage>('en')
+  const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
+  const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
+    phoneDisplay: string
+    languageDisplay: string
+  } | null>(null)
 
   const syncTabToUrl = useCallback(
     (next: VisitWorkflowTab) => {
@@ -109,6 +148,17 @@ export default function VisitDetailPage() {
       setIntake(intakeRes)
       setPreVisit(preRes)
       setClinicalNote(noteRes)
+      setVitalsForm(null)
+      setVitalsValues({})
+      setVitalsMessage(null)
+      setTranscriptionStatus(null)
+      setTranscriptionMessage(null)
+      setPostVisitSummary(null)
+      setPostVisitMessage(null)
+      setPostVisitSendInfo(null)
+      setRecapContactMode('patient')
+      setRecapPatientLang('en')
+      setRecapPhoneDraft(digitsOnlyPhone(v.patient?.phone_number ?? ''))
     } catch (e) {
       setError(getApiErrorMessage(e))
       setVisit(null)
@@ -145,13 +195,14 @@ export default function VisitDetailPage() {
   const scheduledBadge = showScheduledPreVisitBadge(visit)
 
   const notePayload = clinicalNote?.payload
+  const patientId = visit?.patient_id ?? ''
 
   const tabs: { id: VisitWorkflowTab; label: string; icon: string }[] = [
     { id: 'pre-visit', label: 'Pre-visit', icon: 'event_note' },
     { id: 'vitals', label: 'Vitals', icon: 'monitor_heart' },
     { id: 'transcription', label: 'Transcription', icon: 'mic' },
     { id: 'clinical-note', label: 'Clinical Note', icon: 'clinical_notes' },
-    { id: 'post-visit', label: 'Post Visit', icon: 'summarize' },
+    { id: 'post-visit', label: 'Recap', icon: 'summarize' },
   ]
 
   return (
@@ -263,7 +314,7 @@ export default function VisitDetailPage() {
                     type="button"
                   >
                     <span className="material-symbols-outlined mr-2">send</span>
-                    Send WhatsApp
+                    Recap
                   </button>
                   <button
                     className="flex items-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
@@ -317,14 +368,141 @@ export default function VisitDetailPage() {
               )}
 
               {!loading && tab === 'vitals' && (
-                <div className="rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
-                  Vitals: generate form and submit via <code className="font-mono text-xs">/api/vitals</code> (next wiring).
+                <div className="space-y-4 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => {
+                        if (!patientId || !visitId) return
+                        void (async () => {
+                          try {
+                            const form = await generateVitalsForm(patientId, visitId)
+                            setVitalsForm(form)
+                            const nextValues: Record<string, string> = {}
+                            form.fields.forEach((f) => {
+                              nextValues[f.key] = ''
+                            })
+                            setVitalsValues(nextValues)
+                            setVitalsMessage(form.reason)
+                          } catch (e) {
+                            setVitalsMessage(getApiErrorMessage(e))
+                          }
+                        })()
+                      }}
+                      type="button"
+                    >
+                      Generate Vitals Form
+                    </button>
+                    <span className="text-xs text-[#575e70]">Uses `/api/vitals/generate-form`</span>
+                  </div>
+                  {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
+                  {vitalsForm && (
+                    <>
+                      <label className="block text-xs font-semibold text-[#171d16]">
+                        Staff Name
+                        <input
+                          className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
+                          onChange={(e) => setVitalsStaffName(e.target.value)}
+                          value={vitalsStaffName}
+                        />
+                      </label>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {vitalsForm.fields.map((field) => (
+                          <label className="block text-xs font-semibold text-[#171d16]" key={field.key}>
+                            {field.label} ({field.key})
+                            <input
+                              className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
+                              onChange={(e) =>
+                                setVitalsValues((prev) => ({
+                                  ...prev,
+                                  [field.key]: e.target.value,
+                                }))
+                              }
+                              placeholder={field.unit ? `Unit: ${field.unit}` : 'Enter value'}
+                              value={vitalsValues[field.key] ?? ''}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                        onClick={() => {
+                          if (!patientId || !visitId || !vitalsForm) return
+                          void (async () => {
+                            try {
+                              const values = vitalsForm.fields.map((f) => ({
+                                key: f.key,
+                                value: vitalsValues[f.key] ?? '',
+                              }))
+                              const res = await submitVitals(
+                                patientId,
+                                visitId,
+                                vitalsForm.form_id || null,
+                                vitalsStaffName.trim() || 'Nurse',
+                                values,
+                              )
+                              setVitalsMessage(`Vitals submitted (${res.vitals_id.slice(-8)})`)
+                            } catch (e) {
+                              setVitalsMessage(getApiErrorMessage(e))
+                            }
+                          })()
+                        }}
+                        type="button"
+                      >
+                        Submit Vitals
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
 
               {!loading && tab === 'transcription' && (
-                <div className="rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
-                  Transcription: upload audio and poll status via <code className="font-mono text-xs">/api/notes/transcribe</code> (next wiring).
+                <div className="space-y-4 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
+                  <label className="inline-flex cursor-pointer items-center rounded-lg border border-[#bdcaba] px-4 py-2 font-semibold text-[#171d16]">
+                    Upload Audio
+                    <input
+                      accept="audio/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (!file || !patientId || !visitId) return
+                        void (async () => {
+                          try {
+                            const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
+                            setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
+                          } catch (err) {
+                            setTranscriptionMessage(getApiErrorMessage(err))
+                          }
+                        })()
+                      }}
+                      type="file"
+                    />
+                  </label>
+                  <button
+                    className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                    onClick={() => {
+                      if (!patientId || !visitId) return
+                      void (async () => {
+                        try {
+                          const status = await fetchTranscriptionStatus(patientId, visitId)
+                          setTranscriptionStatus(status)
+                          setTranscriptionMessage(status.message || status.status)
+                        } catch (e) {
+                          setTranscriptionMessage(getApiErrorMessage(e))
+                        }
+                      })()
+                    }}
+                    type="button"
+                  >
+                    Check Transcription Status
+                  </button>
+                  {transcriptionMessage && <p className="text-xs text-[#575e70]">{transcriptionMessage}</p>}
+                  {transcriptionStatus && (
+                    <div className="rounded-lg border border-[#bdcaba] bg-slate-50 p-3 text-xs">
+                      <p>Status: {transcriptionStatus.status}</p>
+                      {transcriptionStatus.error && <p>Error: {transcriptionStatus.error}</p>}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -364,8 +542,188 @@ export default function VisitDetailPage() {
               )}
 
               {!loading && tab === 'post-visit' && (
-                <div className="rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
-                  Post-visit summary and WhatsApp send use <code className="font-mono text-xs">/api/notes/post-visit-summary</code> (next wiring).
+                <div className="mx-auto max-w-3xl space-y-6 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#171d16]">Send post-visit recap</h3>
+                    <p className="mt-1 text-xs text-[#575e70]">
+                      Patient profile language does not change. Choose the language and number for this WhatsApp send.
+                    </p>
+                  </div>
+
+                  <fieldset className="space-y-3">
+                    <legend className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                      WhatsApp recipient
+                    </legend>
+                    {(
+                      [
+                        ['patient', "Patient's WhatsApp"] as const,
+                        ['different', 'Different number'] as const,
+                        ['family', 'Family member'] as const,
+                      ]
+                    ).map(([value, label]) => (
+                      <label key={value} className="flex cursor-pointer items-center gap-2">
+                        <input
+                          checked={recapContactMode === value}
+                          className="text-[#006b2c]"
+                          name="recap-contact"
+                          onChange={() => setRecapContactMode(value)}
+                          type="radio"
+                          value={value}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                    {recapContactMode !== 'patient' && (
+                      <input
+                        className="mt-2 w-full max-w-md rounded-lg border border-[#bdcaba] px-3 py-2 text-[#171d16]"
+                        inputMode="numeric"
+                        onChange={(e) => setRecapPhoneDraft(e.target.value)}
+                        placeholder="e.g. 919876543210"
+                        type="text"
+                        value={recapPhoneDraft}
+                      />
+                    )}
+                  </fieldset>
+
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                      Message language (patient)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ['hi', 'Hindi'] as const,
+                          ['en', 'English'] as const,
+                          ['hi-eng', 'Both'] as const,
+                        ]
+                      ).map(([code, label]) => (
+                        <button
+                          key={code}
+                          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                            recapPatientLang === code
+                              ? 'bg-[#006b2c] text-white'
+                              : 'border border-[#bdcaba] bg-white text-[#171d16] hover:bg-[#eff6ea]'
+                          }`}
+                          onClick={() => setRecapPatientLang(code)}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {postVisitSummary?.whatsapp_payload?.trim() && (
+                    <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
+                      <p className="mb-2 text-xs font-semibold text-[#006b2c]">Preview</p>
+                      <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-[#171d16]">
+                        {postVisitSummary.whatsapp_payload.trim()}
+                      </pre>
+                      <p className="mt-2 text-xs text-[#575e70]">Approved WhatsApp template · post-visit recap</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-3 border-t border-[#e9f0e5] pt-6">
+                    <button
+                      className="rounded-lg border border-[#bdcaba] bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-gray-50 disabled:opacity-50"
+                      disabled={!patientId || !visitId || recapAction !== null}
+                      onClick={() => {
+                        if (!patientId || !visitId) return
+                        void (async () => {
+                          setRecapAction('generate')
+                          setPostVisitMessage(null)
+                          setPostVisitSendInfo(null)
+                          try {
+                            const res = await generatePostVisitSummary(patientId, visitId, {
+                              preferred_language: recapPatientLang,
+                            })
+                            setPostVisitSummary(res)
+                            setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')
+                          } catch (e) {
+                            setPostVisitMessage(getApiErrorMessage(e))
+                          } finally {
+                            setRecapAction(null)
+                          }
+                        })()
+                      }}
+                      type="button"
+                    >
+                      {recapAction === 'generate' ? 'Generating…' : 'Generate / refresh summary'}
+                    </button>
+                    <button
+                      className="rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#006b2c] disabled:opacity-50"
+                      disabled={!patientId || !visitId || recapAction !== null}
+                      onClick={() => {
+                        if (!patientId || !visitId) return
+                        const overrideDigits =
+                          recapContactMode === 'patient' ? '' : digitsOnlyPhone(recapPhoneDraft)
+                        if (recapContactMode !== 'patient' && !overrideDigits) {
+                          setPostVisitMessage('Enter a WhatsApp number for this recipient.')
+                          return
+                        }
+                        void (async () => {
+                          setRecapAction('send')
+                          setPostVisitMessage(null)
+                          try {
+                            const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
+                              phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
+                              preferred_language: recapPatientLang,
+                            })
+                            setPostVisitMessage(res.message)
+                            const phoneDisplay =
+                              recapContactMode === 'patient'
+                                ? formatIndiaWhatsAppDisplay(visit?.patient?.phone_number ?? '')
+                                : formatIndiaWhatsAppDisplay(overrideDigits)
+                            setPostVisitSendInfo({
+                              phoneDisplay,
+                              languageDisplay: languageLabel(recapPatientLang),
+                            })
+                          } catch (e) {
+                            setPostVisitSendInfo(null)
+                            setPostVisitMessage(getApiErrorMessage(e))
+                          } finally {
+                            setRecapAction(null)
+                          }
+                        })()
+                      }}
+                      type="button"
+                    >
+                      {recapAction === 'send' ? 'Sending…' : 'Send now'}
+                    </button>
+                  </div>
+
+                  {postVisitMessage && (
+                    <p className="text-xs text-[#575e70]" role="status">
+                      {postVisitMessage}
+                    </p>
+                  )}
+
+                  {postVisitSendInfo && (
+                    <div className="rounded-xl border border-[#62df7d]/50 bg-[#f0fdf4] p-6 text-center">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#16a34a] text-white">
+                        <span className="material-symbols-outlined text-2xl">check</span>
+                      </div>
+                      <p className="text-lg font-semibold text-[#171d16]">Message sent</p>
+                      <p className="mt-1 text-sm text-[#3e4a3d]">
+                        {postVisitSendInfo.phoneDisplay} · {postVisitSendInfo.languageDisplay}
+                      </p>
+                      <p className="mt-2 text-xs text-[#575e70]">Post-visit recap template</p>
+                    </div>
+                  )}
+
+                  {postVisitSummary?.payload && !postVisitSummary.whatsapp_payload?.trim() && (
+                    <div className="space-y-2 rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
+                      <p>
+                        <strong>Visit reason:</strong> {postVisitSummary.payload.visit_reason || '—'}
+                      </p>
+                      <p>
+                        <strong>Findings:</strong> {postVisitSummary.payload.what_doctor_found || '—'}
+                      </p>
+                      <p>
+                        <strong>Follow-up:</strong> {postVisitSummary.payload.follow_up || '—'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

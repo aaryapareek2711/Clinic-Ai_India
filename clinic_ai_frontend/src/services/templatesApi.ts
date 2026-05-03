@@ -114,3 +114,37 @@ export async function createClinicalTemplate(payload: CreateClinicalTemplatePayl
   const { data } = await apiClient.post<{ id: string } & Record<string, unknown>>('/api/templates', payload)
   return { id: String(data.id) }
 }
+
+export type ClinicalTemplateListItem = {
+  id: string
+  name: string
+  description: string
+  type: string
+  category: string
+  specialty: string
+  is_favorite: boolean
+}
+
+export type ListClinicalTemplatesResponse = {
+  items: ClinicalTemplateListItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export async function listClinicalTemplates(params?: {
+  search?: string
+  specialty?: string
+  page?: number
+  page_size?: number
+}): Promise<ListClinicalTemplatesResponse> {
+  const { data } = await apiClient.get<ListClinicalTemplatesResponse>('/api/templates', {
+    params: {
+      search: params?.search,
+      specialty: params?.specialty,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 50,
+    },
+  })
+  return data
+}

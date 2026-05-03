@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreateTemplateModal from '../components/CreateTemplateModal'
+import { getApiErrorMessage } from '../lib/apiClient'
+import { listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const RECOMMENDED_TEMPLATES = [
@@ -49,6 +51,49 @@ function TemplatesPage() {
   const [specialtyFilter, setSpecialtyFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<string>('name')
   const filtersRef = useRef<HTMLDivElement>(null)
+  const [myTemplates, setMyTemplates] = useState<ClinicalTemplateListItem[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(true)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [templatesTotal, setTemplatesTotal] = useState(0)
+  const [templatesRefreshNonce, setTemplatesRefreshNonce] = useState(0)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(templateSearch), 400)
+    return () => window.clearTimeout(timer)
+  }, [templateSearch])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        if (!cancelled) {
+          setTemplatesLoading(true)
+          setTemplatesError(null)
+        }
+        const specialty = specialtyFilter !== 'all' ? specialtyFilter : undefined
+        const res = await listClinicalTemplates({
+          search: debouncedSearch.trim() || undefined,
+          specialty,
+          page_size: 100,
+        })
+        const items = [...res.items]
+        if (!cancelled) setTemplatesTotal(res.total)
+        if (sortBy === 'name') {
+          items.sort((a, b) => a.name.localeCompare(b.name))
+        }
+        if (!cancelled) setMyTemplates(items)
+      } catch (e) {
+        if (!cancelled) setTemplatesError(getApiErrorMessage(e))
+      } finally {
+        if (!cancelled) setTemplatesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [specialtyFilter, debouncedSearch, sortBy, templatesRefreshNonce])
 
   useEffect(() => {
     if (!isFiltersOpen) return
@@ -109,8 +154,9 @@ function TemplatesPage() {
           </div>
 
           <div className="flex items-center border-b border-[#bdcaba] mb-8">
-            <div className="py-4 border-b-2 border-[#006b2c] text-[#006b2c] font-semibold flex items-center gap-2">
-              My Templates <span className="bg-[#00873a] text-[#f7fff2] text-xs px-2 py-0.5 rounded-full">0</span>
+            <div className="flex items-center gap-2 border-b-2 border-[#006b2c] py-4 font-semibold text-[#006b2c]">
+              My Templates{' '}
+              <span className="rounded-full bg-[#00873a] px-2 py-0.5 text-xs text-[#f7fff2]">{templatesTotal}</span>
             </div>
           </div>
 
@@ -118,9 +164,11 @@ function TemplatesPage() {
             <div className="flex-1 min-w-[300px] relative">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7b6c]">search</span>
               <input
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white focus:ring-2 focus:ring-[#2563eb] focus:border-transparent outline-none transition-all"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
                 placeholder="Search templates by name or specialty..."
                 type="text"
+                value={templateSearch}
+                onChange={(e) => setTemplateSearch(e.target.value)}
               />
             </div>
             <div className="relative self-start" ref={filtersRef}>
@@ -208,22 +256,45 @@ function TemplatesPage() {
             </div>
           </div>
 
-          <div className="flex flex-col items-center justify-center py-20 bg-white border border-dashed border-[#bdcaba] rounded-2xl">
-            <div className="w-20 h-20 bg-[#00873a]/20 rounded-full flex items-center justify-center mb-6">
-              <span className="material-symbols-outlined text-[#006b2c] text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome_motion</span>
-            </div>
-            <h3 className="text-[18px] font-semibold mb-2">No templates found</h3>
-            <p className="text-[#3e4a3d] text-center max-w-sm mb-8">
-              You haven&apos;t created any custom templates yet. Start by creating one from scratch or explore the library.
-            </p>
-            <button
-              className="bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold flex items-center gap-2 hover:shadow-lg active:scale-95 transition-all"
-              onClick={() => setIsCreateModalOpen(true)}
-              type="button"
-            >
-              <span className="material-symbols-outlined">add_circle</span>
-              <span>Create New Template</span>
-            </button>
+          {templatesError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{templatesError}</div>
+          )}
+
+          <div className="rounded-2xl border border-dashed border-[#bdcaba] bg-white py-12">
+            {templatesLoading && <p className="text-center text-sm text-[#575e70]">Loading templates…</p>}
+            {!templatesLoading && myTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center px-4">
+                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#00873a]/20">
+                  <span className="material-symbols-outlined text-4xl text-[#006b2c]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    auto_awesome_motion
+                  </span>
+                </div>
+                <h3 className="mb-2 text-[18px] font-semibold">No templates found</h3>
+                <p className="mb-8 max-w-sm text-center text-[#3e4a3d]">
+                  None returned from `/api/templates` with the current filters. Create one below or widen search.
+                </p>
+                <button
+                  className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-semibold text-white transition-all hover:shadow-lg active:scale-95"
+                  onClick={() => setIsCreateModalOpen(true)}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined">add_circle</span>
+                  <span>Create New Template</span>
+                </button>
+              </div>
+            ) : (
+              !templatesLoading && (
+                <div className="grid grid-cols-1 gap-4 px-8 md:grid-cols-2 lg:grid-cols-3">
+                  {myTemplates.map((t) => (
+                    <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                      <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
+                      <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
+                      <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
 
           <div className="mt-16">
@@ -271,7 +342,10 @@ function TemplatesPage() {
       <CreateTemplateModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onCreated={() => setTemplateSavedMessage('Template saved successfully.')}
+        onCreated={() => {
+          setTemplateSavedMessage('Template saved successfully.')
+          setTemplatesRefreshNonce((n) => n + 1)
+        }}
       />
     </div>
   )
