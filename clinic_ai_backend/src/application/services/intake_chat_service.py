@@ -143,13 +143,14 @@ class IntakeChatService:
                     str(bootstrapped.get("patient_id") or ""),
                     message_id,
                 )
+                session = self._resolve_active_session_for_inbound_number(normalized_from, active_statuses)
+            if not session:
+                logger.info(
+                    "whatsapp_inbound_no_session from=%s message_id=%s",
+                    self._mask_phone_number(normalized_from),
+                    message_id,
+                )
                 return
-            logger.info(
-                "whatsapp_inbound_no_session from=%s message_id=%s",
-                self._mask_phone_number(normalized_from),
-                message_id,
-            )
-            return
         logger.info(
             "whatsapp_inbound_state_resolved from=%s visit_id=%s patient_id=%s status=%s qn=%s pending_question_present=%s",
             self._mask_phone_number(normalized_from),

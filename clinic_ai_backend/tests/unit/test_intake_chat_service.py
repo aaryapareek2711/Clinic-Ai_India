@@ -378,6 +378,59 @@ def test_non_text_first_reply_after_template_still_starts_intake() -> None:
     assert "main health problem" in service.whatsapp.sent[0][2].lower()
 
 
+def test_bootstrapped_session_handles_same_inbound_message(monkeypatch) -> None:
+    """Opening template may be sent via schedule-intake; if session lookup misses, bootstrap creates one.
+
+    The same inbound webhook must advance intake — not ignore the first reply.
+    """
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = None
+
+    session_after_bootstrap = {
+        "_id": "session-bootstrap",
+        "visit_id": "visit-bootstrap",
+        "to_number": "918887776655",
+        "patient_name": "Test Patient",
+        "patient_id": "patient-bootstrap",
+        "language": "en",
+        "status": "awaiting_conversation_start",
+        "answers": [],
+        "processed_message_ids": [],
+    }
+
+    resolve_state = {"count": 0}
+
+    def fake_resolve(inst, normalized_from, active_statuses):
+        resolve_state["count"] += 1
+        if resolve_state["count"] == 1:
+            return None
+        return fake_db.intake_sessions.record
+
+    def fake_bootstrap(inst, normalized_from):
+        fake_db.intake_sessions.record = dict(session_after_bootstrap)
+        return fake_db.intake_sessions.record
+
+    monkeypatch.setattr(IntakeChatService, "_resolve_active_session_for_inbound_number", fake_resolve)
+    monkeypatch.setattr(IntakeChatService, "_bootstrap_session_for_number", fake_bootstrap)
+
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.handle_patient_reply(
+        from_number="918887776655",
+        message_text="Hello",
+        message_id="wamid-bootstrap-1",
+    )
+
+    assert resolve_state["count"] == 2
+    assert service.whatsapp.sent
+    assert service.whatsapp.sent[0][0] == "text"
+    assert "main health problem" in service.whatsapp.sent[0][2].lower()
+
+
 def test_reply_matches_session_when_country_code_differs() -> None:
     service = IntakeChatService.__new__(IntakeChatService)
     fake_db = type("FakeDB", (), {})()

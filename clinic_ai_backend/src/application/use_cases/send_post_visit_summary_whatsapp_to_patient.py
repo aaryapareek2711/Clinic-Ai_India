@@ -30,16 +30,27 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
     2) Immediate follow-up Meta template (same channel as cron follow-up reminders)
 
     Optional ``phone_number_override`` uses that number for this send only (not persisted).
+
+    Optional ``preferred_language`` overrides WhatsApp template language routing for this send.
     """
     db = get_database()
     patient = dict(db.patients.find_one({"patient_id": patient_id}) or {})
     if not patient.get("patient_id"):
         raise ValueError("Patient not found")
 
+    patient_for_send = dict(patient)
     if phone_number_override and str(phone_number_override).strip():
-        patient = {**patient, "phone_number": str(phone_number_override).strip()}
+        patient_for_send["phone_number"] = str(phone_number_override).strip()
 
-    raw_phone = str(patient.get("phone_number") or "").strip()
+    if preferred_language is not None and str(preferred_language).strip():
+        lang = GeneratePostVisitSummaryUseCase._resolve_language(
+            patient_preferred_language=patient.get("preferred_language"),
+            request_language=preferred_language,
+        )
+        if lang:
+            patient_for_send["preferred_language"] = lang
+
+    raw_phone = str(patient_for_send.get("phone_number") or "").strip()
     if not raw_phone:
         raise ValueError(
             "Patient has no phone number on file; register a WhatsApp number or pass phone_number in the request body"
