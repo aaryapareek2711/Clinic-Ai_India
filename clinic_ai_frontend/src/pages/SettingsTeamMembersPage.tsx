@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsTeamMembersPage() {
   const navigate = useNavigate()
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="bg-[#f4fcf0] text-[#171d16] antialiased overflow-hidden">
@@ -31,12 +34,6 @@ function SettingsTeamMembersPage() {
           <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white w-[calc(100%-1rem)]" type="button">
             <span className="material-symbols-outlined mr-3">settings</span>Settings
           </button>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span>Subscription
-          </a>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span>Analytics
-          </a>
         </nav>
       </aside>
 
@@ -46,7 +43,7 @@ function SettingsTeamMembersPage() {
             <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
               <span className="material-symbols-outlined">language</span>
             </button>
-            <button className="text-gray-500 hover:opacity-80 transition-opacity relative" type="button">
+            <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
               <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
             </button>
@@ -222,6 +219,8 @@ function SettingsTeamMembersPage() {
           </div>
         </div>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }

@@ -1,7 +1,10 @@
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+/** Replace with real IDs from your API; used to open visit management (pre-visit, etc.) */
 const visitRows = [
   {
+    visitId: 'demo-visit-001',
     name: 'Jonathan Miller - Follow-up Cardiology',
     meta: 'ID: #MG-8812 • Patient since 2021',
     status: 'In Progress',
@@ -11,6 +14,7 @@ const visitRows = [
     tone: 'blue',
   },
   {
+    visitId: 'demo-visit-002',
     name: 'Sarah Jenkins - Routine Wellness Exam',
     meta: 'ID: #MG-9024 • New Patient',
     status: 'Scheduled',
@@ -20,6 +24,7 @@ const visitRows = [
     tone: 'amber',
   },
   {
+    visitId: 'demo-visit-003',
     name: 'Michael Ross - Orthopedic Consultation',
     meta: 'ID: #MG-7731 • Post-Op Recovery',
     status: 'Completed',
@@ -29,6 +34,7 @@ const visitRows = [
     tone: 'green',
   },
   {
+    visitId: 'demo-visit-004',
     name: 'Elena Rodriguez - Diabetes Management',
     meta: 'ID: #MG-8142 • Chronic Care',
     status: 'In Progress',
@@ -38,6 +44,59 @@ const visitRows = [
     tone: 'blue',
   },
 ] as const
+
+type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
+type NotificationTone = 'green' | 'blue' | 'teal' | 'gray'
+
+const notifications = [
+  {
+    title: 'OPD Note Generated',
+    subtitle: 'Visit Note: Arthur Morgan',
+    body: 'AI has completed the transcription for the 10:15 AM session. Please review and sign.',
+    time: '12m ago',
+    icon: 'clinical_notes',
+    tone: 'green' as NotificationTone,
+    unread: true,
+    actions: ['Review Note', 'Discard'],
+  },
+  {
+    title: 'Lab Results',
+    subtitle: 'Lab Report: Sarah Connor',
+    body: 'Comprehensive Metabolic Panel (CMP) results are now available for review.',
+    time: '1h ago',
+    icon: 'biotech',
+    tone: 'blue' as NotificationTone,
+    unread: true,
+    actions: ['View Results'],
+  },
+  {
+    title: 'WhatsApp Message',
+    subtitle: 'John Marston (Patient)',
+    body: '"Doctor, I am feeling much better today. Should I continue the current dosage for another week?"',
+    time: '3h ago',
+    icon: 'chat_bubble',
+    tone: 'teal' as NotificationTone,
+    unread: false,
+    actions: ['Reply Now'],
+  },
+  {
+    title: 'System Notice',
+    subtitle: 'Maintenance Scheduled',
+    body: 'MedGenie servers will undergo brief maintenance on Sunday, June 12, at 2:00 AM UTC.',
+    time: 'Yesterday',
+    icon: 'update',
+    tone: 'gray' as NotificationTone,
+    unread: false,
+    actions: [],
+  },
+] as const
+
+function notificationToneClasses(tone: NotificationTone) {
+  if (tone === 'green') return 'bg-green-50 text-[#16a34a] border-green-100'
+  if (tone === 'blue') return 'bg-blue-50 text-[#2563eb] border-blue-100'
+  if (tone === 'teal') return 'bg-[#25d366]/10 text-[#128c7e] border-[#25d366]/20'
+  return 'bg-gray-100 text-gray-500 border-gray-200'
+}
 
 function statusClasses(tone: string) {
   if (tone === 'amber') return 'bg-amber-100 text-[#f59e0b] border-amber-200'
@@ -53,6 +112,56 @@ function iconClasses(tone: string) {
 
 function VisitsPage() {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<VisitTab>('all')
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+
+  const filteredRows = useMemo(() => {
+    if (activeTab === 'scheduled') return visitRows.filter((row) => row.status === 'Scheduled')
+    if (activeTab === 'in-progress') return visitRows.filter((row) => row.status === 'In Progress')
+    if (activeTab === 'completed') return visitRows.filter((row) => row.status === 'Completed')
+    return visitRows
+  }, [activeTab])
+
+  const tabTitles: Record<VisitTab, string> = {
+    all: 'All Visits',
+    scheduled: 'Scheduled Visits',
+    'in-progress': 'In Progress Visits',
+    completed: 'Completed Visits',
+  }
+
+  const tabDescriptions: Record<VisitTab, string> = {
+    all: 'Manage patient visits and documentation',
+    scheduled: 'Track upcoming appointments and ready check-ins',
+    'in-progress': 'Monitor currently active consultations and stages',
+    completed: 'Review closed visits and finalized documentation',
+  }
+
+  const tabStats: Record<VisitTab, { label: string; value: string; tone: string }[]> = {
+    all: [
+      { label: 'Total Visits', value: '1,284', tone: 'text-[#171d16]' },
+      { label: 'Active Now', value: '18', tone: 'text-[#3b82f6]' },
+      { label: 'Scheduled Today', value: '42', tone: 'text-[#f59e0b]' },
+      { label: 'Completion Rate', value: '96.4%', tone: 'text-[#16a34a]' },
+    ],
+    scheduled: [
+      { label: 'Scheduled Today', value: '42', tone: 'text-[#f59e0b]' },
+      { label: 'Checked In', value: '11', tone: 'text-[#2563eb]' },
+      { label: 'Upcoming (2h)', value: '8', tone: 'text-[#171d16]' },
+      { label: 'No Shows', value: '2', tone: 'text-[#ef4444]' },
+    ],
+    'in-progress': [
+      { label: 'Active Visits', value: '18', tone: 'text-[#3b82f6]' },
+      { label: 'Avg Wait Time', value: '09m', tone: 'text-[#171d16]' },
+      { label: 'In Assessment', value: '6', tone: 'text-[#f59e0b]' },
+      { label: 'Pending Notes', value: '5', tone: 'text-[#ef4444]' },
+    ],
+    completed: [
+      { label: 'Completed Today', value: '34', tone: 'text-[#16a34a]' },
+      { label: 'Avg Duration', value: '37m', tone: 'text-[#171d16]' },
+      { label: 'Billing Finalized', value: '29', tone: 'text-[#2563eb]' },
+      { label: 'Follow-ups Needed', value: '7', tone: 'text-[#f59e0b]' },
+    ],
+  }
 
   return (
     <div className="bg-[#f4fcf0] text-[#171d16] min-h-screen">
@@ -86,14 +195,6 @@ function VisitsPage() {
             <span className="material-symbols-outlined mr-3">settings</span>
             Settings
           </button>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span>
-            Subscription
-          </a>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span>
-            Analytics
-          </a>
         </nav>
       </aside>
 
@@ -106,7 +207,15 @@ function VisitsPage() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <span className="material-symbols-outlined text-gray-500 cursor-pointer">language</span>
-              <span className="material-symbols-outlined text-gray-500 cursor-pointer">notifications</span>
+              <button
+                aria-label="Open notifications"
+                className="relative text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                onClick={() => setIsNotificationsOpen(true)}
+                type="button"
+              >
+                <span className="material-symbols-outlined">notifications</span>
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+              </button>
             </div>
             <div className="h-8 w-px bg-gray-200" />
             <div className="flex items-center gap-3">
@@ -127,51 +236,66 @@ function VisitsPage() {
 
         <div className="pt-24 px-8 pb-12">
           <div className="mb-8">
-            <h2 className="text-[28px] font-bold">Visit Management</h2>
-            <p className="text-[#3e4a3d] mt-1">Manage patient visits and documentation</p>
+            <h2 className="text-[28px] font-bold">{tabTitles[activeTab]}</h2>
+            <p className="text-[#3e4a3d] mt-1">{tabDescriptions[activeTab]}</p>
           </div>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-            <div className="flex bg-[#eff6ea] p-1 rounded-xl w-fit border border-[#bdcaba]">
-              <button className="px-6 py-2 rounded-lg text-sm font-medium bg-[#2563eb] text-white" type="button">All Visits</button>
-              <button className="px-6 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-[#171d16]" type="button">Scheduled</button>
-              <button className="px-6 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-[#171d16]" type="button">In Progress</button>
-              <button className="px-6 py-2 rounded-lg text-sm font-medium text-gray-500 hover:text-[#171d16]" type="button">Completed</button>
+            <div className="flex bg-[#eff6ea] p-1 rounded-xl w-full max-w-[620px] border border-[#bdcaba]">
+              <button
+                className={`flex-1 px-4 py-2 rounded-lg text-center text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'all' ? 'bg-[#2563eb] text-white' : 'text-gray-500 hover:text-[#171d16]'}`}
+                onClick={() => setActiveTab('all')}
+                type="button"
+              >
+                All Visits
+              </button>
+              <button
+                className={`flex-1 px-4 py-2 rounded-lg text-center text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'scheduled' ? 'bg-[#2563eb] text-white' : 'text-gray-500 hover:text-[#171d16]'}`}
+                onClick={() => setActiveTab('scheduled')}
+                type="button"
+              >
+                Scheduled
+              </button>
+              <button
+                className={`flex-1 px-4 py-2 rounded-lg text-center text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'in-progress' ? 'bg-[#2563eb] text-white' : 'text-gray-500 hover:text-[#171d16]'}`}
+                onClick={() => setActiveTab('in-progress')}
+                type="button"
+              >
+                In Progress
+              </button>
+              <button
+                className={`flex-1 px-4 py-2 rounded-lg text-center text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'completed' ? 'bg-[#2563eb] text-white' : 'text-gray-500 hover:text-[#171d16]'}`}
+                onClick={() => setActiveTab('completed')}
+                type="button"
+              >
+                Completed
+              </button>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Visits</p>
-              <h3 className="text-2xl font-bold">1,284</h3>
-              <div className="mt-2 text-xs text-green-600 flex items-center">
-                <span className="material-symbols-outlined text-sm">trending_up</span>
-                <span className="ml-1">12% from last month</span>
+            {tabStats[activeTab].map((stat) => (
+              <div key={stat.label} className="bg-white border border-gray-200 rounded-xl p-6">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{stat.label}</p>
+                <h3 className={`text-2xl font-bold ${stat.tone}`}>{stat.value}</h3>
+                <div className="mt-2 text-xs text-gray-500 flex items-center">
+                  <span className="material-symbols-outlined text-sm">insights</span>
+                  <span className="ml-1">Live operational signal</span>
+                </div>
               </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Active Now</p>
-              <h3 className="text-2xl font-bold text-[#3b82f6]">18</h3>
-              <div className="mt-2 text-xs text-gray-500">Currently in rooms</div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Scheduled Today</p>
-              <h3 className="text-2xl font-bold text-[#f59e0b]">42</h3>
-              <div className="mt-2 text-xs text-gray-500">8 upcoming slots</div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Completion Rate</p>
-              <h3 className="text-2xl font-bold text-[#16a34a]">96.4%</h3>
-              <div className="mt-2 text-xs text-gray-500">Above average</div>
-            </div>
+            ))}
           </div>
 
           <div className="space-y-4">
-            {visitRows.map((row) => (
+            {filteredRows.map((row) => (
               <div
-                key={row.name}
+                key={row.visitId}
                 className="group bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between hover:border-[#2563eb] transition-all cursor-pointer"
-                onClick={() => navigate('/visits/detail')}
+                onClick={() =>
+                  navigate(
+                    `/visits/detail?visitId=${encodeURIComponent(row.visitId)}&tab=pre-visit`,
+                  )
+                }
               >
                 <div className="flex items-center gap-6 flex-1">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${iconClasses(row.tone)}`}>
@@ -197,22 +321,86 @@ function VisitsPage() {
             ))}
           </div>
 
-          <div className="mt-8 flex items-center justify-between">
-            <p className="text-sm text-gray-500">Showing 1-4 of 1,284 visits</p>
-            <div className="flex gap-2">
-              <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-400" type="button">
-                <span className="material-symbols-outlined">chevron_left</span>
-              </button>
-              <button className="p-2 border border-[#2563eb] bg-[#2563eb] text-white rounded-lg" type="button">1</button>
-              <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600" type="button">2</button>
-              <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600" type="button">3</button>
-              <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-400" type="button">
-                <span className="material-symbols-outlined">chevron_right</span>
-              </button>
-            </div>
-          </div>
         </div>
       </main>
+
+      {isNotificationsOpen && (
+        <>
+          <button
+            aria-label="Close notifications panel"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+            onClick={() => setIsNotificationsOpen(false)}
+            type="button"
+          />
+          <aside className="fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl z-50 flex flex-col border-l border-gray-200">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-[#2563eb]">notifications_active</span>
+                <h2 className="text-lg font-bold text-[#171d16]">Notifications</h2>
+              </div>
+              <button
+                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+                onClick={() => setIsNotificationsOpen(false)}
+                type="button"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="px-2 pt-2 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex gap-1 overflow-x-auto">
+                <button className="px-4 py-3 text-sm font-semibold border-b-2 border-[#2563eb] text-[#2563eb] whitespace-nowrap" type="button">
+                  All <span className="ml-1 bg-[#2563eb] text-white text-[10px] px-1.5 py-0.5 rounded-full">{notifications.length}</span>
+                </button>
+                <button className="px-4 py-3 text-sm font-medium text-gray-500 whitespace-nowrap" type="button">Patients</button>
+                <button className="px-4 py-3 text-sm font-medium text-gray-500 whitespace-nowrap" type="button">System</button>
+                <button className="px-4 py-3 text-sm font-medium text-gray-500 whitespace-nowrap" type="button">WhatsApp</button>
+              </div>
+            </div>
+
+            <div className="flex-grow overflow-y-auto bg-white">
+              {notifications.map((item) => (
+                <div key={`${item.title}-${item.time}`} className="p-4 border-b border-gray-50 hover:bg-gray-50/80 transition-colors relative">
+                  {item.unread && <div className="absolute right-4 top-4 w-2 h-2 bg-[#2563eb] rounded-full" />}
+                  <div className="flex gap-4">
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg border flex items-center justify-center ${notificationToneClasses(item.tone)}`}>
+                      <span className="material-symbols-outlined">{item.icon}</span>
+                    </div>
+                    <div className="flex-grow">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-[13px] font-semibold uppercase text-gray-700">{item.title}</span>
+                        <span className="text-[11px] text-gray-500 font-medium">{item.time}</span>
+                      </div>
+                      <p className="text-sm font-medium text-[#171d16] mb-1">{item.subtitle}</p>
+                      <p className="text-xs text-gray-500 leading-relaxed mb-3">{item.body}</p>
+                      {item.actions.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {item.actions.map((action, idx) => (
+                            <button
+                              className={`px-3 py-1.5 text-xs font-semibold rounded transition-all ${idx === 0 ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]' : 'border border-gray-200 text-[#171d16] hover:bg-gray-50'}`}
+                              key={action}
+                              type="button"
+                            >
+                              {action}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100">
+              <button className="w-full py-2.5 text-sm font-semibold text-gray-600 hover:text-[#2563eb] flex items-center justify-center gap-2 transition-colors" type="button">
+                <span className="material-symbols-outlined text-sm">done_all</span>
+                Mark all as read
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   )
 }

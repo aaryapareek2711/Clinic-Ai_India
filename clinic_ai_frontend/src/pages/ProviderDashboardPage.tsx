@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function ProviderDashboardPage() {
   const navigate = useNavigate()
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="bg-[#f4fcf0] text-[#171d16] min-h-screen font-manrope">
@@ -19,9 +22,13 @@ function ProviderDashboardPage() {
           <a className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white" href="#">
             <span className="material-symbols-outlined mr-3">dashboard</span>Dashboard
           </a>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
+          <button
+            className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full"
+            onClick={() => navigate('/patients')}
+            type="button"
+          >
             <span className="material-symbols-outlined mr-3">group</span>Patients
-          </a>
+          </button>
           <button
             className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full"
             onClick={() => navigate('/calendar')}
@@ -50,12 +57,6 @@ function ProviderDashboardPage() {
           >
             <span className="material-symbols-outlined mr-3">settings</span>Settings
           </button>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span>Subscription
-          </a>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span>Analytics
-          </a>
         </nav>
       </aside>
 
@@ -65,7 +66,7 @@ function ProviderDashboardPage() {
             <input className="w-full bg-[#f6f8fa] border border-gray-200 rounded-lg px-4 py-2 text-sm outline-none focus:border-[#16a34a]" placeholder="Search patient, visit, or note..." type="text" />
           </div>
           <div className="flex items-center gap-6">
-            <button className="text-gray-500 hover:opacity-80 transition-opacity">
+            <button className="text-gray-500 hover:opacity-80 transition-opacity" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
             </button>
             <div className="flex items-center gap-3">
@@ -84,7 +85,11 @@ function ProviderDashboardPage() {
             <p className="text-sm text-[#9ca3af]">Welcome back, Dr. Priya Sharma</p>
           </div>
           <div className="flex gap-3">
-            <button className="flex items-center gap-2 bg-[#16a34a] text-white px-6 py-2.5 rounded-lg font-medium hover:opacity-90 w-fit" type="button">
+            <button
+              className="flex items-center gap-2 bg-[#16a34a] text-white px-6 py-2.5 rounded-lg font-medium hover:opacity-90 w-fit"
+              onClick={() => navigate('/new-visit')}
+              type="button"
+            >
               <span className="material-symbols-outlined">add</span>
               New Visit
             </button>
@@ -179,6 +184,8 @@ function ProviderDashboardPage() {
           </div>
         </div>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }

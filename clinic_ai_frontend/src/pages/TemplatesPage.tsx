@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function TemplatesPage() {
   const navigate = useNavigate()
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="bg-[#f4fcf0] text-[#171d16] antialiased min-h-screen font-inter">
@@ -31,14 +34,6 @@ function TemplatesPage() {
             <span className="material-symbols-outlined mr-3">settings</span>
             <span className="text-sm">Settings</span>
           </button>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span>
-            <span className="text-sm">Subscription</span>
-          </a>
-          <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span>
-            <span className="text-sm">Analytics</span>
-          </a>
         </nav>
         <div className="mt-auto px-2">
           <a className="text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg" href="#">
@@ -53,7 +48,7 @@ function TemplatesPage() {
           <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
             <span className="material-symbols-outlined">language</span>
           </button>
-          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" type="button">
+          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
           </button>
@@ -186,6 +181,8 @@ function TemplatesPage() {
           </div>
         </div>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }

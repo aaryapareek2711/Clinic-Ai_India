@@ -25,6 +25,7 @@ export default {
         background: '#f8f9ff',
       },
       fontFamily: {
+        sans: ['Inter', 'Manrope', 'system-ui', 'sans-serif'],
         manrope: ['Manrope', 'sans-serif'],
       },
       boxShadow: {

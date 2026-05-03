@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsPage() {
   const navigate = useNavigate()
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="bg-[#f4fcf0] text-[#171d16] antialiased min-h-screen font-manrope">
@@ -31,12 +34,6 @@ function SettingsPage() {
           <button className="bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white active:scale-[0.98] transition-all w-[calc(100%-1rem)]" type="button">
             <span className="material-symbols-outlined mr-3">settings</span> Settings
           </button>
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span> Subscription
-          </a>
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span> Analytics
-          </a>
         </nav>
         <div className="mt-auto px-4">
           <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-4 py-2 hover:bg-gray-800 rounded-lg" href="#">
@@ -50,7 +47,7 @@ function SettingsPage() {
           <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
             <span className="material-symbols-outlined">language</span>
           </button>
-          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" type="button">
+          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
           </button>
@@ -300,6 +297,8 @@ function SettingsPage() {
           </div>
         </section>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }

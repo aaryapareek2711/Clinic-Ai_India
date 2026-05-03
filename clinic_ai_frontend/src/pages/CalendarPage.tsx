@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function CalendarPage() {
   const navigate = useNavigate()
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="bg-[#f4fcf0] font-inter text-[#171d16] min-h-screen">
@@ -33,7 +36,9 @@ function CalendarPage() {
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
         <div className="flex items-center gap-6">
           <span className="material-symbols-outlined text-gray-500 cursor-pointer">language</span>
-          <span className="material-symbols-outlined text-gray-500 cursor-pointer">notifications</span>
+          <button className="text-gray-500 hover:opacity-80 transition-opacity" onClick={() => setIsNotificationsOpen(true)} type="button">
+            <span className="material-symbols-outlined">notifications</span>
+          </button>
           <div className="flex items-center gap-3 ml-2">
             <div className="text-right">
               <p className="text-sm font-semibold">Dr. Profile</p>
@@ -51,7 +56,7 @@ function CalendarPage() {
           </div>
           <div className="flex gap-3">
             <button className="bg-[#111827] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium">Import CSV</button>
-            <button className="bg-[#16a34a] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium">New Appointment</button>
+            <button className="bg-[#16a34a] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-medium" onClick={() => navigate('/new-appointment')} type="button">New Appointment</button>
           </div>
         </div>
 
@@ -114,6 +119,8 @@ function CalendarPage() {
           </div>
         </div>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }

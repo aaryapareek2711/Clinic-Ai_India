@@ -15,6 +15,10 @@ import TemplatesPage from './pages/TemplatesPage'
 import SettingsPage from './pages/SettingsPage'
 import SettingsEditProfilePage from './pages/SettingsEditProfilePage'
 import SettingsTeamMembersPage from './pages/SettingsTeamMembersPage'
+import NewAppointmentPage from './pages/NewAppointmentPage'
+import NewVisitPage from './pages/NewVisitPage'
+import PatientsPage from './pages/PatientsPage'
+import PatientDetailPage from './pages/PatientDetailPage'
 
 function App() {
   return (
@@ -28,6 +32,10 @@ function App() {
       <Route path="/whatsapp-setup" element={<WhatsAppSetupPage />} />
       <Route path="/dashboard" element={<ProviderDashboardPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
+      <Route path="/new-appointment" element={<NewAppointmentPage />} />
+      <Route path="/new-visit" element={<NewVisitPage />} />
+      <Route path="/patients" element={<PatientsPage />} />
+      <Route path="/patients/detail" element={<PatientDetailPage />} />
       <Route path="/visits" element={<VisitsPage />} />
       <Route path="/visits/detail" element={<VisitDetailPage />} />
       <Route path="/templates" element={<TemplatesPage />} />

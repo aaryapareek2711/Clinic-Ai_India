@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsEditProfilePage() {
   const navigate = useNavigate()
   const showDigitalIntegrations = false
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
     <div className="font-manrope text-[#171d16] bg-[#f4fcf0] min-h-screen">
@@ -37,14 +40,6 @@ function SettingsEditProfilePage() {
             <span className="material-symbols-outlined mr-3">settings</span>
             Settings
           </button>
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-6 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">credit_card</span>
-            Subscription
-          </a>
-          <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center px-6 py-2 hover:bg-gray-800" href="#">
-            <span className="material-symbols-outlined mr-3">bar_chart</span>
-            Analytics
-          </a>
         </nav>
         <div className="mt-auto px-6">
           <a className="text-gray-400 hover:text-white transition-colors duration-200 flex items-center py-2" href="#">
@@ -59,7 +54,7 @@ function SettingsEditProfilePage() {
           <button className="text-gray-500 hover:opacity-80 transition-opacity" type="button">
             <span className="material-symbols-outlined">language</span>
           </button>
-          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" type="button">
+          <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
@@ -216,6 +211,8 @@ function SettingsEditProfilePage() {
           </div>
         </div>
       </main>
+
+      <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
   )
 }
