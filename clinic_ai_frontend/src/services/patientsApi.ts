@@ -58,6 +58,7 @@ export type RegisterPatientResponse = {
   whatsapp_triggered: boolean
   existing_patient: boolean
   pending_schedule_for_intake: boolean
+  workflow_skip_previsit?: boolean
 }
 
 export async function registerPatient(payload: RegisterPatientPayload): Promise<RegisterPatientResponse> {

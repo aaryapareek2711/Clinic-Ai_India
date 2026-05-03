@@ -262,7 +262,9 @@ function NewAppointmentPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-[#575e70]">
-                    Creates `POST /api/patients/{{id}}/visits` with <code className="font-mono">scheduled_start</code> for{' '}
+                    Creates{' '}
+                    <code className="font-mono text-[11px]">POST /api/patients/&lt;patient_id&gt;/visits</code> with{' '}
+                    <code className="font-mono">scheduled_start</code> for{' '}
                     {patients.find((p) => p.id === selectedId)?.full_name ?? '(choose patient)'}.
                   </p>
                 </div>

@@ -78,7 +78,8 @@ function mapVisitAndIntake(visit: ProviderVisitListItem, intake: IntakeSessionRe
   }
 
   const mins = minutesSince(touchedAt)
-  const initialsClass = INITIALS_CLASSES[visitId.charCodeAt(0) % INITIALS_CLASSES.length]
+  const seed = visitId ? visitId.charCodeAt(0) : 63
+  const initialsClass = INITIALS_CLASSES[Math.abs(seed) % INITIALS_CLASSES.length]
 
   return {
     visitId,
@@ -223,7 +224,13 @@ export default function CarePrepPage() {
         <div className="flex-1 p-8">
           <div className="mb-8">
             <h2 className="mb-2 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep Queue</h2>
-            <p className="text-base leading-relaxed text-[#3e4a3d]">Intake status from `/api/visits/{visitId}/intake-session` for active workspace visits.</p>
+            <p className="text-base leading-relaxed text-[#3e4a3d]">
+              Intake status from{' '}
+              <code className="rounded bg-white px-1 text-sm font-mono text-[#171d16]">
+                /api/visits/&lt;visit_id&gt;/intake-session
+              </code>{' '}
+              for active workspace visits.
+            </p>
           </div>
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}

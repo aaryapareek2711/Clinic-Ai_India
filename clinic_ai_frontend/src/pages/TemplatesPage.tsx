@@ -161,7 +161,15 @@ function TemplatesPage() {
           </div>
 
           <div className="flex flex-wrap gap-4 mb-8">
-            <div className="flex-1 min-w-[300px] relative">
+            <button
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 font-semibold text-white shadow-sm transition-all hover:bg-[#006b2c] hover:shadow-md active:scale-[0.98]"
+              onClick={() => setIsCreateModalOpen(true)}
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[20px]">add</span>
+              New template
+            </button>
+            <div className="relative min-w-[300px] flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7b6c]">search</span>
               <input
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"

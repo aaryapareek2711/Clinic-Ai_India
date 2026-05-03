@@ -29,6 +29,7 @@ function NewVisitPage() {
   const [language, setLanguage] = useState('en')
   const [consent, setConsent] = useState(false)
   const [appointmentDate, setAppointmentDate] = useState('')
+  const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -64,6 +65,7 @@ function NewVisitPage() {
 
     try {
       setSubmitting(true)
+      const visit_type = visitKind === 'walk_in' ? 'walk_in' : 'scheduled_visit'
       const res = await registerPatient({
         name: trimmedName,
         phone_number: trimmedPhone,
@@ -74,9 +76,10 @@ function NewVisitPage() {
         consent: true,
         appointment_date,
         appointment_time,
-        visit_type: 'Visit',
+        visit_type,
       })
-      navigate(`/visits/detail?visitId=${encodeURIComponent(res.visit_id)}&tab=pre-visit`)
+      const startTab = res.workflow_skip_previsit || visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
+      navigate(`/visits/detail?visitId=${encodeURIComponent(res.visit_id)}&tab=${startTab}`)
     } catch (e) {
       setFormError(getApiErrorMessage(e))
     } finally {
@@ -235,6 +238,23 @@ function NewVisitPage() {
                         <option value="mr">Marathi</option>
                       </select>
                     </div>
+                    <div className="col-span-2 space-y-2">
+                      <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-visit-type">
+                        Visit type
+                      </label>
+                      <select
+                        className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                        id="nv-visit-type"
+                        onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
+                        value={visitKind}
+                      >
+                        <option value="scheduled">Scheduled (pre-visit &amp; WhatsApp intake when applicable)</option>
+                        <option value="walk_in">Walk-in (start at vitals — no pre-visit / intake)</option>
+                      </select>
+                      <p className="text-xs leading-relaxed text-gray-500">
+                        Walk-in visits skip the pre-visit tab; staff goes straight to vitals and transcription.
+                      </p>
+                    </div>
                   </div>
                   <div className="border-t border-gray-100 pt-4">
                     <div className="flex items-start gap-3">
@@ -265,7 +285,10 @@ function NewVisitPage() {
                 <div className="flex flex-1 flex-col space-y-6">
                   <div className="space-y-2">
                     <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-appt-date">
-                      Visit date (optional — triggers WhatsApp intake when configured)
+                      Visit date
+                      {visitKind === 'walk_in'
+                        ? ' (optional)'
+                        : ' (optional — with time, triggers WhatsApp intake when configured)'}
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"

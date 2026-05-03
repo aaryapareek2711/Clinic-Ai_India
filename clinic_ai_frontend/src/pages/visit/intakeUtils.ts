@@ -1,5 +1,11 @@
 import type { IntakeSessionResponse } from '../../services/visitWorkflowApi'
 
+/** Stored visit_type / registration flow: walk-in skips pre-visit & WhatsApp intake in the UI. */
+export function isWalkInVisitType(raw: string | undefined | null): boolean {
+  const s = (raw || '').trim().toLowerCase().replace(/-/g, '_').replace(/\s+/g, '_')
+  return s === 'walk_in' || s === 'walkin'
+}
+
 export function languageLabel(code: string): string {
   const c = (code || 'en').toLowerCase().replace(/_/g, '-')
   if (c === 'hi-eng') return 'Hindi & English'

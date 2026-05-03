@@ -214,6 +214,24 @@ export type TranscriptionStatusResponse = {
   status: string
   message?: string | null
   error?: string | null
+  error_message?: string | null
+  transcript_available?: boolean
+  word_count?: number | null
+  duration?: number | null
+  audio_duration_seconds?: number | null
+}
+
+/** Full transcript when ready; backend returns HTTP 202 while still processing */
+export type TranscriptionDialogueResponse = {
+  audio_file_path?: string | null
+  transcript?: string | null
+  transcription_status: string
+  started_at?: string | null
+  completed_at?: string | null
+  error_message?: string | null
+  audio_duration_seconds?: number | null
+  word_count?: number | null
+  structured_dialogue?: Array<Record<string, unknown>> | null
 }
 
 export type PostVisitSummaryPayload = {
@@ -337,6 +355,24 @@ export async function fetchTranscriptionStatus(
     `/api/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`,
   )
   return data
+}
+
+/** GET /api/notes/{patient_id}/visits/{visit_id}/dialogue — 202 while queued/processing */
+export async function fetchVisitTranscriptionDialogue(
+  patientId: string,
+  visitId: string,
+): Promise<TranscriptionDialogueResponse | null> {
+  try {
+    const res = await apiClient.get<TranscriptionDialogueResponse>(
+      `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue`,
+      { validateStatus: (status) => status === 200 || status === 202 },
+    )
+    if (res.status === 202) return null
+    return res.data
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 202) return null
+    throw new Error(getApiErrorMessage(err), { cause: err })
+  }
 }
 
 export type PostVisitPatientLanguage = 'hi' | 'en' | 'hi-eng'

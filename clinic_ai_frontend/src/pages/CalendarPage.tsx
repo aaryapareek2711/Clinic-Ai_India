@@ -141,7 +141,12 @@ function CalendarPage() {
         <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-[28px] font-bold">Calendar</h2>
-            <p className="text-[#3e4a3d]">Appointments loaded from `/api/visits/provider/{id}/upcoming`</p>
+            <p className="text-[#3e4a3d]">
+              Appointments from{' '}
+              <code className="rounded bg-[#eff6ea] px-1.5 py-0.5 text-xs font-mono text-[#171d16]">
+                /api/visits/provider/{DEFAULT_PROVIDER_ID}/upcoming
+              </code>
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <div className="relative" ref={importCsvRef}>
