@@ -16,20 +16,21 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
-          secure: true,
+          // Keep dev proxy tolerant for hosted HTTPS backends (Render/Cloudflare/etc).
+          secure: false,
           // Render free tier can cold-start; avoid premature proxy timeouts
           timeout: 120_000,
         },
         '/health': {
           target: proxyTarget,
           changeOrigin: true,
-          secure: true,
+          secure: false,
           timeout: 120_000,
         },
         '/webhooks': {
           target: proxyTarget,
           changeOrigin: true,
-          secure: true,
+          secure: false,
           timeout: 120_000,
         },
       },
