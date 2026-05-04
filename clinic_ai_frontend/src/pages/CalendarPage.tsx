@@ -185,7 +185,7 @@ function CalendarPage() {
               onClick={() => navigate('/new-appointment')}
               type="button"
             >
-              New Appointment
+              new registration
             </button>
           </div>
         </div>

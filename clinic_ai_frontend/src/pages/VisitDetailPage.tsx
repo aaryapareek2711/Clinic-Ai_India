@@ -537,7 +537,7 @@ export default function VisitDetailPage() {
     { id: 'vitals', label: 'Vitals', icon: 'monitor_heart' },
     { id: 'transcription', label: 'Transcription', icon: 'mic' },
     { id: 'clinical-note', label: 'Clinical Note', icon: 'clinical_notes' },
-    { id: 'post-visit', label: 'Recap', icon: 'summarize' },
+    { id: 'post-visit', label: 'Post-visit', icon: 'summarize' },
   ]
 
   const visibleTabs = useMemo(
@@ -645,22 +645,6 @@ export default function VisitDetailPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <button
-                    className="flex items-center rounded-lg bg-[#a72d51] px-5 py-2.5 font-semibold text-white transition-colors hover:bg-[#8a143c]"
-                    onClick={() => syncTabToUrl('clinical-note')}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined mr-2">description</span>
-                    Generate OPD Note
-                  </button>
-                  <button
-                    className="flex items-center rounded-lg bg-[#16a34a] px-5 py-2.5 font-semibold text-white transition-colors hover:bg-[#006b2c]"
-                    onClick={() => syncTabToUrl('post-visit')}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined mr-2">send</span>
-                    Recap
-                  </button>
                   <button
                     className="flex items-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
                     type="button"
