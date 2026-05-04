@@ -9,6 +9,7 @@ function navState(pathname: string) {
     dashboard: pathname === '/dashboard',
     patients: pathname.startsWith('/patients'),
     calendar: pathname === '/calendar' || pathname === '/new-appointment',
+    careprep: pathname.startsWith('/careprep'),
     visits: pathname.startsWith('/visits') || pathname === '/new-visit',
     templates: pathname.startsWith('/templates'),
     settings: pathname.startsWith('/settings'),
@@ -42,6 +43,10 @@ export default function ProviderSidebar() {
         <Link className={n.calendar ? ACTIVE : IDLE} to="/calendar">
           <span className="material-symbols-outlined mr-3">calendar_today</span>
           Calendar
+        </Link>
+        <Link className={n.careprep ? ACTIVE : IDLE} to="/careprep">
+          <span className="material-symbols-outlined mr-3">assignment_turned_in</span>
+          Care Prep
         </Link>
         <Link className={n.visits ? ACTIVE : IDLE} to="/visits">
           <span className="material-symbols-outlined mr-3">clinical_notes</span>

@@ -8,6 +8,13 @@ import NotificationsDrawer from './NotificationsDrawer'
 const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
 const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
 
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function to24Hour(hour12: string, minute: string, period: 'AM' | 'PM'): string {
   let h = parseInt(hour12, 10)
   if (Number.isNaN(h)) h = 9
@@ -79,8 +86,21 @@ function NewVisitPage() {
     }
 
     const time24 = to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)
-    const appointment_time = appointmentDate.trim() ? time24 : null
-    const appointment_date = appointmentDate.trim() || null
+    const dateStr = appointmentDate.trim()
+    const minD = localDateInputMin()
+    if (dateStr) {
+      if (dateStr < minD) {
+        setFormError('Visit date cannot be in the past.')
+        return
+      }
+      const when = new Date(`${dateStr}T${time24}:00`)
+      if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
+        setFormError('Choose a future date and time (appointments cannot be booked in the past).')
+        return
+      }
+    }
+    const appointment_time = dateStr ? time24 : null
+    const appointment_date = dateStr || null
 
     try {
       setSubmitting(true)
@@ -140,9 +160,9 @@ function NewVisitPage() {
               <nav className="mb-2 flex items-center gap-2 text-sm text-[#3e4a3d]">
                 <span>Visits</span>
                 <span className="material-symbols-outlined text-sm">chevron_right</span>
-                <span className="font-medium text-[#006b2c]">New Visit</span>
+                <span className="font-medium text-[#006b2c]">New patient registration</span>
               </nav>
-              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Create New Visit</h2>
+              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Create new patient registration</h2>
             </div>
             <div className="flex gap-4">
               <button
@@ -306,6 +326,7 @@ function NewVisitPage() {
                     <input
                       className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
                       id="nv-appt-date"
+                      min={localDateInputMin()}
                       onChange={(e) => setAppointmentDate(e.target.value)}
                       type="date"
                       value={appointmentDate}

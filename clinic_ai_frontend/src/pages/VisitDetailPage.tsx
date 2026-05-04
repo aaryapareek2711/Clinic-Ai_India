@@ -26,7 +26,7 @@ import {
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
-import VisitIntakeCanvas, { PATIENT_AVATAR_VISIT } from './visit/VisitIntakeCanvas'
+import VisitIntakeCanvas, { patientPortraitSrc } from './visit/VisitIntakeCanvas'
 
 export type VisitWorkflowTab = 'pre-visit' | 'vitals' | 'transcription' | 'clinical-note' | 'post-visit'
 
@@ -53,7 +53,7 @@ function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
   const mapped = LEGACY_TAB_MAP[raw]
   if (mapped) return mapped
   if (TAB_ORDER.includes(raw as VisitWorkflowTab)) return raw as VisitWorkflowTab
-  return 'pre-visit'
+  return 'vitals'
 }
 
 function digitsOnlyPhone(raw: string): string {
@@ -171,7 +171,7 @@ export default function VisitDetailPage() {
   }, [loading, visitId, visit, resolvedVisitKey])
 
   const tab = useMemo((): VisitWorkflowTab => {
-    const defaultTab: VisitWorkflowTab = skipPreVisitWorkflow ? 'vitals' : 'pre-visit'
+    const defaultTab: VisitWorkflowTab = 'vitals'
     const seed = tabParamRaw.length > 0 ? tabParamRaw : defaultTab
     let t = normalizeWorkflowTab(seed)
     if (skipPreVisitWorkflow && t === 'pre-visit') t = 'vitals'
@@ -533,17 +533,11 @@ export default function VisitDetailPage() {
   }, [stopMediaTracks])
 
   const tabs: { id: VisitWorkflowTab; label: string; icon: string }[] = [
-    { id: 'pre-visit', label: 'Pre-visit', icon: 'event_note' },
     { id: 'vitals', label: 'Vitals', icon: 'monitor_heart' },
     { id: 'transcription', label: 'Transcription', icon: 'mic' },
     { id: 'clinical-note', label: 'Clinical Note', icon: 'clinical_notes' },
     { id: 'post-visit', label: 'Post-visit', icon: 'summarize' },
   ]
-
-  const visibleTabs = useMemo(
-    () => tabs.filter((row) => !(skipPreVisitWorkflow && row.id === 'pre-visit')),
-    [skipPreVisitWorkflow],
-  )
 
   return (
     <div className="min-h-screen font-sans text-[#171d16] antialiased">
@@ -611,7 +605,11 @@ export default function VisitDetailPage() {
               <div className="flex flex-col gap-6 rounded-xl bg-[#111827] p-8 text-white md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-6">
                   <div className="relative shrink-0">
-                    <img alt="" className="h-20 w-20 rounded-xl border-2 border-[#006b2c] object-cover" src={PATIENT_AVATAR_VISIT} />
+                    <img
+                      alt=""
+                      className="h-20 w-20 rounded-xl border-2 border-[#006b2c] object-cover"
+                      src={patientPortraitSrc(visit?.patient?.gender)}
+                    />
                     <span className="absolute -bottom-2 -right-2 rounded border-2 border-[#111827] bg-amber-500 px-2 py-1 text-xs font-bold text-[#171d16]">
                       {queueBadge}
                     </span>
@@ -631,17 +629,6 @@ export default function VisitDetailPage() {
                     <p className="font-normal text-gray-400">
                       {ageFromDob(visit?.patient?.date_of_birth)} Years • {genderLabel} • {chief}
                     </p>
-                    <div className="mt-2 flex gap-4">
-                      <div className="flex items-center text-xs text-gray-400">
-                        <span className="material-symbols-outlined mr-1 text-sm">bloodtype</span>—
-                      </div>
-                      <div className="flex items-center text-xs text-gray-400">
-                        <span className="material-symbols-outlined mr-1 text-sm">height</span>—
-                      </div>
-                      <div className="flex items-center text-xs text-gray-400">
-                        <span className="material-symbols-outlined mr-1 text-sm">weight</span>—
-                      </div>
-                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -656,32 +643,73 @@ export default function VisitDetailPage() {
               </div>
             </div>
 
-            <div className="mt-8 overflow-x-auto border-b border-[#bdcaba] px-8">
-              <div className="flex min-w-min gap-8 pb-0">
-                {visibleTabs.map((t) => (
+            <div className="mt-8 px-8">
+              {!skipPreVisitWorkflow && (
+                <div className="mb-4 md:hidden">
                   <button
-                    key={t.id}
-                    className={`flex shrink-0 items-center border-b-2 pb-4 text-sm font-semibold transition-colors ${
-                      tab === t.id
-                        ? 'border-[#006b2c] text-[#006b2c]'
-                        : 'border-transparent text-[#575e70] hover:text-[#171d16]'
+                    className={`flex w-full items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                      tab === 'pre-visit'
+                        ? 'border-[#006b2c] bg-[#f0fdf4] text-[#006b2c]'
+                        : 'border-[#bdcaba] bg-white text-[#575e70]'
                     }`}
-                    onClick={() => syncTabToUrl(t.id)}
+                    onClick={() => syncTabToUrl('pre-visit')}
                     type="button"
                   >
-                    <span className="material-symbols-outlined mr-2 text-xl">{t.icon}</span>
-                    {t.label}
-                    {t.id === 'pre-visit' && scheduledBadge && (
-                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                    <span className="material-symbols-outlined text-xl">assignment_turned_in</span>
+                    Care Prep
+                    {scheduledBadge && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
                         Scheduled
                       </span>
                     )}
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
+              )}
+              <div className="flex gap-6">
+                {!skipPreVisitWorkflow && (
+                  <aside className="hidden w-44 shrink-0 md:block">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#575e70]">Care Prep</p>
+                    <button
+                      className={`flex w-full flex-col items-start rounded-lg border-2 px-3 py-3 text-left text-sm font-semibold transition-colors ${
+                        tab === 'pre-visit'
+                          ? 'border-[#006b2c] bg-[#f0fdf4] text-[#006b2c]'
+                          : 'border-[#bdcaba] bg-white text-[#575e70] hover:border-[#006b2c]/40'
+                      }`}
+                      onClick={() => syncTabToUrl('pre-visit')}
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined mb-1 text-2xl">assignment_turned_in</span>
+                      <span>Intake & summary</span>
+                      {scheduledBadge && (
+                        <span className="mt-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          Scheduled
+                        </span>
+                      )}
+                    </button>
+                  </aside>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="overflow-x-auto border-b border-[#bdcaba]">
+                    <div className="flex min-w-min gap-8 pb-0">
+                      {tabs.map((t) => (
+                        <button
+                          key={t.id}
+                          className={`flex shrink-0 items-center border-b-2 pb-4 text-sm font-semibold transition-colors ${
+                            tab === t.id
+                              ? 'border-[#006b2c] text-[#006b2c]'
+                              : 'border-transparent text-[#575e70] hover:text-[#171d16]'
+                          }`}
+                          onClick={() => syncTabToUrl(t.id)}
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined mr-2 text-xl">{t.icon}</span>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-            <div className="p-8">
+                  <div className="py-8">
               {loading && <p className="text-sm text-[#575e70]">Loading visit…</p>}
 
               {!loading && tab === 'pre-visit' && (
@@ -722,7 +750,6 @@ export default function VisitDetailPage() {
                     >
                       Generate Vitals Form
                     </button>
-                    <span className="text-xs text-[#575e70]">Uses `/api/vitals/generate-form`</span>
                   </div>
                   {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
                   {vitalsForm && (
@@ -1211,6 +1238,9 @@ export default function VisitDetailPage() {
                   )}
                 </div>
               )}
+                  </div>
+                </div>
+              </div>
             </div>
           </>
         )}
