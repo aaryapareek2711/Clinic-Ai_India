@@ -54,7 +54,7 @@ export type RegisterPatientPayload = {
 
 export type RegisterPatientResponse = {
   patient_id: string
-  visit_id: string
+  visit_id?: string | null
   whatsapp_triggered: boolean
   existing_patient: boolean
   pending_schedule_for_intake: boolean

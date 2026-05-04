@@ -87,26 +87,8 @@ function NewVisitPage() {
       return
     }
 
-    const time24 = to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)
-    const dateStr = appointmentDate.trim()
-    const minD = localDateInputMin()
-    if (dateStr) {
-      if (dateStr < minD) {
-        setFormError('Visit date cannot be in the past.')
-        return
-      }
-      const when = new Date(`${dateStr}T${time24}:00`)
-      if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
-        setFormError('Choose a future date and time (appointments cannot be booked in the past).')
-        return
-      }
-    }
-    const appointment_time = dateStr ? time24 : null
-    const appointment_date = dateStr || null
-
     try {
       setSubmitting(true)
-      const visit_type = visitKind === 'walk_in' ? 'walk_in' : 'scheduled_visit'
       const res = await registerPatient({
         name: trimmedName,
         phone_number: normalizedPhone,
@@ -115,12 +97,8 @@ function NewVisitPage() {
         preferred_language: language,
         travelled_recently: false,
         consent: true,
-        appointment_date,
-        appointment_time,
-        visit_type,
       })
-      const startTab = res.workflow_skip_previsit || visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-      navigate(`/visits/detail?visitId=${encodeURIComponent(res.visit_id)}&tab=${startTab}`)
+      navigate(`/new-appointment?patientId=${encodeURIComponent(res.patient_id)}`)
     } catch (e) {
       setFormError(getApiErrorMessage(e))
     } finally {

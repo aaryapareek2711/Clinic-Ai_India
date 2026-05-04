@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -46,6 +46,7 @@ function dateKeyLocal(iso: string | null | undefined): string {
 
 function NewAppointmentPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [appointmentHour, setAppointmentHour] = useState<string>('10')
@@ -61,6 +62,7 @@ function NewAppointmentPage() {
   const [listLoading, setListLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestedPatientId = (searchParams.get('patientId') || '').trim()
 
   useEffect(() => {
     let cancelled = false
@@ -77,6 +79,9 @@ function NewAppointmentPage() {
         if (!cancelled) {
           setPatients(patientsData)
           setUpcoming(upcomingData)
+          if (requestedPatientId && patientsData.some((p) => p.id === requestedPatientId)) {
+            setSelectedId(requestedPatientId)
+          }
         }
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e))
@@ -87,7 +92,7 @@ function NewAppointmentPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [requestedPatientId])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
