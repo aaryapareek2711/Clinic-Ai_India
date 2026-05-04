@@ -99,11 +99,24 @@ def register(payload: UserRegisterRequest) -> AuthResponse:
     return _build_auth_response(user_doc)
 
 
+def _digits_only(s: str) -> str:
+    return "".join(c for c in s if c.isdigit())
+
+
 @router.post("/login", response_model=AuthResponse)
 def login(payload: UserLoginRequest) -> AuthResponse:
     db = get_database()
     ident = payload.username.strip()
     user_doc = db.users.find_one({"username": ident}) or db.users.find_one({"email": ident})
+    if not user_doc:
+        d = _digits_only(ident)
+        if len(d) >= 10:
+            tail = d[-10:]
+            user_doc = db.users.find_one({"username": tail}) or db.users.find_one(
+                {"email": f"{tail}@phone.medgenie.local"}
+            )
+            if not user_doc:
+                user_doc = db.users.find_one({"phone": tail}) or db.users.find_one({"phone": f"91{tail}"})
     if not user_doc or not verify_password(payload.password, str(user_doc.get("hashed_password") or "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
