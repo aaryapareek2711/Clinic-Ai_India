@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { getStoredAuthProfile } from '../lib/authSession'
-import { doctorNameLabel } from '../lib/doctorDisplayName'
-import { fetchMyProfile } from '../services/profileApi'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -45,15 +43,9 @@ function displayStatus(raw: string | undefined): string {
 }
 
 function ProviderDashboardPage() {
-  const seedProfile = getStoredAuthProfile()
+  const provider = useProviderIdentity()
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [welcomeName, setWelcomeName] = useState<string>(
-    seedProfile.fullName || seedProfile.username || '',
-  )
-  const [welcomeTitle, setWelcomeTitle] = useState<string>(
-    seedProfile.jobTitle || seedProfile.role.replace(/_/g, ' ') || '',
-  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
@@ -66,21 +58,10 @@ function ProviderDashboardPage() {
         setLoading(true)
         setError(null)
       }
-      const [upcomingRes, visitsRes, profileRes] = await Promise.allSettled([
+      const [upcomingRes, visitsRes] = await Promise.allSettled([
         fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
         fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        fetchMyProfile(),
       ])
-
-      if (!cancelled && profileRes.status === 'fulfilled') {
-        const me = profileRes.value
-        setWelcomeName(me.full_name?.trim() || me.username?.trim() || '')
-        setWelcomeTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || '')
-      } else if (!cancelled) {
-        const fallback = getStoredAuthProfile()
-        setWelcomeName(fallback.fullName || fallback.username || '')
-        setWelcomeTitle(fallback.jobTitle || fallback.role.replace(/_/g, ' ') || '')
-      }
 
       if (!cancelled && upcomingRes.status === 'fulfilled') {
         setAppointments(upcomingRes.value)
@@ -157,8 +138,7 @@ function ProviderDashboardPage() {
   const subtitleComplaint = (name: string, complaint: string) =>
     complaint && complaint.trim() ? complaint.trim() : `Visit — ${name}`
 
-  const doctorDisplayName = useMemo(() => doctorNameLabel(welcomeName), [welcomeName])
-  const headerName = doctorDisplayName || 'Dr.'
+  const headerName = provider.displayName || 'Dr.'
 
   return (
     <div className="text-[#171d16] min-h-screen font-manrope">
@@ -171,11 +151,9 @@ function ProviderDashboardPage() {
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <p className="text-sm font-semibold">{headerName}</p>
-                <p className="text-[11px] text-gray-500">{welcomeTitle || 'Clinical provider'}</p>
+                <p className="text-[11px] text-gray-500">{provider.title || 'Clinical provider'}</p>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#00873a] bg-[#eff6ea] text-[#006b2c]">
-                <span className="material-symbols-outlined text-[22px]">person</span>
-              </div>
+              <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
             </div>
           </div>
         </header>

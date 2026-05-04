@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_PROVIDER_ID,
@@ -19,8 +20,8 @@ function escapeCsvCell(value: string): string {
 }
 
 function downloadAppointmentsTemplateCsv(): void {
-  const header = ['patient_name', 'appointment_date', 'start_time', 'end_time', 'visit_type', 'status', 'notes']
-  const row = ['Jane Doe', '2024-10-15', '09:00', '09:30', 'Follow-up', 'Confirmed', 'Example row — replace with real data']
+  const header = ['patient_name', 'age', 'mobile_number', 'gender', 'appointment_date', 'appointment_time']
+  const row = ['Jane Doe', '35', '9876543210', 'female', '2026-05-15', '10:30']
   const csvLines = [header.map(escapeCsvCell).join(','), row.map(escapeCsvCell).join(',')]
   const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -60,6 +61,7 @@ function formatShortTime(iso: string): string {
 
 function CalendarPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
   const importCsvRef = useRef<HTMLDivElement>(null)
@@ -165,9 +167,10 @@ function CalendarPage() {
           </button>
           <div className="ml-2 flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm font-semibold">Schedule</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">Provider calendar</p>
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
+            <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
           </div>
         </div>
       </header>
@@ -194,7 +197,7 @@ function CalendarPage() {
                   role="dialog"
                   aria-label="Import CSV options"
                 >
-                  <p className="mb-3 text-sm text-[#3e4a3d]">Download a template CSV with expected columns.</p>
+                  <p className="mb-2 text-sm text-[#3e4a3d]">CSV columns: patient_name, age, mobile_number, gender, appointment_date, appointment_time</p>
                   <button
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
                     onClick={() => {

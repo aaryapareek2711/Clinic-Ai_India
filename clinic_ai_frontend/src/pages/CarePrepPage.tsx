@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { DEFAULT_PROVIDER_ID, fetchIntakeSession, fetchProviderVisits } from '../services/visitWorkflowApi'
 import type { IntakeSessionResponse, ProviderVisitListItem } from '../services/visitWorkflowApi'
@@ -139,6 +140,7 @@ function StatusCell({ row }: { row: QueueRow }) {
 
 export default function CarePrepPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [queueSort, setQueueSort] = useState<QueueSort>('time_newest')
@@ -208,7 +210,7 @@ export default function CarePrepPage() {
             />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <button
             aria-label="Open notifications"
             className="rounded-full p-2 text-slate-500 transition-transform hover:bg-slate-50 active:scale-95"
@@ -217,6 +219,13 @@ export default function CarePrepPage() {
           >
             <span className="material-symbols-outlined">notifications</span>
           </button>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
+            </div>
+            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+          </div>
         </div>
       </header>
 

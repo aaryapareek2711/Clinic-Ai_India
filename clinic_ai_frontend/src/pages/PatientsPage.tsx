@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -41,6 +42,7 @@ function formatVisitDate(value: string | null | undefined): string {
 
 function PatientsPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [patientSort, setPatientSort] = useState<PatientSort>('visit_latest')
   const [patients, setPatients] = useState<PatientSummary[]>([])
@@ -89,6 +91,13 @@ function PatientsPage() {
             <span className="material-symbols-outlined text-slate-600">notifications</span>
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
+            </div>
+            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+          </div>
         </div>
       </header>
 

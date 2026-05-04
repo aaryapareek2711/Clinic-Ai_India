@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { fetchPatientVisits, fetchPatients, type PatientSummary, type PatientVisit } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -26,6 +27,7 @@ function formatDate(value: string | null | undefined): string {
 
 function PatientDetailPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [searchParams] = useSearchParams()
   const patientId = searchParams.get('patientId')?.trim() ?? ''
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
@@ -76,11 +78,13 @@ function PatientDetailPage() {
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
           <div className="h-8 w-px bg-slate-200 mx-2" />
-          <img
-            alt="User Profile"
-            className="w-8 h-8 rounded-full border border-slate-200 object-cover"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPSDT4iECR_FKOfx_oI5c0SNzg-T2MzZhcyWGSvhaUarHhq7SpFUAO0xo74CRCa-AMBMRMKwZRTswjbzNxjJEjZ5dcfX5ujHjXy3kXXBt4xERmDkKl-6TMTm3N3ptxxp1BWl3fRyyHWhclhTaLmyLWJMmQ_LtIhSTbKuurz5Rm1d9FdGIIPO0ZoAqdBgVjmvVkMfQ49at-lf1Q8AjvWJGHJphpAIW0DY1E_YbCj4yYPUjEpRcmS9cGmE6EMl1quzjVBI2-MPXssxrO"
-          />
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
+            </div>
+            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+          </div>
         </div>
       </header>
 

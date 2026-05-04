@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { doctorNameLabel } from '../lib/doctorDisplayName'
 import {
   fetchIntakeSession,
   fetchLatestClinicalNote,
@@ -27,7 +27,6 @@ import {
   type VisitDetailResponse,
   type VitalsFormResponse,
 } from '../services/visitWorkflowApi'
-import { fetchMyProfile } from '../services/profileApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
 import VisitClinicalNotePanel from './visit/VisitClinicalNotePanel'
@@ -124,13 +123,12 @@ function flattenStructuredDialogue(
 
 export default function VisitDetailPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [searchParams, setSearchParams] = useSearchParams()
   const visitId = searchParams.get('visitId')?.trim() ?? ''
   const tabParamRaw = searchParams.get('tab')?.trim() ?? ''
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [providerDisplayName, setProviderDisplayName] = useState('Dr.')
-  const [providerTitle, setProviderTitle] = useState('Clinical provider')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [secondaryWarning, setSecondaryWarning] = useState<string | null>(null)
@@ -216,27 +214,6 @@ export default function VisitDetailPage() {
     if (!visitId || loading) return
     if (searchParams.get('tab') !== tab) syncTabToUrl(tab)
   }, [visitId, loading, tab, searchParams, syncTabToUrl])
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const me = await fetchMyProfile()
-        if (cancelled) return
-        const full = me.full_name?.trim() || me.username?.trim() || ''
-        setProviderDisplayName(doctorNameLabel(full) || 'Dr.')
-        setProviderTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || 'Clinical provider')
-      } catch {
-        if (!cancelled) {
-          setProviderDisplayName('Dr.')
-          setProviderTitle('Clinical provider')
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const loadWorkspace = useCallback(async () => {
     if (!visitId) {
@@ -793,8 +770,8 @@ export default function VisitDetailPage() {
           </button>
           <div className="flex items-center space-x-3">
             <div className="text-right">
-              <p className="text-sm font-semibold text-[#171d16]">{providerDisplayName}</p>
-              <p className="text-xs text-[#575e70]">{providerTitle}</p>
+              <p className="text-sm font-semibold text-[#171d16]">{provider.displayName}</p>
+              <p className="text-xs text-[#575e70]">{provider.title}</p>
             </div>
             <img alt="" className="h-10 w-10 rounded-full border border-[#bdcaba] object-cover" src={DR_AVATAR} />
           </div>

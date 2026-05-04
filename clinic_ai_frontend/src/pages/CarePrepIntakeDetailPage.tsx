@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   fetchIntakeSession,
@@ -18,6 +19,7 @@ const PLACEHOLDER_AVATAR =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDuf-HN86fQgEHctIXwh9Z2w87vAKMWCHYzKZZvbLzbuloRusDAWwskLCOkxb-mmuQLRZnH0dw_PNN9K-1JcmklQAxhXkEPNRlylrN3Ag7hs080ROaWkl1ifzouS1DlIiZsDh63hw92ES8XthAQXplemwu2sckV9YybILuSaklmCdlZF6cc6Anda__Dv1XCO4ab-_kjSpfz46x_3hVdRJSrZsdjhkEM164UBAYqNcyZbQkMq8outewVuB46T2eUg_87XzTbNyfbO3E5i'
 
 export default function CarePrepIntakeDetailPage() {
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   /** Route param preserves legacy name `tokenKey` but carries `visit_id` */
   const { tokenKey } = useParams<{ tokenKey: string }>()
@@ -160,6 +162,13 @@ export default function CarePrepIntakeDetailPage() {
             >
               <span className="material-symbols-outlined">notifications</span>
             </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
+            </div>
+            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
           </div>
         </div>
       </header>
