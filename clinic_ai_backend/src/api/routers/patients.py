@@ -1,5 +1,5 @@
 """Patient routes module."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -22,6 +22,30 @@ router = APIRouter(prefix="/api/patients", tags=["Patients"])
 def _is_walk_in_visit_type(value: object) -> bool:
     s = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     return s in {"walk_in", "walkin"}
+
+
+def _require_appointment_not_in_past(scheduled_start: str | None) -> None:
+    """Reject stored appointment instants that are already in the past (naive ISO treated as UTC)."""
+    if scheduled_start is None:
+        return
+    s = str(scheduled_start).strip()
+    if not s:
+        return
+    try:
+        if s.endswith("Z"):
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid appointment datetime") from exc
+    earliest = datetime.now(timezone.utc) - timedelta(seconds=90)
+    if dt < earliest:
+        raise HTTPException(
+            status_code=422,
+            detail="Appointment cannot be in the past. Pick today or a future date and time.",
+        )
 
 
 @router.get("", response_model=list[PatientSummaryResponse])
@@ -116,6 +140,7 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
     scheduled_start = None
     if payload.appointment_date and payload.appointment_time:
         scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
+        _require_appointment_not_in_past(scheduled_start)
     db = get_database()
     existing_patient = db.patients.find_one({"patient_id": internal_patient_id}) is not None
     db.patients.update_one(
@@ -191,6 +216,9 @@ def create_visit_from_existing_patient(
     patient = db.patients.find_one({"patient_id": internal_patient_id})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    if payload.scheduled_start and str(payload.scheduled_start).strip():
+        _require_appointment_not_in_past(str(payload.scheduled_start).strip())
 
     visit_id = VisitId.validate(VisitId.generate())
     now = datetime.now(timezone.utc)

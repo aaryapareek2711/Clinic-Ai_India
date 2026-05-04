@@ -45,7 +45,7 @@ function displayStatus(raw: string | undefined): string {
 function ProviderDashboardPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [welcomeName, setWelcomeName] = useState<string>('Provider')
+  const [welcomeName, setWelcomeName] = useState<string>('')
   const [welcomeTitle, setWelcomeTitle] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,33 +55,40 @@ function ProviderDashboardPage() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setError(null)
-        }
-        const [upcomingRows, visitRows] = await Promise.all([
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        ])
-        try {
-          const me = await fetchMyProfile()
-          if (!cancelled) {
-            setWelcomeName(me.full_name?.trim() || me.username || 'Provider')
-            setWelcomeTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || '')
-          }
-        } catch {
-          if (!cancelled) setWelcomeTitle('')
-        }
-        if (!cancelled) {
-          setAppointments(upcomingRows)
-          setVisits(visitRows)
-        }
-      } catch (e) {
-        if (!cancelled) setError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
+      if (!cancelled) {
+        setLoading(true)
+        setError(null)
       }
+      const [upcomingRes, visitsRes, profileRes] = await Promise.allSettled([
+        fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+        fetchProviderVisits(DEFAULT_PROVIDER_ID),
+        fetchMyProfile(),
+      ])
+
+      if (!cancelled && profileRes.status === 'fulfilled') {
+        const me = profileRes.value
+        setWelcomeName(me.full_name?.trim() || me.username?.trim() || '')
+        setWelcomeTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || '')
+      } else if (!cancelled) {
+        setWelcomeTitle('')
+      }
+
+      if (!cancelled && upcomingRes.status === 'fulfilled') {
+        setAppointments(upcomingRes.value)
+      }
+
+      if (!cancelled && visitsRes.status === 'fulfilled') {
+        setVisits(visitsRes.value)
+      }
+
+      if (!cancelled) {
+        const loadErrs: string[] = []
+        if (upcomingRes.status === 'rejected') loadErrs.push(getApiErrorMessage(upcomingRes.reason))
+        if (visitsRes.status === 'rejected') loadErrs.push(getApiErrorMessage(visitsRes.reason))
+        if (loadErrs.length) setError(loadErrs.join(' · '))
+      }
+
+      if (!cancelled) setLoading(false)
     })()
     return () => {
       cancelled = true
@@ -141,6 +148,8 @@ function ProviderDashboardPage() {
   const subtitleComplaint = (name: string, complaint: string) =>
     complaint && complaint.trim() ? complaint.trim() : `Visit — ${name}`
 
+  const doctorDisplayName = welcomeName.trim() || (loading ? '' : 'Doctor')
+
   return (
     <div className="text-[#171d16] min-h-screen font-manrope">
       <main className="min-h-screen">
@@ -154,7 +163,7 @@ function ProviderDashboardPage() {
             </button>
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-sm font-semibold">{welcomeName}</p>
+                <p className="text-sm font-semibold">{doctorDisplayName || '…'}</p>
                 <p className="text-[11px] text-gray-500">{welcomeTitle || 'Clinical provider'}</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#00873a] bg-[#eff6ea] text-[#006b2c]">
@@ -167,7 +176,9 @@ function ProviderDashboardPage() {
         <section className="mt-16 flex h-[120px] items-center justify-between bg-[#111827] px-8">
           <div>
             <h1 className="text-[28px] font-bold text-white">Provider Dashboard</h1>
-            <p className="text-sm text-[#9ca3af]">Welcome back{welcomeName ? `, ${welcomeName}` : ''}</p>
+            <p className="text-sm text-[#9ca3af]">
+              Welcome back{doctorDisplayName ? `, ${doctorDisplayName}` : ''}
+            </p>
           </div>
           <div className="flex gap-3">
             <button
@@ -176,10 +187,7 @@ function ProviderDashboardPage() {
               type="button"
             >
               <span className="material-symbols-outlined">add</span>
-              New Visit
-            </button>
-            <button className="rounded-lg bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90" onClick={() => navigate('/careprep')} type="button">
-              CarePrep
+              New patient registration
             </button>
           </div>
         </section>

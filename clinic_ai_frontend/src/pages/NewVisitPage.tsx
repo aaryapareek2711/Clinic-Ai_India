@@ -8,12 +8,38 @@ import NotificationsDrawer from './NotificationsDrawer'
 const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
 const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
 
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function to24Hour(hour12: string, minute: string, period: 'AM' | 'PM'): string {
   let h = parseInt(hour12, 10)
   if (Number.isNaN(h)) h = 9
   if (period === 'PM' && h !== 12) h += 12
   if (period === 'AM' && h === 12) h = 0
   return `${String(h).padStart(2, '0')}:${minute}`
+}
+
+/** Accept any common India input; return `91` + 10 digits (first digit 6–9) or null if unusable. */
+function normalizeIndiaMobileForApi(raw: string): string | null {
+  let d = raw.replace(/\D/g, '')
+  if (!d) return null
+  if (d.startsWith('00')) d = d.slice(2)
+  if (d.length === 12 && d.startsWith('91') && /^91[6-9]\d{9}$/.test(d)) return d
+  if (d.length === 10 && /^[6-9]\d{9}$/.test(d)) return `91${d}`
+  if (d.length === 11 && d.startsWith('0') && /^0[6-9]\d{9}$/.test(d)) return `91${d.slice(1)}`
+  if (d.length > 12) {
+    const last12 = d.slice(-12)
+    if (last12.startsWith('91') && /^91[6-9]\d{9}$/.test(last12)) return last12
+  }
+  if (d.length >= 10) {
+    const last10 = d.slice(-10)
+    if (/^[6-9]\d{9}$/.test(last10)) return `91${last10}`
+  }
+  return null
 }
 
 function NewVisitPage() {
@@ -36,14 +62,14 @@ function NewVisitPage() {
   async function handleConfirm(): Promise<void> {
     setFormError(null)
     const trimmedName = fullName.trim()
-    const trimmedPhone = mobile.replace(/\s+/g, '')
+    const normalizedPhone = normalizeIndiaMobileForApi(mobile)
     const ageNum = parseInt(age, 10)
     if (!trimmedName) {
       setFormError('Patient name is required.')
       return
     }
-    if (!trimmedPhone || trimmedPhone.length < 8) {
-      setFormError('Enter a valid mobile number.')
+    if (!normalizedPhone) {
+      setFormError('Enter a valid Indian mobile number (10 digits, or with +91 / leading 0).')
       return
     }
     if (Number.isNaN(ageNum) || ageNum < 0 || ageNum > 130) {
@@ -60,15 +86,28 @@ function NewVisitPage() {
     }
 
     const time24 = to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)
-    const appointment_time = appointmentDate.trim() ? time24 : null
-    const appointment_date = appointmentDate.trim() || null
+    const dateStr = appointmentDate.trim()
+    const minD = localDateInputMin()
+    if (dateStr) {
+      if (dateStr < minD) {
+        setFormError('Visit date cannot be in the past.')
+        return
+      }
+      const when = new Date(`${dateStr}T${time24}:00`)
+      if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
+        setFormError('Choose a future date and time (appointments cannot be booked in the past).')
+        return
+      }
+    }
+    const appointment_time = dateStr ? time24 : null
+    const appointment_date = dateStr || null
 
     try {
       setSubmitting(true)
       const visit_type = visitKind === 'walk_in' ? 'walk_in' : 'scheduled_visit'
       const res = await registerPatient({
         name: trimmedName,
-        phone_number: trimmedPhone,
+        phone_number: normalizedPhone,
         age: ageNum,
         gender,
         preferred_language: language,
@@ -121,9 +160,9 @@ function NewVisitPage() {
               <nav className="mb-2 flex items-center gap-2 text-sm text-[#3e4a3d]">
                 <span>Visits</span>
                 <span className="material-symbols-outlined text-sm">chevron_right</span>
-                <span className="font-medium text-[#006b2c]">New Visit</span>
+                <span className="font-medium text-[#006b2c]">New patient registration</span>
               </nav>
-              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Create New Visit</h2>
+              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Create new patient registration</h2>
             </div>
             <div className="flex gap-4">
               <button
@@ -183,7 +222,7 @@ function NewVisitPage() {
                         className="w-full rounded-lg border border-gray-200 px-4 py-3 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
                         id="nv-phone"
                         onChange={(e) => setMobile(e.target.value)}
-                        placeholder="+91 98765 43210"
+                        placeholder="98765 43210, +91 …, or 091…"
                         type="tel"
                         value={mobile}
                       />
@@ -248,12 +287,9 @@ function NewVisitPage() {
                         onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
                         value={visitKind}
                       >
-                        <option value="scheduled">Scheduled (pre-visit &amp; WhatsApp intake when applicable)</option>
-                        <option value="walk_in">Walk-in (start at vitals — no pre-visit / intake)</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="walk_in">Walk-in</option>
                       </select>
-                      <p className="text-xs leading-relaxed text-gray-500">
-                        Walk-in visits skip the pre-visit tab; staff goes straight to vitals and transcription.
-                      </p>
                     </div>
                   </div>
                   <div className="border-t border-gray-100 pt-4">
@@ -285,14 +321,12 @@ function NewVisitPage() {
                 <div className="flex flex-1 flex-col space-y-6">
                   <div className="space-y-2">
                     <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-appt-date">
-                      Visit date
-                      {visitKind === 'walk_in'
-                        ? ' (optional)'
-                        : ' (optional — with time, triggers WhatsApp intake when configured)'}
+                      Visit date (optional)
                     </label>
                     <input
                       className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
                       id="nv-appt-date"
+                      min={localDateInputMin()}
                       onChange={(e) => setAppointmentDate(e.target.value)}
                       type="date"
                       value={appointmentDate}
@@ -357,7 +391,6 @@ function NewVisitPage() {
                         </span>
                       </div>
                     </div>
-                    <p className="text-xs leading-relaxed text-gray-500">Sent to `/api/patients/register` as `appointment_date` + `appointment_time` (24h).</p>
                   </div>
                 </div>
               </div>
@@ -373,6 +406,12 @@ function NewVisitPage() {
                     <span className="text-[#3e4a3d]">Slot</span>
                     <span className="font-medium">
                       {appointmentDate ? `${appointmentDate} ${to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)}` : 'Open / TBD'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#3e4a3d]">Mobile (saved as)</span>
+                    <span className="max-w-[60%] text-right font-mono text-xs font-medium">
+                      {normalizeIndiaMobileForApi(mobile) ?? '—'}
                     </span>
                   </div>
                 </div>

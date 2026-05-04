@@ -9,6 +9,14 @@ import NotificationsDrawer from './NotificationsDrawer'
 const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
 const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
 
+/** `YYYY-MM-DD` in local timezone for `<input type="date" min="…">`. */
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function to24Hour(hour12: string, minute: string, period: 'AM' | 'PM'): string {
   let h = parseInt(hour12, 10)
   if (Number.isNaN(h)) h = 10
@@ -35,6 +43,7 @@ function NewAppointmentPage() {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [appointmentDate, setAppointmentDate] = useState('')
+  const minAppointmentDate = localDateInputMin()
   const [listLoading, setListLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,8 +90,18 @@ function NewAppointmentPage() {
       setError('Choose an appointment date.')
       return
     }
+    const dateStr = appointmentDate.trim()
+    if (dateStr < minAppointmentDate) {
+      setError('Appointment date cannot be in the past.')
+      return
+    }
     const t = to24Hour(appointmentHour, appointmentMinute, appointmentPeriod)
-    const scheduled_start = `${appointmentDate.trim()}T${t}:00`
+    const scheduled_start = `${dateStr}T${t}:00`
+    const when = new Date(`${dateStr}T${t}:00`)
+    if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
+      setError('Choose a future date and time (appointments cannot be booked in the past).')
+      return
+    }
     try {
       setSubmitting(true)
       const res = await createVisitFromPatient(selectedId, {
@@ -203,6 +222,7 @@ function NewAppointmentPage() {
                   <input
                     className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
                     id="na-date"
+                    min={minAppointmentDate}
                     onChange={(e) => setAppointmentDate(e.target.value)}
                     type="date"
                     value={appointmentDate}

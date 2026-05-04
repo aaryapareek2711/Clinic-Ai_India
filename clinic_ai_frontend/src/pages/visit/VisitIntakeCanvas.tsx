@@ -10,8 +10,25 @@ import {
 } from '../../services/visitWorkflowApi'
 import { computeIntakeProgress, splitToChips, topicHeading } from './intakeUtils'
 
+/** Default / female-presenting portrait (legacy export name kept for callers). */
 export const PATIENT_AVATAR_VISIT =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuC5wjB4bCGivsoHc4557SxbmXVX7SnvEIxBtJj66qnr4iAipzt3Hqxo2G3iA5wYpVYzwDQCUdlmvtnwmc4NaB9IsBitNnupQWvB9gxZD4HCNWCbzA1xzu1vHEyy8CZiSq2nz8AqCYJMUB7huDMJlYW1Vpql888iiGsjatY5T2WHXF48hFcoFtjo_AB_MLqZOtz42QVgZwR97S8NTxyUJNMCcatjmxUyeMQSc0NlF4TXegfK0_JFFUOGO7hVgQ3be8oQWyNmXVG60ogG'
+
+export const PATIENT_AVATAR_VISIT_MALE =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuCuSkfvIW3phx7yHbt104mLhs656BoGQpYY09pPg3wUO_G9c3DWXj7ry68ypMznP1rTdyAPSXjX6Xk7cDbvJ1wgmWIlq_McPQW-9KpGS9qeEbJVVjt4YVfbIWGE8WyTOLE1nlg7wDw7fKdH7x-kMASiUT_StwHliRrFojXgKNfKBB79rNiWPg8DfC3FAxKDCDvu0pyNjmXjRMaDTqqlXXqHwQuQtOnhf_uKw2ti2h8FznKYlsSlVV4VYJ3tst3kLqJ3Qx1OO_BNWviI'
+
+function normGender(g: string | undefined): string {
+  return (g ?? '').toLowerCase().replace(/_/g, ' ').trim()
+}
+
+/** Pick a stock portrait from recorded gender (API may send `male`, `MALE`, `male_patient`, etc.). */
+export function patientPortraitSrc(gender: string | undefined): string {
+  const g = normGender(gender)
+  if (!g) return PATIENT_AVATAR_VISIT
+  if (g === 'm' || g === 'male' || g.startsWith('male ')) return PATIENT_AVATAR_VISIT_MALE
+  if (g === 'f' || g === 'female' || g.startsWith('female ')) return PATIENT_AVATAR_VISIT
+  return PATIENT_AVATAR_VISIT
+}
 
 const WA_HEADER_IMG =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCQnSPUVTyL-nhLjEbcbkrmF46xwC8vZWEv52r9qjkUJzEwqgo_rYYaOGpgczIaa7U0zelaLs6CRKgMShALJVdkwXqzIgQ4YlWLp6XVe2phA0JGpVZoImQ-XI1DG3ozERRh36YlZpA-VBq_0xR7A1NnRS7lsmLNDf7VR-DD_P6KQpkwRx0gWiiW3vDOIWEIiURMZZFitEhs8P-VihYzAKk0X7RDGVaJesB5d6X25cxAij-piSMdaKfFM-tzU7rwxZX1II_IOMyGgCpz'
