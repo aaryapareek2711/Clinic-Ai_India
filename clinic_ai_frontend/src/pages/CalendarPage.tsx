@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -19,10 +20,19 @@ function escapeCsvCell(value: string): string {
   return value
 }
 
-function downloadAppointmentsTemplateCsv(): void {
+function downloadAppointmentsTemplateCsv(patients: PatientSummary[]): void {
   const header = ['patient_name', 'age', 'mobile_number', 'gender', 'appointment_date', 'appointment_time']
-  const row = ['Jane Doe', '35', '9876543210', 'female', '2026-05-15', '10:30']
-  const csvLines = [header.map(escapeCsvCell).join(','), row.map(escapeCsvCell).join(',')]
+  const dataRows = patients.length
+    ? patients.map((p) => [
+        (p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient').trim(),
+        p.age != null ? String(p.age) : '',
+        (p.phone_number || '').trim(),
+        (p.gender || '').trim(),
+        '',
+        '',
+      ])
+    : [['Jane Doe', '35', '9876543210', 'female', '2026-05-15', '10:30']]
+  const csvLines = [header.map(escapeCsvCell).join(','), ...dataRows.map((r) => r.map(escapeCsvCell).join(','))]
   const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -68,6 +78,7 @@ function CalendarPage() {
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
   const [focusDate, setFocusDate] = useState(() => new Date())
+  const [patients, setPatients] = useState<PatientSummary[]>([])
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -86,17 +97,26 @@ function CalendarPage() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setLoadError(null)
-        }
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
-        if (!cancelled) setAppointments(data)
-      } catch (e) {
-        if (!cancelled) setLoadError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
+      if (!cancelled) {
+        setLoading(true)
+        setLoadError(null)
+      }
+      const [appointmentsRes, patientsRes] = await Promise.allSettled([
+        fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+        fetchPatients(),
+      ])
+      if (!cancelled && appointmentsRes.status === 'fulfilled') {
+        setAppointments(appointmentsRes.value)
+      }
+      if (!cancelled && patientsRes.status === 'fulfilled') {
+        setPatients(patientsRes.value)
+      }
+      if (!cancelled) {
+        const errs: string[] = []
+        if (appointmentsRes.status === 'rejected') errs.push(getApiErrorMessage(appointmentsRes.reason))
+        if (patientsRes.status === 'rejected') errs.push(`Patient list failed: ${getApiErrorMessage(patientsRes.reason)}`)
+        setLoadError(errs.length ? errs.join(' · ') : null)
+        setLoading(false)
       }
     })()
     return () => {
@@ -201,7 +221,7 @@ function CalendarPage() {
                   <button
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
                     onClick={() => {
-                      downloadAppointmentsTemplateCsv()
+                      downloadAppointmentsTemplateCsv(patients)
                       setIsImportCsvOpen(false)
                     }}
                     type="button"

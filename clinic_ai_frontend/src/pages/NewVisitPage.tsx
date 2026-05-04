@@ -89,7 +89,7 @@ function NewVisitPage() {
 
     try {
       setSubmitting(true)
-      const res = await registerPatient({
+      await registerPatient({
         name: trimmedName,
         phone_number: normalizedPhone,
         age: ageNum,
@@ -98,7 +98,7 @@ function NewVisitPage() {
         travelled_recently: false,
         consent: true,
       })
-      navigate(`/new-appointment?patientId=${encodeURIComponent(res.patient_id)}`)
+      navigate('/dashboard')
     } catch (e) {
       setFormError(getApiErrorMessage(e))
     } finally {
