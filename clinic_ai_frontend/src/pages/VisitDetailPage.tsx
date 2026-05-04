@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
@@ -9,6 +9,7 @@ import {
   fetchTranscriptionStatus,
   fetchVisitDetail,
   fetchVisitTranscriptionDialogue,
+  structureVisitDialogue,
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
@@ -84,6 +85,22 @@ function showScheduledPreVisitBadge(v: VisitDetailResponse | null): boolean {
   return ['scheduled', 'open', 'queued', 'in_queue', 'in_progress'].includes(s)
 }
 
+/** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string }[]` (one key per turn). */
+function flattenStructuredDialogue(
+  turns: Array<Record<string, unknown>> | null | undefined,
+): { role: string; text: string }[] {
+  if (!Array.isArray(turns) || turns.length === 0) return []
+  const out: { role: string; text: string }[] = []
+  for (const turn of turns) {
+    if (!turn || typeof turn !== 'object') continue
+    for (const [role, raw] of Object.entries(turn)) {
+      const text = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : ''
+      if (role && text) out.push({ role, text })
+    }
+  }
+  return out
+}
+
 export default function VisitDetailPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -102,9 +119,20 @@ export default function VisitDetailPage() {
   const [vitalsStaffName, setVitalsStaffName] = useState('Nurse')
   const [vitalsValues, setVitalsValues] = useState<Record<string, string>>({})
   const [vitalsMessage, setVitalsMessage] = useState<string | null>(null)
+  const [vitalsSubmitting, setVitalsSubmitting] = useState(false)
+  const visitIdRef = useRef('')
+  const patientIdRef = useRef('')
+  const vitalsFormRef = useRef<VitalsFormResponse | null>(null)
+  const vitalsValuesRef = useRef<Record<string, string>>({})
+  const vitalsStaffNameRef = useRef('Nurse')
   const [transcriptionStatus, setTranscriptionStatus] = useState<TranscriptionStatusResponse | null>(null)
   const [transcriptionMessage, setTranscriptionMessage] = useState<string | null>(null)
   const [transcriptionText, setTranscriptionText] = useState<string | null>(null)
+  const [transcriptionStructuredDialogue, setTranscriptionStructuredDialogue] = useState<Array<
+    Record<string, unknown>
+  > | null>(null)
+  const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
+  const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -191,21 +219,6 @@ export default function VisitDetailPage() {
       setIntake(intakeRes)
       setPreVisit(preRes)
       setClinicalNote(noteRes)
-      setVitalsForm(null)
-      setVitalsValues({})
-      setVitalsMessage(null)
-      setTranscriptionStatus(null)
-      setTranscriptionMessage(null)
-      setTranscriptionText(null)
-      pendingTranscriptionAudioRef.current = null
-      setPendingTranscriptionAudio(null)
-      setRecordingError(null)
-      setRecordingPhase('idle')
-      setPostVisitSummary(null)
-      setPostVisitMessage(null)
-      setPostVisitSendInfo(null)
-      setRecapContactMode('patient')
-      setRecapPatientLang('en')
       setRecapPhoneDraft(digitsOnlyPhone(v.patient?.phone_number ?? ''))
     } catch (e) {
       setError(getApiErrorMessage(e))
@@ -217,6 +230,31 @@ export default function VisitDetailPage() {
     } finally {
       setLoading(false)
     }
+  }, [visitId])
+
+  /** Draft UI is tied to the visit in the URL — do not clear on every workspace refetch (avoids wiping success/errors after submit). */
+  useEffect(() => {
+    setVitalsForm(null)
+    setVitalsValues({})
+    setVitalsMessage(null)
+    setVitalsSubmitting(false)
+    setVitalsStaffName('Nurse')
+    setTranscriptionStatus(null)
+    setTranscriptionMessage(null)
+    setTranscriptionText(null)
+    setTranscriptionStructuredDialogue(null)
+    setStructureDialogueLoading(false)
+    setTranscriptionUploading(false)
+    pendingTranscriptionAudioRef.current = null
+    setPendingTranscriptionAudio(null)
+    setRecordingError(null)
+    setRecordingPhase('idle')
+    setPostVisitSummary(null)
+    setPostVisitMessage(null)
+    setPostVisitSendInfo(null)
+    setRecapContactMode('patient')
+    setRecapPatientLang('en')
+    setRecapPhoneDraft('')
   }, [visitId])
 
   useEffect(() => {
@@ -245,6 +283,55 @@ export default function VisitDetailPage() {
   const notePayload = clinicalNote?.payload
   const patientId = visit?.patient_id ?? ''
 
+  visitIdRef.current = visitId
+  patientIdRef.current = patientId
+  vitalsFormRef.current = vitalsForm
+  vitalsValuesRef.current = vitalsValues
+  vitalsStaffNameRef.current = vitalsStaffName
+
+  const handleSubmitVitals = useCallback(
+    async (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (vitalsSubmitting) return
+
+      const pid = patientIdRef.current
+      const vid = visitIdRef.current
+      const form = vitalsFormRef.current
+      const vals = vitalsValuesRef.current
+      const staff = vitalsStaffNameRef.current.trim() || 'Nurse'
+
+      if (!pid || !vid || !form) {
+        setVitalsMessage(
+          'Cannot submit vitals: patient or visit is not loaded. Reload this page or open the visit again from the visit list.',
+        )
+        return
+      }
+
+      setVitalsSubmitting(true)
+      try {
+        const values = form.fields.map((f) => ({
+          key: f.key,
+          value: vals[f.key] ?? '',
+        }))
+        const res = await submitVitals(pid, vid, form.form_id || null, staff, values)
+        const rawId = res.vitals_id ?? (res as { vitalsId?: string }).vitalsId
+        const short =
+          typeof rawId === 'string' && rawId.length >= 8
+            ? rawId.slice(-8)
+            : typeof rawId === 'string' && rawId.length > 0
+              ? rawId
+              : 'saved'
+        setVitalsMessage(`Vitals submitted (${short}) · ${new Date().toLocaleTimeString()}`)
+      } catch (err) {
+        setVitalsMessage(getApiErrorMessage(err))
+      } finally {
+        setVitalsSubmitting(false)
+      }
+    },
+    [vitalsSubmitting],
+  )
+
   const stopMediaTracks = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
     mediaStreamRef.current = null
@@ -259,6 +346,7 @@ export default function VisitDetailPage() {
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
         setTranscriptionStatus({ status: accepted.status ?? 'queued', message: accepted.message ?? null })
         setTranscriptionText(null)
+        setTranscriptionStructuredDialogue(null)
         return true
       } catch (err) {
         setTranscriptionMessage(getApiErrorMessage(err))
@@ -276,12 +364,17 @@ export default function VisitDetailPage() {
   }, [])
 
   const handleUploadPendingTranscription = useCallback(() => {
-    if (recordingPhase !== 'idle' || !patientId || !visitId) return
+    if (recordingPhase !== 'idle' || !patientId || !visitId || transcriptionUploading) return
     const f = pendingTranscriptionAudioRef.current ?? pendingTranscriptionAudio
     if (!f) return
     void (async () => {
-      const ok = await submitTranscriptionAudioFile(f)
-      if (ok) clearPendingTranscriptionFile()
+      setTranscriptionUploading(true)
+      try {
+        const ok = await submitTranscriptionAudioFile(f)
+        if (ok) clearPendingTranscriptionFile()
+      } finally {
+        setTranscriptionUploading(false)
+      }
     })()
   }, [
     clearPendingTranscriptionFile,
@@ -289,6 +382,7 @@ export default function VisitDetailPage() {
     pendingTranscriptionAudio,
     recordingPhase,
     submitTranscriptionAudioFile,
+    transcriptionUploading,
     visitId,
   ])
 
@@ -298,10 +392,17 @@ export default function VisitDetailPage() {
       if (!opts?.silent) setTranscriptLoading(true)
       try {
         const d = await fetchVisitTranscriptionDialogue(patientId, visitId)
-        const t = d?.transcript?.trim()
-        setTranscriptionText(t && t.length > 0 ? t : null)
+        const raw = d?.transcript?.trim()
+        setTranscriptionText(raw && raw.length > 0 ? raw : null)
+        const turns = d?.structured_dialogue
+        if (Array.isArray(turns) && turns.length > 0) {
+          setTranscriptionStructuredDialogue(turns)
+        } else {
+          setTranscriptionStructuredDialogue(null)
+        }
       } catch {
         setTranscriptionText(null)
+        setTranscriptionStructuredDialogue(null)
       } finally {
         if (!opts?.silent) setTranscriptLoading(false)
       }
@@ -320,11 +421,31 @@ export default function VisitDetailPage() {
         await loadTranscriptBody()
       } else {
         setTranscriptionText(null)
+        setTranscriptionStructuredDialogue(null)
       }
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
     }
   }, [patientId, visitId, loadTranscriptBody])
+
+  const handleStructureVisitDialogue = useCallback(async () => {
+    if (!patientId || !visitId || structureDialogueLoading) return
+    setStructureDialogueLoading(true)
+    try {
+      await structureVisitDialogue(patientId, visitId)
+      await loadTranscriptBody({ silent: true })
+      setTranscriptionMessage('Speaker-labeled dialogue updated.')
+    } catch (e) {
+      setTranscriptionMessage(getApiErrorMessage(e))
+    } finally {
+      setStructureDialogueLoading(false)
+    }
+  }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
+
+  const dialogueTurns = useMemo(
+    () => flattenStructuredDialogue(transcriptionStructuredDialogue),
+    [transcriptionStructuredDialogue],
+  )
 
   useEffect(() => {
     if (tab !== 'transcription' || !patientId || !visitId) return
@@ -648,33 +769,16 @@ export default function VisitDetailPage() {
                           </label>
                         ))}
                       </div>
-                      <button
-                        className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
-                        onClick={() => {
-                          if (!patientId || !visitId || !vitalsForm) return
-                          void (async () => {
-                            try {
-                              const values = vitalsForm.fields.map((f) => ({
-                                key: f.key,
-                                value: vitalsValues[f.key] ?? '',
-                              }))
-                              const res = await submitVitals(
-                                patientId,
-                                visitId,
-                                vitalsForm.form_id || null,
-                                vitalsStaffName.trim() || 'Nurse',
-                                values,
-                              )
-                              setVitalsMessage(`Vitals submitted (${res.vitals_id.slice(-8)})`)
-                            } catch (e) {
-                              setVitalsMessage(getApiErrorMessage(e))
-                            }
-                          })()
-                        }}
-                        type="button"
-                      >
-                        Submit Vitals
-                      </button>
+                      <div className="relative z-10 pt-1">
+                        <button
+                          className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={vitalsSubmitting || !vitalsForm}
+                          onClick={(ev) => void handleSubmitVitals(ev)}
+                          type="button"
+                        >
+                          {vitalsSubmitting ? 'Submitting…' : 'Submit Vitals'}
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
@@ -685,12 +789,16 @@ export default function VisitDetailPage() {
                   <header>
                     <h3 className="text-xl font-bold tracking-tight text-[#111827]">Audio transcription</h3>
                     <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#575e70]">
-                      Upload an existing recording or capture visit audio here. Both paths queue the same transcription job;
-                      poll status below until the transcript is ready.
+                      Upload or record visit audio. When processing completes, the visit shows a{' '}
+                      <strong className="font-semibold text-[#3e4a3d]">Doctor / Patient</strong> speaker dialogue (diarized
+                      turns). If only raw speech-to-text exists, use <strong className="font-semibold">Generate dialogue</strong>{' '}
+                      below (requires OpenAI on the server).
                     </p>
                   </header>
 
-                  <section className={`space-y-3 ${recordingPhase !== 'idle' ? 'opacity-45' : ''}`}>
+                  <section
+                    className={`space-y-3 ${recordingPhase !== 'idle' || transcriptionUploading ? 'opacity-45' : ''}`}
+                  >
                     <h4 className="text-sm font-bold tracking-tight text-[#111827]">Upload audio file</h4>
                     <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-stretch">
                       <div className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-gray-200 bg-[#fafcf8] px-3 py-2 sm:px-4">
@@ -699,7 +807,7 @@ export default function VisitDetailPage() {
                           accept="audio/*"
                           aria-label="Select audio file to transcribe"
                           className="fixed top-0 left-[-9999px] h-px w-px overflow-hidden opacity-0"
-                          disabled={recordingPhase !== 'idle' || !patientId || !visitId}
+                          disabled={recordingPhase !== 'idle' || transcriptionUploading || !patientId || !visitId}
                           id="visit-transcription-file"
                           onChange={(e) => {
                             const file = e.target.files?.[0] ?? null
@@ -711,13 +819,17 @@ export default function VisitDetailPage() {
                         />
                         <label
                           className={`inline-flex shrink-0 cursor-pointer items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
-                            recordingPhase !== 'idle' || !patientId || !visitId
+                            recordingPhase !== 'idle' || transcriptionUploading || !patientId || !visitId
                               ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                               : 'bg-sky-100 text-sky-900 hover:bg-sky-200'
                           }`}
                           htmlFor="visit-transcription-file"
                           title={
-                            recordingPhase !== 'idle' ? 'Stop recording before choosing a file' : 'Browse for an audio file'
+                            recordingPhase !== 'idle'
+                              ? 'Stop recording before choosing a file'
+                              : transcriptionUploading
+                                ? 'Wait for upload to finish'
+                                : 'Browse for an audio file'
                           }
                         >
                           Choose file
@@ -729,12 +841,16 @@ export default function VisitDetailPage() {
                       <button
                         className="relative z-20 shrink-0 rounded-xl bg-[#16a34a] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                         disabled={
-                          recordingPhase !== 'idle' || !pendingTranscriptionAudio || !patientId || !visitId
+                          recordingPhase !== 'idle' ||
+                          transcriptionUploading ||
+                          !pendingTranscriptionAudio ||
+                          !patientId ||
+                          !visitId
                         }
                         onClick={handleUploadPendingTranscription}
                         type="button"
                       >
-                        Upload
+                        {transcriptionUploading ? 'Uploading…' : 'Upload'}
                       </button>
                     </div>
                   </section>
@@ -833,27 +949,55 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-sm font-semibold text-[#171d16]">Transcript</h4>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#171d16]">Speaker dialogue</h4>
+                        <p className="text-[11px] text-[#575e70]">Doctor / Patient turns (diarized). Raw speech-to-text is not shown here.</p>
+                      </div>
                       {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
                     </div>
-                    {transcriptionText ? (
-                      <div className="max-h-[min(28rem,50vh)] overflow-y-auto rounded-lg border border-[#bdcaba] bg-[#fafcf8] p-4 font-sans text-sm leading-relaxed whitespace-pre-wrap text-[#171d16]">
-                        {transcriptionText}
+                    {dialogueTurns.length > 0 ? (
+                      <div className="max-h-[min(28rem,55vh)] space-y-3 overflow-y-auto pr-1">
+                        {dialogueTurns.map((line, idx) => (
+                          <div
+                            className="rounded-lg border border-[#bdcaba] bg-[#fafcf8] p-4 shadow-sm"
+                            key={`turn-${idx}`}
+                          >
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#006b2c]">{line.role}</div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#171d16]">{line.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (transcriptionStatus?.status || '').toLowerCase() === 'completed' &&
+                      (transcriptionText?.length ?? 0) > 0 ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-[#3e4a3d]">
+                        <p className="mb-3">
+                          Raw speech-to-text is ready, but speaker-labeled dialogue is not on file yet. Generate Doctor/Patient
+                          turns (server uses OpenAI).
+                        </p>
+                        <button
+                          className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={!patientId || !visitId || structureDialogueLoading}
+                          onClick={() => void handleStructureVisitDialogue()}
+                          type="button"
+                        >
+                          {structureDialogueLoading ? 'Generating dialogue…' : 'Generate Doctor/Patient dialogue'}
+                        </button>
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-[#bdcaba] px-4 py-6 text-center text-xs text-[#575e70]">
                         {(transcriptionStatus?.status || '').toLowerCase() === 'completed' ? (
                           <p>
-                            Status is completed but no transcript loaded. Click{' '}
-                            <span className="font-semibold text-[#171d16]">Check transcription status</span> to refresh text from the API.
+                            No dialogue loaded. Click{' '}
+                            <span className="font-semibold text-[#171d16]">Check transcription status</span> then refresh this
+                            section.
                           </p>
                         ) : (transcriptionStatus?.status || '').toLowerCase() === 'failed' ? (
                           <p>Transcription failed — fix errors above, upload new audio, and try again.</p>
                         ) : (
                           <p>
-                            Transcript appears here when Azure Speech finishes. Keep polling with{' '}
+                            Speaker dialogue appears when Azure Speech finishes and structuring completes. Poll with{' '}
                             <span className="font-semibold text-[#171d16]">Check transcription status</span>.
                           </p>
                         )}

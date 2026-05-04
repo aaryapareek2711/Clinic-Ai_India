@@ -357,6 +357,17 @@ export async function fetchTranscriptionStatus(
   return data
 }
 
+/** POST /api/notes/{patient_id}/visits/{visit_id}/dialogue/structure — LLM Doctor/Patient turns from raw transcript */
+export async function structureVisitDialogue(
+  patientId: string,
+  visitId: string,
+): Promise<Array<Record<string, string>>> {
+  const { data } = await apiClient.post<{ dialogue: Array<Record<string, string>>; message?: string }>(
+    `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`,
+  )
+  return Array.isArray(data.dialogue) ? data.dialogue : []
+}
+
 /** GET /api/notes/{patient_id}/visits/{visit_id}/dialogue — 202 while queued/processing */
 export async function fetchVisitTranscriptionDialogue(
   patientId: string,
