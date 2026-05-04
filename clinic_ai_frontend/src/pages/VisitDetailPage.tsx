@@ -48,6 +48,9 @@ const DR_AVATAR =
 const LAB_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 const LAB_UPLOAD_MAX_FILES = 8
 
+/** WhatsApp recap language when no in-UI picker (matches previous default). */
+const POST_VISIT_WHATSAPP_LANGUAGE: PostVisitPatientLanguage = 'en'
+
 const LAB_TEST_CATEGORY_OPTIONS = [
   '',
   'Blood Work',
@@ -163,7 +166,7 @@ export default function VisitDetailPage() {
   const [postVisitMessage, setPostVisitMessage] = useState<string | null>(null)
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
-  const [recapPatientLang, setRecapPatientLang] = useState<PostVisitPatientLanguage>('en')
+  const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -279,8 +282,8 @@ export default function VisitDetailPage() {
     setPostVisitMessage(null)
     setPostVisitSendInfo(null)
     setRecapContactMode('patient')
-    setRecapPatientLang('en')
     setRecapPhoneDraft('')
+    setRecapFollowUpDateDraft('')
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -721,11 +724,17 @@ export default function VisitDetailPage() {
   }, [stopMediaTracks])
 
   const tabs: { id: VisitWorkflowTab; label: string; icon: string }[] = [
+    { id: 'pre-visit', label: 'Pre-visit', icon: 'event_note' },
     { id: 'vitals', label: 'Vitals', icon: 'monitor_heart' },
     { id: 'transcription', label: 'Transcription', icon: 'mic' },
     { id: 'clinical-note', label: 'Clinical Note', icon: 'clinical_notes' },
     { id: 'post-visit', label: 'Post-visit', icon: 'summarize' },
   ]
+
+  const visibleTabs = useMemo(
+    () => tabs.filter((row) => !(skipPreVisitWorkflow && row.id === 'pre-visit')),
+    [skipPreVisitWorkflow],
+  )
 
   return (
     <div className="min-h-screen font-sans text-[#171d16] antialiased">
@@ -840,73 +849,32 @@ export default function VisitDetailPage() {
               </div>
             </div>
 
-            <div className="mt-8 px-8">
-              {!skipPreVisitWorkflow && (
-                <div className="mb-4 md:hidden">
+            <div className="mt-8 overflow-x-auto border-b border-[#bdcaba] px-8">
+              <div className="flex min-w-min gap-8 pb-0">
+                {visibleTabs.map((t) => (
                   <button
-                    className={`flex w-full items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-colors ${
-                      tab === 'pre-visit'
-                        ? 'border-[#006b2c] bg-[#f0fdf4] text-[#006b2c]'
-                        : 'border-[#bdcaba] bg-white text-[#575e70]'
+                    key={t.id}
+                    className={`flex shrink-0 items-center border-b-2 pb-4 text-sm font-semibold transition-colors ${
+                      tab === t.id
+                        ? 'border-[#006b2c] text-[#006b2c]'
+                        : 'border-transparent text-[#575e70] hover:text-[#171d16]'
                     }`}
-                    onClick={() => syncTabToUrl('pre-visit')}
+                    onClick={() => syncTabToUrl(t.id)}
                     type="button"
                   >
-                    <span className="material-symbols-outlined text-xl">assignment_turned_in</span>
-                    Care Prep
-                    {scheduledBadge && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                    <span className="material-symbols-outlined mr-2 text-xl">{t.icon}</span>
+                    {t.label}
+                    {t.id === 'pre-visit' && scheduledBadge && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
                         Scheduled
                       </span>
                     )}
                   </button>
-                </div>
-              )}
-              <div className="flex gap-6">
-                {!skipPreVisitWorkflow && (
-                  <aside className="hidden w-44 shrink-0 md:block">
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#575e70]">Care Prep</p>
-                    <button
-                      className={`flex w-full flex-col items-start rounded-lg border-2 px-3 py-3 text-left text-sm font-semibold transition-colors ${
-                        tab === 'pre-visit'
-                          ? 'border-[#006b2c] bg-[#f0fdf4] text-[#006b2c]'
-                          : 'border-[#bdcaba] bg-white text-[#575e70] hover:border-[#006b2c]/40'
-                      }`}
-                      onClick={() => syncTabToUrl('pre-visit')}
-                      type="button"
-                    >
-                      <span className="material-symbols-outlined mb-1 text-2xl">assignment_turned_in</span>
-                      <span>Intake & summary</span>
-                      {scheduledBadge && (
-                        <span className="mt-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                          Scheduled
-                        </span>
-                      )}
-                    </button>
-                  </aside>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="overflow-x-auto border-b border-[#bdcaba]">
-                    <div className="flex min-w-min gap-8 pb-0">
-                      {tabs.map((t) => (
-                        <button
-                          key={t.id}
-                          className={`flex shrink-0 items-center border-b-2 pb-4 text-sm font-semibold transition-colors ${
-                            tab === t.id
-                              ? 'border-[#006b2c] text-[#006b2c]'
-                              : 'border-transparent text-[#575e70] hover:text-[#171d16]'
-                          }`}
-                          onClick={() => syncTabToUrl(t.id)}
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined mr-2 text-xl">{t.icon}</span>
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                ))}
+              </div>
+            </div>
 
-                  <div className="py-8">
+            <div className="p-8">
               {loading && <p className="text-sm text-[#575e70]">Loading visit…</p>}
 
               {!loading && tab === 'pre-visit' && (
@@ -1232,7 +1200,7 @@ export default function VisitDetailPage() {
                   <div>
                     <h3 className="text-lg font-semibold text-[#171d16]">Send post-visit recap</h3>
                     <p className="mt-1 text-xs text-[#575e70]">
-                      Patient profile language does not change. Choose the language and number for this WhatsApp send.
+                      Choose the WhatsApp number for this send.
                     </p>
                   </div>
 
@@ -1272,31 +1240,15 @@ export default function VisitDetailPage() {
                   </fieldset>
 
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                      Message language (patient)
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(
-                        [
-                          ['hi', 'Hindi'] as const,
-                          ['en', 'English'] as const,
-                          ['hi-eng', 'Both'] as const,
-                        ]
-                      ).map(([code, label]) => (
-                        <button
-                          key={code}
-                          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                            recapPatientLang === code
-                              ? 'bg-[#006b2c] text-white'
-                              : 'border border-[#bdcaba] bg-white text-[#171d16] hover:bg-[#eff6ea]'
-                          }`}
-                          onClick={() => setRecapPatientLang(code)}
-                          type="button"
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                      Next visit date (optional)
+                      <input
+                        className="mt-2 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                        onChange={(e) => setRecapFollowUpDateDraft(e.target.value)}
+                        type="date"
+                        value={recapFollowUpDateDraft}
+                      />
+                    </label>
                   </div>
 
                   {postVisitSummary?.whatsapp_payload?.trim() && (
@@ -1320,8 +1272,10 @@ export default function VisitDetailPage() {
                           setPostVisitMessage(null)
                           setPostVisitSendInfo(null)
                           try {
+                            const nextVisitDate = recapFollowUpDateDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: recapPatientLang,
+                              preferred_language: POST_VISIT_WHATSAPP_LANGUAGE,
+                              follow_up_date: nextVisitDate || undefined,
                             })
                             setPostVisitSummary(res)
                             setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')
@@ -1353,7 +1307,7 @@ export default function VisitDetailPage() {
                           try {
                             const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
                               phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
-                              preferred_language: recapPatientLang,
+                              preferred_language: POST_VISIT_WHATSAPP_LANGUAGE,
                             })
                             setPostVisitMessage(res.message)
                             const phoneDisplay =
@@ -1362,7 +1316,7 @@ export default function VisitDetailPage() {
                                 : formatIndiaWhatsAppDisplay(overrideDigits)
                             setPostVisitSendInfo({
                               phoneDisplay,
-                              languageDisplay: languageLabel(recapPatientLang),
+                              languageDisplay: languageLabel(POST_VISIT_WHATSAPP_LANGUAGE),
                             })
                           } catch (e) {
                             setPostVisitSendInfo(null)
@@ -1397,7 +1351,7 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  {postVisitSummary?.payload && !postVisitSummary.whatsapp_payload?.trim() && (
+                  {postVisitSummary?.payload && (
                     <div className="space-y-2 rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
                       <p>
                         <strong>Visit reason:</strong> {postVisitSummary.payload.visit_reason || '—'}
@@ -1408,24 +1362,39 @@ export default function VisitDetailPage() {
                       <p>
                         <strong>Follow-up:</strong> {postVisitSummary.payload.follow_up || '—'}
                       </p>
+                      <p>
+                        <strong>Next visit date:</strong> {postVisitSummary.payload.next_visit_date || '—'}
+                      </p>
+                      <p>
+                        <strong>Medicines to take:</strong>{' '}
+                        {postVisitSummary.payload.medicines_to_take?.length
+                          ? postVisitSummary.payload.medicines_to_take.join(', ')
+                          : '—'}
+                      </p>
+                      <p>
+                        <strong>Tests recommended:</strong>{' '}
+                        {postVisitSummary.payload.tests_recommended?.length
+                          ? postVisitSummary.payload.tests_recommended.join(', ')
+                          : '—'}
+                      </p>
+                      <p>
+                        <strong>Self-care:</strong>{' '}
+                        {postVisitSummary.payload.self_care?.length ? postVisitSummary.payload.self_care.join(', ') : '—'}
+                      </p>
+                      <p>
+                        <strong>Warning signs:</strong>{' '}
+                        {postVisitSummary.payload.warning_signs?.length
+                          ? postVisitSummary.payload.warning_signs.join(', ')
+                          : '—'}
+                      </p>
                     </div>
                   )}
                 </div>
               )}
-                  </div>
-                </div>
-              </div>
             </div>
           </>
         )}
       </main>
-
-      <button
-        className="fixed bottom-8 right-8 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#006b2c] text-white shadow-lg transition-transform hover:scale-110"
-        type="button"
-      >
-        <span className="material-symbols-outlined">add</span>
-      </button>
 
       {labModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">

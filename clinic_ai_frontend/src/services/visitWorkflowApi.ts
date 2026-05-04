@@ -446,12 +446,16 @@ export type PostVisitPatientLanguage = 'hi' | 'en' | 'hi-eng'
 export async function generatePostVisitSummary(
   patientId: string,
   visitId: string,
-  options?: { preferred_language?: PostVisitPatientLanguage },
+  options?: { preferred_language?: PostVisitPatientLanguage; follow_up_date?: string },
 ): Promise<PostVisitSummaryResponse> {
-  const { data } = await apiClient.post<PostVisitSummaryResponse>('/api/notes/post-visit-summary', {
+  const body: Record<string, string> = {
     patient_id: patientId,
     visit_id: visitId,
-    ...(options?.preferred_language ? { preferred_language: options.preferred_language } : {}),
+  }
+  if (options?.preferred_language) body.preferred_language = options.preferred_language
+  if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
+  const { data } = await apiClient.post<PostVisitSummaryResponse>('/api/notes/post-visit-summary', {
+    ...body,
   })
   return data
 }
