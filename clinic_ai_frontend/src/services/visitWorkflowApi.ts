@@ -154,58 +154,21 @@ export async function generatePreVisitSummary(
   return data
 }
 
-/** India OPD clinical note payload — matches backend `IndiaClinicalNotePayload`. */
-export type IndiaClinicalMedicationItem = {
-  medicine_name: string
-  dose: string
-  frequency: string
-  duration: string
-  route: string
-  food_instruction: string
-  generic_available?: boolean | null
-}
-
-export type IndiaClinicalInvestigationItem = {
-  test_name: string
-  urgency: string
-  preparation_instructions?: string | null
-  routing_note?: string | null
-}
-
-export type IndiaClinicalNotePayload = {
-  assessment: string
-  plan: string
-  rx: IndiaClinicalMedicationItem[]
-  investigations: IndiaClinicalInvestigationItem[]
-  red_flags: string[]
-  follow_up_in?: string | null
-  follow_up_date?: string | null
-  follow_up_time?: string | null
-  doctor_notes?: string | null
-  chief_complaint?: string | null
-  data_gaps: string[]
-}
-
-/** Latest or freshly generated clinical note — aligns with `NoteGenerateResponse`. */
+/** Latest persisted India-style clinical note (OPD); 404 → null */
 export type ClinicalNoteLatest = {
   note_id: string
-  patient_id?: string
-  visit_id?: string | null
-  note_type?: string
-  source_job_id?: string | null
-  status?: string
-  version?: number
   created_at: string
-  payload?: IndiaClinicalNotePayload | Record<string, unknown>
-  whatsapp_payload?: string | null
-}
-
-export type ClinicalNoteGenerateOptions = {
-  transcription_job_id?: string
-  /** ISO date YYYY-MM-DD — when set, backend stores follow-up and may force regenerate. */
-  follow_up_date?: string
-  follow_up_time?: string
-  note_type?: 'india_clinical' | 'soap' | 'post_visit_summary'
+  payload?: {
+    assessment?: string
+    plan?: string
+    rx?: Array<{
+      medicine_name?: string
+      dose?: string
+      frequency?: string
+      duration?: string
+    }>
+    red_flags?: string[]
+  }
 }
 
 export type VitalsField = {
@@ -313,26 +276,8 @@ export async function fetchLatestClinicalNote(
     return data
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response?.status === 404) return null
-    throw new Error(getApiErrorMessage(err), { cause: err })
+    return null
   }
-}
-
-/** POST /api/notes/clinical-note — generate and persist default clinical note for the visit. */
-export async function generateClinicalNote(
-  patientId: string,
-  visitId: string,
-  options?: ClinicalNoteGenerateOptions,
-): Promise<ClinicalNoteLatest> {
-  const body: Record<string, string | undefined> = {
-    patient_id: patientId,
-    visit_id: visitId,
-  }
-  if (options?.transcription_job_id?.trim()) body.transcription_job_id = options.transcription_job_id.trim()
-  if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
-  if (options?.follow_up_time?.trim()) body.follow_up_time = options.follow_up_time.trim()
-  if (options?.note_type) body.note_type = options.note_type
-  const { data } = await apiClient.post<ClinicalNoteLatest>('/api/notes/clinical-note', body)
-  return data
 }
 
 export async function generateVitalsForm(patientId: string, visitId: string): Promise<VitalsFormResponse> {
@@ -471,50 +416,5 @@ export async function sendPostVisitSummaryWhatsApp(
     '/api/notes/post-visit-summary/send-whatsapp',
     body,
   )
-  return data
-}
-
-export type LabRecordPublic = {
-  record_id: string
-  visit_id: string
-  patient_id: string
-  source: string
-  status: string
-  raw_text: string
-  ocr_text?: string
-  image_count: number
-  extracted_values?: unknown[]
-  flags?: unknown[]
-  created_at?: string | null
-  updated_at?: string | null
-}
-
-/** Typed lab line item (no images) — POST /api/follow-through/lab-records */
-export async function createLabRecordText(
-  visitId: string,
-  rawText: string,
-  source = 'provider_portal',
-): Promise<LabRecordPublic> {
-  const { data } = await apiClient.post<LabRecordPublic>('/api/follow-through/lab-records', {
-    visit_id: visitId,
-    source: source.slice(0, 50),
-    raw_text: rawText.trim(),
-  })
-  return data
-}
-
-/** Images (+ optional caption) — POST /api/follow-through/lab-records/with-images */
-export async function uploadLabRecordWithImages(
-  visitId: string,
-  options: { rawText?: string; source?: string; imageFiles: File[] },
-): Promise<LabRecordPublic> {
-  const formData = new FormData()
-  formData.set('visit_id', visitId)
-  formData.set('source', (options.source?.trim() || 'provider_portal').slice(0, 50))
-  formData.set('raw_text', options.rawText?.trim() ?? '')
-  for (const file of options.imageFiles) {
-    formData.append('image_files', file)
-  }
-  const { data } = await apiClient.post<LabRecordPublic>('/api/follow-through/lab-records/with-images', formData)
   return data
 }
