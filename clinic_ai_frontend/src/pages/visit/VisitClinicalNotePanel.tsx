@@ -103,6 +103,7 @@ export type VisitClinicalNotePanelProps = {
   transcriptionStatusKnown: boolean
   transcriptionCompleted: boolean
   onNoteUpdated: (note: ClinicalNoteLatest | null) => void
+  onApproveNext?: (payload: { followUpDate: string; followUpTime: string }) => void
 }
 
 export default function VisitClinicalNotePanel({
@@ -113,8 +114,10 @@ export default function VisitClinicalNotePanel({
   transcriptionStatusKnown,
   transcriptionCompleted,
   onNoteUpdated,
+  onApproveNext,
 }: VisitClinicalNotePanelProps) {
   const [generating, setGenerating] = useState(false)
+  const [approvingNext, setApprovingNext] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draftAssessment, setDraftAssessment] = useState('')
@@ -134,6 +137,12 @@ export default function VisitClinicalNotePanel({
     setDraftDoctorNotes(payload.doctor_notes ?? '')
     setDraftChief(payload.chief_complaint ?? '')
   }, [editing, payload, clinicalNote?.note_id])
+
+  useEffect(() => {
+    // Keep follow-up draft in sync with latest persisted note so Approve & Next forwards current values.
+    setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
+    setFollowUpTime(payload?.follow_up_time?.toString().trim() || '')
+  }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
 
   const displayPayload = useMemo((): IndiaClinicalNotePayload | null => {
     if (!payload) return null
@@ -167,6 +176,28 @@ export default function VisitClinicalNotePanel({
       setGenerating(false)
     }
   }, [patientId, visitId, generating, followUpDate, followUpTime, onNoteUpdated])
+
+  const handleApproveAndNext = useCallback(async () => {
+    if (!patientId || !visitId || approvingNext) return
+    setApprovingNext(true)
+    setMessage(null)
+    const fuDate = followUpDate.trim()
+    const fuTime = followUpTime.trim()
+    try {
+      const res = await generateClinicalNote(patientId, visitId, {
+        follow_up_date: fuDate || undefined,
+        follow_up_time: fuTime || undefined,
+      })
+      onNoteUpdated(res)
+      setEditing(false)
+      setMessage('Clinical note approved. Moving to post-visit.')
+      onApproveNext?.({ followUpDate: fuDate, followUpTime: fuTime })
+    } catch (e) {
+      setMessage(getApiErrorMessage(e))
+    } finally {
+      setApprovingNext(false)
+    }
+  }, [patientId, visitId, approvingNext, followUpDate, followUpTime, onNoteUpdated, onApproveNext])
 
   const handleCopy = useCallback(async () => {
     if (!clinicalNote || !displayPayload) return
@@ -238,11 +269,19 @@ export default function VisitClinicalNotePanel({
           )}
           <button
             className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!patientId || !visitId || generating}
+            disabled={!patientId || !visitId || generating || approvingNext}
             onClick={() => void handleGenerate()}
             type="button"
           >
             {generating ? 'Working…' : clinicalNote ? 'Regenerate note' : 'Generate note'}
+          </button>
+          <button
+            className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!patientId || !visitId || generating || approvingNext}
+            onClick={() => void handleApproveAndNext()}
+            type="button"
+          >
+            {approvingNext ? 'Approving…' : 'Approve & Next'}
           </button>
         </div>
       </div>

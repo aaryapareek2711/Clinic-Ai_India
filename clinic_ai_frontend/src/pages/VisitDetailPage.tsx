@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
+import { doctorNameLabel } from '../lib/doctorDisplayName'
 import {
   fetchIntakeSession,
   fetchLatestClinicalNote,
@@ -26,6 +27,7 @@ import {
   type VisitDetailResponse,
   type VitalsFormResponse,
 } from '../services/visitWorkflowApi'
+import { fetchMyProfile } from '../services/profileApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
 import VisitClinicalNotePanel from './visit/VisitClinicalNotePanel'
@@ -127,6 +129,8 @@ export default function VisitDetailPage() {
   const tabParamRaw = searchParams.get('tab')?.trim() ?? ''
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [providerDisplayName, setProviderDisplayName] = useState('Dr.')
+  const [providerTitle, setProviderTitle] = useState('Clinical provider')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [secondaryWarning, setSecondaryWarning] = useState<string | null>(null)
@@ -167,6 +171,7 @@ export default function VisitDetailPage() {
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
   const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
+  const [recapFollowUpTimeDraft, setRecapFollowUpTimeDraft] = useState('')
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -211,6 +216,27 @@ export default function VisitDetailPage() {
     if (!visitId || loading) return
     if (searchParams.get('tab') !== tab) syncTabToUrl(tab)
   }, [visitId, loading, tab, searchParams, syncTabToUrl])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const me = await fetchMyProfile()
+        if (cancelled) return
+        const full = me.full_name?.trim() || me.username?.trim() || ''
+        setProviderDisplayName(doctorNameLabel(full) || 'Dr.')
+        setProviderTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || 'Clinical provider')
+      } catch {
+        if (!cancelled) {
+          setProviderDisplayName('Dr.')
+          setProviderTitle('Clinical provider')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const loadWorkspace = useCallback(async () => {
     if (!visitId) {
@@ -284,6 +310,7 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPhoneDraft('')
     setRecapFollowUpDateDraft('')
+    setRecapFollowUpTimeDraft('')
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -294,6 +321,16 @@ export default function VisitDetailPage() {
     setLabModalError(null)
     setLabUploadFeedback(null)
   }, [visitId])
+
+  useEffect(() => {
+    const p = clinicalNote?.payload
+    if (!p || typeof p !== 'object') return
+    const o = p as Record<string, unknown>
+    const noteDate = (o.follow_up_date != null ? String(o.follow_up_date) : '').trim()
+    const noteTime = (o.follow_up_time != null ? String(o.follow_up_time) : '').trim()
+    if (noteDate) setRecapFollowUpDateDraft(noteDate)
+    if (noteTime) setRecapFollowUpTimeDraft(noteTime)
+  }, [clinicalNote?.note_id, clinicalNote?.payload])
 
   useEffect(() => {
     void loadWorkspace()
@@ -637,6 +674,12 @@ export default function VisitDetailPage() {
     () => flattenStructuredDialogue(transcriptionStructuredDialogue),
     [transcriptionStructuredDialogue],
   )
+  const transcriptionStateLower = (transcriptionStatus?.status || '').toLowerCase()
+  const isTranscriptionProcessing =
+    transcriptionUploading ||
+    ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
+      transcriptionStateLower,
+    )
 
   useEffect(() => {
     if (tab !== 'transcription' || !patientId || !visitId) return
@@ -750,8 +793,8 @@ export default function VisitDetailPage() {
           </button>
           <div className="flex items-center space-x-3">
             <div className="text-right">
-              <p className="text-sm font-semibold text-[#171d16]">Dr. Rajesh Kumar</p>
-              <p className="text-xs text-[#575e70]">Senior Pulmonologist</p>
+              <p className="text-sm font-semibold text-[#171d16]">{providerDisplayName}</p>
+              <p className="text-xs text-[#575e70]">{providerTitle}</p>
             </div>
             <img alt="" className="h-10 w-10 rounded-full border border-[#bdcaba] object-cover" src={DR_AVATAR} />
           </div>
@@ -964,13 +1007,13 @@ export default function VisitDetailPage() {
                 <div className="space-y-8 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
                   <header>
                     <h3 className="text-xl font-bold tracking-tight text-[#111827]">Audio transcription</h3>
-                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#575e70]">
-                      Upload or record visit audio. When processing completes, the visit shows a{' '}
-                      <strong className="font-semibold text-[#3e4a3d]">Doctor / Patient</strong> speaker dialogue (diarized
-                      turns). If only raw speech-to-text exists, use <strong className="font-semibold">Generate dialogue</strong>{' '}
-                      below (requires OpenAI on the server).
-                    </p>
                   </header>
+
+                  {isTranscriptionProcessing && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      Processing transcription...
+                    </div>
+                  )}
 
                   <section
                     className={`space-y-3 ${recordingPhase !== 'idle' || transcriptionUploading ? 'opacity-45' : ''}`}
@@ -1129,7 +1172,6 @@ export default function VisitDetailPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h4 className="text-sm font-semibold text-[#171d16]">Speaker dialogue</h4>
-                        <p className="text-[11px] text-[#575e70]">Doctor / Patient turns (diarized). Raw speech-to-text is not shown here.</p>
                       </div>
                       {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
                     </div>
@@ -1145,7 +1187,7 @@ export default function VisitDetailPage() {
                           </div>
                         ))}
                       </div>
-                    ) : (transcriptionStatus?.status || '').toLowerCase() === 'completed' &&
+                    ) : transcriptionStateLower === 'completed' &&
                       (transcriptionText?.length ?? 0) > 0 ? (
                       <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-[#3e4a3d]">
                         <p className="mb-3">
@@ -1163,19 +1205,14 @@ export default function VisitDetailPage() {
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-[#bdcaba] px-4 py-6 text-center text-xs text-[#575e70]">
-                        {(transcriptionStatus?.status || '').toLowerCase() === 'completed' ? (
+                        {transcriptionStateLower === 'completed' ? (
                           <p>
-                            No dialogue loaded. Click{' '}
-                            <span className="font-semibold text-[#171d16]">Check transcription status</span> then refresh this
-                            section.
+                            No dialogue loaded yet.
                           </p>
-                        ) : (transcriptionStatus?.status || '').toLowerCase() === 'failed' ? (
+                        ) : transcriptionStateLower === 'failed' ? (
                           <p>Transcription failed — fix errors above, upload new audio, and try again.</p>
                         ) : (
-                          <p>
-                            Speaker dialogue appears when Azure Speech finishes and structuring completes. Poll with{' '}
-                            <span className="font-semibold text-[#171d16]">Check transcription status</span>.
-                          </p>
+                          <p>Dialogue will appear after transcription finishes.</p>
                         )}
                       </div>
                     )}
@@ -1187,6 +1224,11 @@ export default function VisitDetailPage() {
                 <VisitClinicalNotePanel
                   clinicalNote={clinicalNote}
                   onNoteUpdated={setClinicalNote}
+                  onApproveNext={({ followUpDate, followUpTime }) => {
+                    setRecapFollowUpDateDraft(followUpDate)
+                    setRecapFollowUpTimeDraft(followUpTime)
+                    syncTabToUrl('post-visit')
+                  }}
                   patientId={patientId}
                   transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
                   transcriptionStatusKnown={transcriptionStatus != null}
@@ -1250,6 +1292,18 @@ export default function VisitDetailPage() {
                       />
                     </label>
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                      Follow-up time (optional)
+                      <input
+                        className="mt-2 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                        onChange={(e) => setRecapFollowUpTimeDraft(e.target.value)}
+                        placeholder="10:30"
+                        type="text"
+                        value={recapFollowUpTimeDraft}
+                      />
+                    </label>
+                  </div>
 
                   {postVisitSummary?.whatsapp_payload?.trim() && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
@@ -1273,9 +1327,11 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
+                            const nextVisitTime = recapFollowUpTimeDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: POST_VISIT_WHATSAPP_LANGUAGE,
                               follow_up_date: nextVisitDate || undefined,
+                              follow_up_time: nextVisitTime || undefined,
                             })
                             setPostVisitSummary(res)
                             setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')
