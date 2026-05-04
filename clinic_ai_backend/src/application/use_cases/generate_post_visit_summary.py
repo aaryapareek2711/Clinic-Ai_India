@@ -121,14 +121,15 @@ class GeneratePostVisitSummaryUseCase:
                     sort=[("updated_at", -1)],
                 )
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
-                    session_job_id = str(session.get("job_id") or "").strip()
-                    if session_job_id:
+                    session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
+                    transcript_text = str(session.get("transcript") or "").strip()
+                    if session_job_id or transcript_text:
                         job = {
-                            "job_id": session_job_id,
+                            "job_id": session_job_id or f"visit-session:{visit_id}",
                             "patient_id": patient_id,
                             "visit_id": visit_id,
                             "status": "completed",
-                            "_session_transcript": str(session.get("transcript") or ""),
+                            "_session_transcript": transcript_text,
                         }
         else:
             query: dict[str, object] = {"patient_id": patient_id, "status": "completed"}
@@ -145,13 +146,15 @@ class GeneratePostVisitSummaryUseCase:
                 )
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
                     session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
-                    if session_job_id:
+                    transcript_text = str(session.get("transcript") or "").strip()
+                    # Allow visit-session transcript even when job_id is missing (session-only completion path).
+                    if session_job_id or transcript_text:
                         job = {
-                            "job_id": session_job_id,
+                            "job_id": session_job_id or f"visit-session:{visit_id}",
                             "patient_id": patient_id,
                             "visit_id": visit_id,
                             "status": "completed",
-                            "_session_transcript": str(session.get("transcript") or ""),
+                            "_session_transcript": transcript_text,
                         }
         if not job:
             raise ValueError("No completed transcription job found")

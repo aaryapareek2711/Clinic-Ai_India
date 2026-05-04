@@ -145,8 +145,9 @@ def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
 def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateResponse:
     """Generate patient-facing post-visit summary explicitly."""
     try:
+        internal_patient_id = resolve_internal_patient_id(request.patient_id, allow_raw_fallback=True)
         doc = GeneratePostVisitSummaryUseCase().execute(
-            patient_id=request.patient_id,
+            patient_id=internal_patient_id,
             visit_id=request.visit_id,
             transcription_job_id=request.transcription_job_id,
             preferred_language=request.preferred_language,
