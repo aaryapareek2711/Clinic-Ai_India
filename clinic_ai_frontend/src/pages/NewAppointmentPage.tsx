@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -45,6 +46,7 @@ function dateKeyLocal(iso: string | null | undefined): string {
 
 function NewAppointmentPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [appointmentHour, setAppointmentHour] = useState<string>('10')
   const [appointmentMinute, setAppointmentMinute] = useState<string>('00')
@@ -165,7 +167,7 @@ function NewAppointmentPage() {
           <button className="rounded-full p-2 text-gray-500 transition-all hover:bg-gray-50" onClick={() => navigate('/calendar')} type="button">
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
-          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">New Appointment</h2>
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">New Visit</h2>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex gap-4">
@@ -181,13 +183,13 @@ function NewAppointmentPage() {
           <div className="h-8 w-px bg-gray-200" />
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm font-semibold text-[#171d16]">Dr. Sarah Jenkins</p>
-              <p className="text-[11px] font-medium text-[#3e4a3d]">Chief Surgeon</p>
+              <p className="text-sm font-semibold text-[#171d16]">{provider.displayName}</p>
+              <p className="text-[11px] font-medium text-[#3e4a3d]">{provider.title}</p>
             </div>
             <img
               alt="Dr. Profile"
               className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6xmsE3EC7DLfeHgD9_yb6j4nDZeOYyxC9a9D8cudFDHjCJG9vzUQu73mzDSPdkOg0TdsvlFwz43PNNx80LLxdoQjDsjNxO0XygLetthxbx5fQCBQNOcmnEDgQWhI5F1A51OmRisdoJ-BHkx13uXKEarhQWh9pA5_in2G2p-QsGw7qq4U07k_s7l_bGWYDXt_YMJuw4Ce0BVPGznVkDI931xGJUh6hLP9m-e0GA12V1lMpQ6lPczve9qVi9IA5agFDwMtKAThDMd9m"
+              src={provider.avatarUrl}
             />
           </div>
         </div>
@@ -255,11 +257,11 @@ function NewAppointmentPage() {
         <section className="w-1/2 overflow-y-auto bg-[#eff6ea]/40 p-8">
           <div className="mx-auto max-w-xl space-y-8">
             <div>
-              <h3 className="mb-6 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Appointment Booking</h3>
+              <h3 className="mb-6 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Visit Booking</h3>
               <div className="space-y-6">
                 <div>
                   <label className="mb-3 block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="na-date">
-                    Appointment date
+                    Visit date
                   </label>
                   <input
                     className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
@@ -329,7 +331,7 @@ function NewAppointmentPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-[#575e70]">
-                    Appointment will be created for{' '}
+                    Visit will be created for{' '}
                     {patients.find((p) => p.id === selectedId)?.full_name ?? '(choose patient)'}.
                   </p>
                   {selectedSlotBooked && (
@@ -358,7 +360,7 @@ function NewAppointmentPage() {
                 onClick={() => void handleConfirm()}
                 type="button"
               >
-                {submitting ? 'Saving…' : 'Confirm Appointment'}
+                {submitting ? 'Saving…' : 'Confirm Visit'}
                 <span className="material-symbols-outlined">check_circle</span>
               </button>
             </div>

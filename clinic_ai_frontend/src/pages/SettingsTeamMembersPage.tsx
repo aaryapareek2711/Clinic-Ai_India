@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsTeamMembersPage() {
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
@@ -17,10 +19,10 @@ function SettingsTeamMembersPage() {
             <div className="h-8 w-px bg-gray-200" />
             <div className="flex items-center space-x-3">
               <div className="text-right">
-                <p className="text-sm font-semibold text-gray-900">Dr. Julian Vance</p>
-                <p className="text-xs text-gray-500">Chief Surgeon</p>
+                <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
+                <p className="text-xs text-gray-500">{provider.title}</p>
               </div>
-              <img alt="Dr. Profile" className="w-10 h-10 rounded-full border border-gray-200 object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwpnDGj9s675sTRfsIFdZgRBU7q3GQk4q_agSTb6Cwu0Dy8l7atZ0QI7faMUliT5IlTGZ9_VdiZSiXlYE8TtzVmaFs3bj8wn3Es3QVwFlejJhrBUfEvrvpWxVJEC7D1wfBSjbjbDlwjxA5-_h1V8GGlozrp6c90kE9VbF8ZJe5YvFgTXWEraMUjO2cLACgOvZ6KUXQX639C-JpRFpXIaFSRZ-GusgeySP2TmAa01Ub0XqW8uy9TuhcxMgz5sybLX9AbGq4brfGkB0D" />
+              <img alt="Dr. Profile" className="w-10 h-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
             </div>
           </div>
         </header>

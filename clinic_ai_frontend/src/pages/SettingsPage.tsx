@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
@@ -17,13 +19,13 @@ function SettingsPage() {
           </button>
           <div className="flex items-center gap-3 ml-2">
             <div className="text-right">
-              <div className="text-sm font-semibold text-[#171d16]">Dr. Rajesh Kumar</div>
-              <div className="text-[11px] text-gray-500 uppercase font-bold tracking-tight">Oncology Specialist</div>
+              <div className="text-sm font-semibold text-[#171d16]">{provider.displayName}</div>
+              <div className="text-[11px] text-gray-500 uppercase font-bold tracking-tight">{provider.title}</div>
             </div>
             <img
               alt="Dr. Profile"
               className="w-10 h-10 rounded-full object-cover border-2 border-[#00873a]"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDaAYeQ0A8oF3vIfyLdOprOJ5SFTNVVvmJSbHXZgI1_hK5qpkoXqwV_MO6PstghTFvZxhRr4w_9UWJvAuxv6BAaL2Ki9iaopyTFj53ErGUzDUt0DPmIeEPkQ8QLnp9zdKrG7mSUR7QCKypwjDYeVy0wWE4WvCPcfkiJCCHGOCDYuuQZDw9ZSoHuRR0Y5GdkcuGswFoLmCDphSSFTzmWLMexlxM302h34UI87UnGQ_WgZ6-lEVzJP2xIG0bNin24u6kGXLX5-NY36vdO"
+              src={provider.avatarUrl}
             />
           </div>
         </div>
@@ -67,14 +69,14 @@ function SettingsPage() {
                 <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-left">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-start sm:gap-x-3">
                     <h1 className="text-balance text-xl font-bold tracking-tight sm:text-2xl md:text-[1.75rem]">
-                      Dr. Rajesh Kumar
+                      {provider.displayName}
                     </h1>
                     <span className="inline-flex shrink-0 items-center rounded-full border border-white/[0.12] bg-white/[0.08] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/95">
                       Active
                     </span>
                   </div>
                   <p className="mx-auto max-w-xl text-sm leading-snug text-slate-300 sm:mx-0">
-                    Senior Consultant Oncology &amp; Palliative Care
+                    {provider.title}
                   </p>
                   <dl className="mx-auto mt-3 flex max-w-xl flex-col gap-2 sm:mx-0 sm:flex-row sm:flex-wrap">
                     <div className="flex flex-1 justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 backdrop-blur-sm sm:flex-initial sm:justify-start">

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { registerPatient } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -44,6 +45,7 @@ function normalizeIndiaMobileForApi(raw: string): string | null {
 
 function NewVisitPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [visitTimeHour, setVisitTimeHour] = useState<string>('9')
   const [visitTimeMinute, setVisitTimeMinute] = useState<string>('00')
@@ -141,13 +143,13 @@ function NewVisitPage() {
           <div className="h-8 w-px bg-gray-200" />
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm font-semibold text-gray-900">Dr. Sarah Jenkins</p>
-              <p className="text-xs text-gray-500">Cardiologist</p>
+              <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
+              <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
             <img
               alt="Dr. Profile"
               className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHypBFfim5qvr_z9DI4uV6FNnEepu9krhEl0WrrfDEHXlapJWtLqxcKITFrCHZTNf759V_p4i3Ro-sjERsJb25Vsyx549xjSEHtO1tJUlERpiJtcSAYwp3FE5a8Hwy1J-EIzQCNc-GFbRp4q-uC6nrOidIuRtDPy1NOqQg4vgIOVF5OZhiYt9apl2tTPv31YYstwQV9cgytqBO_F6H7LrshgDCY6bPhKVoUNvL8Xu1dnz-ej2W83moDNyjshAmtEj_WNg7rRhHVts-"
+              src={provider.avatarUrl}
             />
           </div>
         </div>

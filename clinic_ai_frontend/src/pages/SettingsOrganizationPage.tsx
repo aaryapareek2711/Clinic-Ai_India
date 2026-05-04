@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const showDigitalIntegrations = false
 
 function SettingsOrganizationPage() {
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
@@ -21,13 +23,13 @@ function SettingsOrganizationPage() {
           </button>
           <div className="flex items-center gap-3 border-l border-gray-200 pl-6">
             <div className="text-right">
-              <p className="text-sm font-semibold text-gray-900">Dr. Rajesh Kumar</p>
-              <p className="text-xs text-gray-500">Chief Surgeon</p>
+              <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
+              <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
             <img
               alt="Dr. Profile"
               className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9qvBtwYtxaNFbrzzJeE1456CDBegoNbtFD_aLQsWroHthntZGH73OQw4K2IY7b5TZkTSYmvtR-6fnYNJVjgWiH-MsFpIHE4UYfRLxbRMdjLrNxmlUo51CCtxzHnvO_ul4JL5V6hM7E4Q9KF5metIClMUMc-RNiVXc7N8o3SDd6NYjxgoifDDg95XsNTHHceUIkJqjfUaq_PlQlpAOQP0cy1BmL398p5Uif5bWV5C70ZMkqIfCY4J4aOXm3RA5GdMjBT8ZizYVrk1v"
+              src={provider.avatarUrl}
             />
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreateTemplateModal from '../components/CreateTemplateModal'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -44,6 +45,7 @@ const RECOMMENDED_TEMPLATES = [
 ] as const
 
 function TemplatesPage() {
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [templateSavedMessage, setTemplateSavedMessage] = useState<string | null>(null)
@@ -129,13 +131,13 @@ function TemplatesPage() {
           </button>
           <div className="flex items-center gap-3 border-l border-gray-200 pl-6">
             <div className="text-right">
-              <p className="text-sm font-semibold">Dr. Rajesh Kumar</p>
-              <p className="text-xs text-gray-500">General Physician</p>
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
             <img
               alt="Dr. Profile"
               className="w-10 h-10 rounded-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuBbbeRYNHax1NbrWkifhw0L3CRGWeyHIESTSxKepNPOX2ITi5HCrZUIYfH6VdN0_bRq07G_EQgfr_SFMnukiUeX8MGzOjG5LlSZzEqfxY9T3eODDwdxMHiUlOWv_eBYJ211Zk35CMrL9z9hg6rbZprdgbxsYyVgdt0xVWQP0BSlRRGnKWJRPoI_dz-ApyJnT2a_2qyoJfex3WBB95OuByf8lX6aUB1wKg6zmWBKsvxMaTyYr63KwgXugcdPC09VqETyf5awGoV99m"
+              src={provider.avatarUrl}
             />
           </div>
         </div>

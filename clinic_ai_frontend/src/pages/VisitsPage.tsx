@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderVisits,
@@ -184,6 +185,7 @@ function iconClasses(tone: string) {
 
 function VisitsPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
@@ -309,14 +311,14 @@ function VisitsPage() {
             <div className="h-8 w-px bg-gray-200" />
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-sm font-semibold">Dr. Profile</p>
-                <p className="text-[10px] text-gray-500">Chief Surgeon</p>
+                <p className="text-sm font-semibold">{provider.displayName}</p>
+                <p className="text-[10px] text-gray-500">{provider.title}</p>
               </div>
               <div className="w-10 h-10 rounded-full overflow-hidden bg-[#e9f0e5] border border-[#bdcaba]">
                 <img
                   alt="Dr. Profile"
                   className="w-full h-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbp_oWoE3bnBWCkxmGVQ6riaAyjs30B1Lo4Yhu5A5siihngE_nkAwxix-gGJYVdzU4cQw_1IauziH6vjCZxnBvpbUStMTrJMrXVoRW824lR8gZXHpXH9NuXgGmlvJsypd8lBwB6F__9FwTsvsiOXcWv9zKXjR19PCkpmgUymUSSC8YnRLjQDZAudIip-mTk3zjw6nyQRhuMUQJ2PNfv001VyWkBwe_k2WUxeTtt-2IPbA-mra85Nie88vfkwye-IGtIoKlqYm8HsEM"
+                  src={provider.avatarUrl}
                 />
               </div>
             </div>

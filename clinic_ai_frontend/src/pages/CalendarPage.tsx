@@ -9,6 +9,8 @@ import {
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
+type CalendarViewMode = 'month' | 'week' | 'day'
+
 function escapeCsvCell(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
     return `"${value.replace(/"/g, '""')}"`
@@ -62,6 +64,8 @@ function CalendarPage() {
   const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
   const importCsvRef = useRef<HTMLDivElement>(null)
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
+  const [focusDate, setFocusDate] = useState(() => new Date())
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -103,6 +107,21 @@ function CalendarPage() {
   const { blanks, daysInMonth } = useMemo(() => padMonthGrid(year, month), [year, month])
 
   const monthTitle = viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })
+  const dayTitle = focusDate.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const weekStart = useMemo(() => {
+    const start = new Date(focusDate)
+    start.setHours(0, 0, 0, 0)
+    start.setDate(start.getDate() - start.getDay())
+    return start
+  }, [focusDate])
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }).map((_, idx) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + idx)),
+    [weekStart],
+  )
+  const weekTitle = useMemo(() => {
+    const end = weekDays[6]
+    return `${weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+  }, [weekDays, weekStart])
 
   const totalCells = Math.ceil((blanks + daysInMonth) / 7) * 7
 
@@ -114,11 +133,27 @@ function CalendarPage() {
   }, [appointments])
 
   function prevMonth(): void {
-    setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+    if (viewMode === 'month') {
+      setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+      return
+    }
+    if (viewMode === 'week') {
+      setFocusDate((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - 7))
+      return
+    }
+    setFocusDate((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1))
   }
 
   function nextMonth(): void {
-    setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+    if (viewMode === 'month') {
+      setViewMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+      return
+    }
+    if (viewMode === 'week') {
+      setFocusDate((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7))
+      return
+    }
+    setFocusDate((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1))
   }
 
   return (
@@ -195,69 +230,150 @@ function CalendarPage() {
                 <button aria-label="Previous month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={prevMonth} type="button">
                   <span className="material-symbols-outlined">chevron_left</span>
                 </button>
-                <h3 className="text-xl font-bold">{monthTitle}</h3>
+                <h3 className="text-xl font-bold">{viewMode === 'month' ? monthTitle : viewMode === 'week' ? weekTitle : dayTitle}</h3>
                 <button aria-label="Next month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={nextMonth} type="button">
                   <span className="material-symbols-outlined">chevron_right</span>
                 </button>
               </div>
               <div className="flex rounded-lg bg-[#eff6ea] p-1">
-                <button className="rounded-md bg-white px-4 py-1.5 text-sm font-medium text-[#006b2c] shadow-sm" type="button">
+                <button
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium ${viewMode === 'month' ? 'bg-white text-[#006b2c] shadow-sm' : 'text-[#3e4a3d]'}`}
+                  onClick={() => setViewMode('month')}
+                  type="button"
+                >
                   Month
                 </button>
-                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]" disabled type="button">
+                <button
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium ${viewMode === 'week' ? 'bg-white text-[#006b2c] shadow-sm' : 'text-[#3e4a3d]'}`}
+                  onClick={() => setViewMode('week')}
+                  type="button"
+                >
                   Week
                 </button>
-                <button className="px-4 py-1.5 text-sm font-medium text-[#3e4a3d]" disabled type="button">
+                <button
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium ${viewMode === 'day' ? 'bg-white text-[#006b2c] shadow-sm' : 'text-[#3e4a3d]'}`}
+                  onClick={() => setViewMode('day')}
+                  type="button"
+                >
                   Day
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-7 border-b border-gray-100">
-              {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
-                <div key={d} className="border-r border-gray-100 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 auto-rows-[minmax(7rem,auto)]">
-              {Array.from({ length: totalCells }).map((_, i) => {
-                const dayNum = i - blanks + 1
-                const isBlank = dayNum < 1 || dayNum > daysInMonth
-                const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
-
-                const isToday = (() => {
-                  if (isBlank) return false
-                  const now = new Date()
-                  return now.getFullYear() === year && now.getMonth() === month && now.getDate() === dayNum
-                })()
-
-                return (
-                  <div key={i} className={`border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0`}>
-                    {!isBlank && (
-                      <>
-                        <span className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}>{dayNum}</span>
-                        <div className="mt-1 space-y-1">
-                          {dayAppts.slice(0, 3).map((a) => (
-                            <button
-                              key={a.visit_id}
-                              className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-left text-[10px] text-blue-700"
-                              onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
-                              title={a.chief_complaint}
-                              type="button"
-                            >
-                              {formatShortTime(a.scheduled_start)} · {a.patient_name}
-                            </button>
-                          ))}
-                          {dayAppts.length > 3 && (
-                            <p className="text-[10px] text-[#575e70]">+{dayAppts.length - 3} more</p>
-                          )}
-                        </div>
-                      </>
-                    )}
+            {viewMode !== 'day' && (
+              <div className="grid grid-cols-7 border-b border-gray-100">
+                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
+                  <div key={d} className="border-r border-gray-100 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
+                    {d}
                   </div>
-                )
-              })}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {viewMode === 'month' && (
+              <div className="grid grid-cols-7 auto-rows-[minmax(7rem,auto)]">
+                {Array.from({ length: totalCells }).map((_, i) => {
+                  const dayNum = i - blanks + 1
+                  const isBlank = dayNum < 1 || dayNum > daysInMonth
+                  const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
+
+                  const isToday = (() => {
+                    if (isBlank) return false
+                    const now = new Date()
+                    return now.getFullYear() === year && now.getMonth() === month && now.getDate() === dayNum
+                  })()
+
+                  return (
+                    <div key={i} className={`border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0`}>
+                      {!isBlank && (
+                        <>
+                          <button
+                            className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}
+                            onClick={() => setFocusDate(new Date(year, month, dayNum))}
+                            type="button"
+                          >
+                            {dayNum}
+                          </button>
+                          <div className="mt-1 space-y-1">
+                            {dayAppts.slice(0, 3).map((a) => (
+                              <button
+                                key={a.visit_id}
+                                className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-left text-[10px] text-blue-700"
+                                onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                                title={a.chief_complaint}
+                                type="button"
+                              >
+                                {formatShortTime(a.scheduled_start)} · {a.patient_name}
+                              </button>
+                            ))}
+                            {dayAppts.length > 3 && (
+                              <p className="text-[10px] text-[#575e70]">+{dayAppts.length - 3} more</p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {viewMode === 'week' && (
+              <div className="grid grid-cols-7 auto-rows-[minmax(10rem,auto)]">
+                {weekDays.map((d) => {
+                  const dayAppts = appointmentsOnDay(appointments, d.getFullYear(), d.getMonth(), d.getDate())
+                  const isToday =
+                    new Date().getFullYear() === d.getFullYear() && new Date().getMonth() === d.getMonth() && new Date().getDate() === d.getDate()
+                  return (
+                    <div key={d.toISOString()} className="border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0">
+                      <button
+                        className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}
+                        onClick={() => setFocusDate(new Date(d))}
+                        type="button"
+                      >
+                        {d.getDate()}
+                      </button>
+                      <div className="mt-2 space-y-1">
+                        {dayAppts.length === 0 && <p className="text-[10px] text-[#7a828f]">No appointments</p>}
+                        {dayAppts.map((a) => (
+                          <button
+                            key={a.visit_id}
+                            className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-1 text-left text-[10px] text-blue-700"
+                            onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                            title={a.chief_complaint}
+                            type="button"
+                          >
+                            {formatShortTime(a.scheduled_start)} · {a.patient_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {viewMode === 'day' && (
+              <div className="divide-y divide-gray-100">
+                {appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).length === 0 ? (
+                  <p className="px-6 py-10 text-sm text-[#575e70]">No appointments for this day.</p>
+                ) : (
+                  appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).map((a) => (
+                    <button
+                      key={a.visit_id}
+                      className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]"
+                      onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                      type="button"
+                    >
+                      <div>
+                        <p className="font-semibold">{a.patient_name}</p>
+                        <p className="text-sm text-[#3e4a3d]">{a.chief_complaint || a.appointment_type || 'Visit'}</p>
+                      </div>
+                      <p className="rounded-md bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{formatShortTime(a.scheduled_start)}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
             {loading && <p className="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">Loading appointments…</p>}
           </div>
 

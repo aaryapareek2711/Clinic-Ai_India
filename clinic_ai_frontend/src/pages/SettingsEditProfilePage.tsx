@@ -1,15 +1,19 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getStoredAuthProfile } from '../lib/authSession'
+import { doctorNameLabel } from '../lib/doctorDisplayName'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 import { fetchMyProfile, getApiErrorMessage, patchMyProfile } from '../services/profileApi'
 
+const authSeed = getStoredAuthProfile()
+
 const DEMO_PROFILE = {
-  email: 'rajesh.kumar@medgenie.pro',
-  username: 'rajesh.kumar',
-  full_name: 'Dr. Rajesh Kumar',
+  email: authSeed.username ? `${authSeed.username}@medgenie.pro` : 'doctor@medgenie.pro',
+  username: authSeed.username || 'doctor',
+  full_name: doctorNameLabel(authSeed.fullName || authSeed.username || 'Doctor'),
   phone: '+91 98234 56710',
-  role: 'doctor',
-  job_title: 'Oncology Specialist',
+  role: authSeed.role || 'doctor',
+  job_title: authSeed.jobTitle || 'Clinical provider',
   medical_license_number: 'MED-8923-GNE-2024',
   avatar_url:
     'https://lh3.googleusercontent.com/aida-public/AB6AXuDaAYeQ0A8oF3vIfyLdOprOJ5SFTNVVvmJSbHXZgI1_hK5qpkoXqwV_MO6PstghTFvZxhRr4w_9UWJvAuxv6BAaL2Ki9iaopyTFj53ErGUzDUt0DPmIeEPkQ8QLnp9zdKrG7mSUR7QCKypwjDYeVy0wWE4WvCPcfkiJCCHGOCDYuuQZDw9ZSoHuRR0Y5GdkcuGswFoLmCDphSSFTzmWLMexlxM302h34UI87UnGQ_WgZ6-lEVzJP2xIG0bNin24u6kGXLX5-NY36vdO',
