@@ -27,6 +27,10 @@ export function persistAuthSession(res: AuthResponse): void {
   try {
     localStorage.setItem('access_token', res.access_token)
     localStorage.setItem('refresh_token', res.refresh_token)
+    localStorage.setItem('auth_user_full_name', (res.user.full_name || '').trim())
+    localStorage.setItem('auth_user_username', (res.user.username || '').trim())
+    localStorage.setItem('auth_user_job_title', (res.user.job_title || '').trim())
+    localStorage.setItem('auth_user_role', (res.user.role || '').trim())
   } catch {
     /* ignore */
   }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
-import { clearAuthSession } from '../lib/authSession'
+import { clearAuthSession, getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile } from '../services/profileApi'
 
@@ -22,10 +22,13 @@ function navState(pathname: string) {
 }
 
 export default function ProviderSidebar() {
+  const seed = getStoredAuthProfile()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const n = navState(pathname)
-  const [sidebarName, setSidebarName] = useState<string>('')
+  const [sidebarName, setSidebarName] = useState<string>(
+    doctorNameLabel(seed.fullName || seed.username || ''),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -36,7 +39,10 @@ export default function ProviderSidebar() {
         const raw = me.full_name?.trim() || me.username?.trim() || ''
         setSidebarName(doctorNameLabel(raw))
       } catch {
-        if (!cancelled) setSidebarName('')
+        if (!cancelled) {
+          const fallback = getStoredAuthProfile()
+          setSidebarName(doctorNameLabel(fallback.fullName || fallback.username || ''))
+        }
       }
     })()
     return () => {

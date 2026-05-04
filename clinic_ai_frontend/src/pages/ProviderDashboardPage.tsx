@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
+import { getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile } from '../services/profileApi'
 import {
@@ -44,10 +45,15 @@ function displayStatus(raw: string | undefined): string {
 }
 
 function ProviderDashboardPage() {
+  const seedProfile = getStoredAuthProfile()
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [welcomeName, setWelcomeName] = useState<string>('')
-  const [welcomeTitle, setWelcomeTitle] = useState<string>('')
+  const [welcomeName, setWelcomeName] = useState<string>(
+    seedProfile.fullName || seedProfile.username || '',
+  )
+  const [welcomeTitle, setWelcomeTitle] = useState<string>(
+    seedProfile.jobTitle || seedProfile.role.replace(/_/g, ' ') || '',
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
@@ -71,7 +77,9 @@ function ProviderDashboardPage() {
         setWelcomeName(me.full_name?.trim() || me.username?.trim() || '')
         setWelcomeTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || '')
       } else if (!cancelled) {
-        setWelcomeTitle('')
+        const fallback = getStoredAuthProfile()
+        setWelcomeName(fallback.fullName || fallback.username || '')
+        setWelcomeTitle(fallback.jobTitle || fallback.role.replace(/_/g, ' ') || '')
       }
 
       if (!cancelled && upcomingRes.status === 'fulfilled') {
