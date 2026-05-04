@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
@@ -15,6 +15,8 @@ import {
   sendPostVisitSummaryWhatsApp,
   type PostVisitPatientLanguage,
   submitVitals,
+  createLabRecordText,
+  uploadLabRecordWithImages,
   uploadTranscriptionAudio,
   type ClinicalNoteLatest,
   type IntakeSessionResponse,
@@ -26,6 +28,7 @@ import {
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
+import VisitClinicalNotePanel from './visit/VisitClinicalNotePanel'
 import VisitIntakeCanvas, { PATIENT_AVATAR_VISIT } from './visit/VisitIntakeCanvas'
 
 export type VisitWorkflowTab = 'pre-visit' | 'vitals' | 'transcription' | 'clinical-note' | 'post-visit'
@@ -41,6 +44,19 @@ const LEGACY_TAB_MAP: Record<string, VisitWorkflowTab> = {
 
 const DR_AVATAR =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCuSkfvIW3phx7yHbt104mLhs656BoGQpYY09pPg3wUO_G9c3DWXj7ry68ypMznP1rTdyAPSXjX6Xk7cDbvJ1wgmWIlq_McPQW-9KpGS9qeEbJVVjt4YVfbIWGE8WyTOLE1nlg7wDw7fKdH7x-kMASiUT_StwHliRrFojXgKNfKBB79rNiWPg8DfC3FAxKDCDvu0pyNjmXjRMaDTqqlXXqHwQuQtOnhf_uKw2ti2h8FznKYlsSlVV4VYJ3tst3kLqJ3Qx1OO_BNWviI'
+
+const LAB_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+const LAB_UPLOAD_MAX_FILES = 8
+
+const LAB_TEST_CATEGORY_OPTIONS = [
+  '',
+  'Blood Work',
+  'Imaging (X-Ray/MRI)',
+  'Cardiology',
+  'Pathology',
+  'Genetic Testing',
+  'Other',
+] as const
 
 function ageFromDob(dob: string | undefined): string {
   if (!dob) return '—'
@@ -153,6 +169,16 @@ export default function VisitDetailPage() {
     phoneDisplay: string
     languageDisplay: string
   } | null>(null)
+  const [labModalOpen, setLabModalOpen] = useState(false)
+  const [labReportName, setLabReportName] = useState('')
+  const [labCategory, setLabCategory] = useState('')
+  const [labFiles, setLabFiles] = useState<File[]>([])
+  const [labDropActive, setLabDropActive] = useState(false)
+  const labDropDepthRef = useRef(0)
+  const [labUploading, setLabUploading] = useState(false)
+  const [labModalError, setLabModalError] = useState<string | null>(null)
+  const [labUploadFeedback, setLabUploadFeedback] = useState<string | null>(null)
+  const labFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const syncTabToUrl = useCallback(
     (next: VisitWorkflowTab) => {
@@ -214,7 +240,7 @@ export default function VisitDetailPage() {
       const [intakeRes, preRes, noteRes] = await Promise.all([
         intakePromise,
         prePromise,
-        fetchLatestClinicalNote(pid, visitId),
+        fetchLatestClinicalNote(pid, visitId).catch(() => null),
       ])
       setIntake(intakeRes)
       setPreVisit(preRes)
@@ -255,11 +281,43 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPatientLang('en')
     setRecapPhoneDraft('')
+    setLabModalOpen(false)
+    setLabReportName('')
+    setLabCategory('')
+    setLabFiles([])
+    setLabDropActive(false)
+    labDropDepthRef.current = 0
+    setLabUploading(false)
+    setLabModalError(null)
+    setLabUploadFeedback(null)
   }, [visitId])
 
   useEffect(() => {
     void loadWorkspace()
   }, [loadWorkspace])
+
+  useEffect(() => {
+    if (!labModalOpen) return
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [labModalOpen])
+
+  useEffect(() => {
+    if (!labModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !labUploading) setLabModalOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [labModalOpen, labUploading])
+
+  useEffect(() => {
+    if (!labUploadFeedback) return
+    const t = window.setTimeout(() => setLabUploadFeedback(null), 6000)
+    return () => window.clearTimeout(t)
+  }, [labUploadFeedback])
 
   const patientName = useMemo(() => {
     const fn = visit?.patient?.first_name?.trim() ?? ''
@@ -280,7 +338,6 @@ export default function VisitDetailPage() {
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
 
-  const notePayload = clinicalNote?.payload
   const patientId = visit?.patient_id ?? ''
 
   visitIdRef.current = visitId
@@ -331,6 +388,137 @@ export default function VisitDetailPage() {
     },
     [vitalsSubmitting],
   )
+
+  const resetLabForm = useCallback(() => {
+    setLabReportName('')
+    setLabCategory('')
+    setLabFiles([])
+    setLabModalError(null)
+    setLabDropActive(false)
+    labDropDepthRef.current = 0
+    if (labFileInputRef.current) labFileInputRef.current.value = ''
+  }, [])
+
+  const closeLabModal = useCallback(() => {
+    if (labUploading) return
+    setLabModalOpen(false)
+    resetLabForm()
+  }, [labUploading, resetLabForm])
+
+  const appendLabFiles = useCallback((list: FileList | null) => {
+    if (!list?.length) return
+    const picked = Array.from(list)
+    const accepted: File[] = []
+    let oversized = false
+    let badType = false
+    for (const f of picked) {
+      const okMime = f.type.startsWith('image/') || f.type === 'application/pdf'
+      if (!okMime) {
+        badType = true
+        continue
+      }
+      if (f.size > LAB_UPLOAD_MAX_BYTES) {
+        oversized = true
+        continue
+      }
+      accepted.push(f)
+    }
+    if (accepted.length === 0) {
+      if (oversized) setLabModalError('Each file must be 10 MB or smaller.')
+      else if (badType) setLabModalError('Use PDF, JPG, or PNG files only.')
+      else setLabModalError('No files could be added.')
+      return
+    }
+    setLabFiles((prev) => [...prev, ...accepted].slice(0, LAB_UPLOAD_MAX_FILES))
+    if (labFileInputRef.current) labFileInputRef.current.value = ''
+    if (oversized || badType) {
+      setLabModalError('Some files were skipped (wrong type or over 10 MB).')
+    } else {
+      setLabModalError(null)
+    }
+  }, [])
+
+  const handleLabDropZoneDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    labDropDepthRef.current += 1
+    setLabDropActive(true)
+  }, [])
+
+  const handleLabDropZoneDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    labDropDepthRef.current -= 1
+    if (labDropDepthRef.current <= 0) {
+      labDropDepthRef.current = 0
+      setLabDropActive(false)
+    }
+  }, [])
+
+  const handleLabDropZoneDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleLabDropZoneDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      labDropDepthRef.current = 0
+      setLabDropActive(false)
+      appendLabFiles(e.dataTransfer.files)
+    },
+    [appendLabFiles],
+  )
+
+  const handleSubmitLabResults = useCallback(async () => {
+    if (labUploading || !visitId) return
+
+    const imageFiles = labFiles.filter((f) => f.type.startsWith('image/'))
+    const pdfFiles = labFiles.filter((f) => f.type === 'application/pdf')
+
+    const metaLines: string[] = []
+    if (labReportName.trim()) metaLines.push(`Report: ${labReportName.trim()}`)
+    if (labCategory.trim()) metaLines.push(`Category: ${labCategory.trim()}`)
+    if (pdfFiles.length > 0) {
+      metaLines.push(`Referenced PDF files: ${pdfFiles.map((f) => f.name).join(', ')}`)
+    }
+    const rawBlock = metaLines.join('\n').trim()
+
+    if (imageFiles.length === 0 && !rawBlock) {
+      setLabModalError('Enter a report name, pick a category, or add at least one file.')
+      return
+    }
+
+    setLabModalError(null)
+    setLabUploading(true)
+    try {
+      let res
+      if (imageFiles.length > 0) {
+        res = await uploadLabRecordWithImages(visitId, {
+          rawText: rawBlock,
+          imageFiles,
+          source: 'provider_portal',
+        })
+      } else {
+        const text =
+          rawBlock ||
+          (pdfFiles.length > 0 ? `Lab upload (PDF)\n${pdfFiles.map((f) => `PDF: ${f.name}`).join('\n')}` : '')
+        if (!text.trim()) {
+          setLabModalError('Add more detail (report name, category, or files).')
+          return
+        }
+        res = await createLabRecordText(visitId, text, 'provider_portal')
+      }
+      setLabUploadFeedback(`Lab result attached · ${res.record_id}`)
+      setLabModalOpen(false)
+      resetLabForm()
+    } catch (e) {
+      setLabModalError(getApiErrorMessage(e))
+    } finally {
+      setLabUploading(false)
+    }
+  }, [labUploading, visitId, labReportName, labCategory, labFiles, resetLabForm])
 
   const stopMediaTracks = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop())
@@ -644,9 +832,18 @@ export default function VisitDetailPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
+                  {labUploadFeedback && (
+                    <p className="text-xs text-emerald-300 md:text-right" role="status">
+                      {labUploadFeedback}
+                    </p>
+                  )}
                   <button
-                    className="flex items-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
+                    className="flex items-center justify-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
+                    onClick={() => {
+                      resetLabForm()
+                      setLabModalOpen(true)
+                    }}
                     type="button"
                   >
                     <span className="material-symbols-outlined mr-2">add_circle</span>
@@ -992,38 +1189,15 @@ export default function VisitDetailPage() {
               )}
 
               {!loading && tab === 'clinical-note' && (
-                <div className="mx-auto max-w-4xl space-y-6 rounded-xl border border-[#bdcaba] bg-white p-8">
-                  <h3 className="text-[18px] font-semibold">Clinical Note</h3>
-                  {!clinicalNote && (
-                    <p className="text-sm text-[#3e4a3d]">
-                      No saved clinical note for this visit yet. Generate one from the backend after transcription completes.
-                    </p>
-                  )}
-                  {clinicalNote && (
-                    <>
-                      <section>
-                        <h4 className="mb-2 font-semibold text-[#171d16]">Assessment</h4>
-                        <p className="text-sm leading-relaxed text-[#3e4a3d]">{notePayload?.assessment ?? '—'}</p>
-                      </section>
-                      <section>
-                        <h4 className="mb-2 font-semibold text-[#171d16]">Plan</h4>
-                        <p className="text-sm leading-relaxed text-[#3e4a3d]">{notePayload?.plan ?? '—'}</p>
-                      </section>
-                      {notePayload?.rx && notePayload.rx.length > 0 && (
-                        <section>
-                          <h4 className="mb-2 font-semibold text-[#171d16]">Prescription</h4>
-                          <ul className="list-inside list-disc text-sm text-[#3e4a3d]">
-                            {notePayload.rx.map((r) => (
-                              <li key={`${r.medicine_name}-${r.dose}`}>
-                                {[r.medicine_name, r.dose, r.frequency, r.duration].filter(Boolean).join(' · ')}
-                              </li>
-                            ))}
-                          </ul>
-                        </section>
-                      )}
-                    </>
-                  )}
-                </div>
+                <VisitClinicalNotePanel
+                  clinicalNote={clinicalNote}
+                  onNoteUpdated={setClinicalNote}
+                  patientId={patientId}
+                  transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
+                  transcriptionStatusKnown={transcriptionStatus != null}
+                  visitId={visitId}
+                  visitTitle={chief}
+                />
               )}
 
               {!loading && tab === 'post-visit' && (
@@ -1222,6 +1396,151 @@ export default function VisitDetailPage() {
       >
         <span className="material-symbols-outlined">add</span>
       </button>
+
+      {labModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">
+          <button
+            aria-label="Close lab upload dialog"
+            className="absolute inset-0"
+            onClick={closeLabModal}
+            type="button"
+          />
+          <div
+            className="relative z-[101] w-full max-w-[520px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lab-upload-title"
+          >
+            <div className="flex items-center justify-between bg-[#111827] px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-white">upload_file</span>
+                <h3 className="text-lg font-semibold text-white" id="lab-upload-title">
+                  Upload Lab Result
+                </h3>
+              </div>
+              <button
+                className="text-gray-400 transition-colors hover:text-white disabled:opacity-40"
+                disabled={labUploading}
+                onClick={closeLabModal}
+                type="button"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="max-h-[min(85vh,640px)] space-y-6 overflow-y-auto p-8">
+              <input
+                accept=".pdf,image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={(e) => appendLabFiles(e.target.files)}
+                ref={labFileInputRef}
+                type="file"
+                multiple
+              />
+              <button
+                className={`group flex w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 text-center transition-colors ${
+                  labDropActive
+                    ? 'border-[#006b2c]/60 bg-[#006b2c]/5'
+                    : 'border-gray-300 bg-gray-50 hover:border-[#006b2c]/40 hover:bg-[#006b2c]/[0.03]'
+                }`}
+                onClick={() => labFileInputRef.current?.click()}
+                onDragEnter={handleLabDropZoneDragEnter}
+                onDragLeave={handleLabDropZoneDragLeave}
+                onDragOver={handleLabDropZoneDragOver}
+                onDrop={handleLabDropZoneDrop}
+                type="button"
+              >
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm transition-transform group-hover:scale-110">
+                  <span className="material-symbols-outlined text-4xl text-[#006b2c]">cloud_upload</span>
+                </div>
+                <p className="mb-1 font-semibold text-[#171d16]">Click to upload or drag and drop</p>
+                <p className="text-sm text-[#575e70]">PDF, JPG, or PNG (Max. 10MB)</p>
+              </button>
+
+              {labFiles.length > 0 && (
+                <ul className="space-y-1.5 rounded-lg border border-gray-100 bg-white px-3 py-2 text-xs text-[#3e4a3d]">
+                  {labFiles.map((f, i) => (
+                    <li className="flex items-center justify-between gap-2" key={`${f.name}-${i}-${f.size}`}>
+                      <span className="min-w-0 truncate">{f.name}</span>
+                      <button
+                        className="shrink-0 font-medium text-[#006b2c] underline disabled:opacity-40"
+                        disabled={labUploading}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setLabFiles((prev) => prev.filter((_, j) => j !== i))
+                        }}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-medium uppercase tracking-[0.05em] text-[#3e4a3d]" htmlFor="lab-report-name">
+                    Report Name
+                  </label>
+                  <input
+                    className="w-full rounded-lg border border-[#e5e7eb] px-4 py-2.5 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#2563eb]"
+                    id="lab-report-name"
+                    onChange={(e) => setLabReportName(e.target.value)}
+                    placeholder="e.g. Metabolic Panel Oct 2023"
+                    type="text"
+                    value={labReportName}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-medium uppercase tracking-[0.05em] text-[#3e4a3d]" htmlFor="lab-test-category">
+                    Test Category
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="w-full appearance-none rounded-lg border border-[#e5e7eb] bg-white px-4 py-2.5 pr-10 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#2563eb]"
+                      id="lab-test-category"
+                      onChange={(e) => setLabCategory(e.target.value)}
+                      value={labCategory}
+                    >
+                      {LAB_TEST_CATEGORY_OPTIONS.map((opt) => (
+                        <option key={opt || 'placeholder'} value={opt}>
+                          {opt || 'Select a category'}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 material-symbols-outlined">
+                      expand_more
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {labModalError && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{labModalError}</p>
+              )}
+
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#16a34a] py-3.5 font-semibold text-white shadow-md transition-all hover:bg-[#15803d] hover:shadow-lg active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={labUploading}
+                onClick={() => void handleSubmitLabResults()}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[20px]">attachment</span>
+                Upload &amp; Attach to Visit
+              </button>
+              <button
+                className="w-full py-1 text-sm font-medium text-[#575e70] transition-colors hover:text-[#171d16] disabled:opacity-40"
+                disabled={labUploading}
+                onClick={closeLabModal}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
