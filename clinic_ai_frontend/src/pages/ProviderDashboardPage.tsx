@@ -123,14 +123,10 @@ function ProviderDashboardPage() {
       return s === 'scheduled' || s === 'queued' || s === 'in_queue'
     }).length
     const activeNow = visits.filter((v) => (v.status || '').toLowerCase() === 'in_progress').length
-    const completedToday = visits.filter((v) => {
-      const status = (v.status || '').toLowerCase()
-      if (!['completed', 'closed', 'ended'].includes(status)) return false
-      return isSameCalendarDay(v.actual_end || v.scheduled_start || v.created_at, today)
-    })
+    const visitsToday = visits.filter((v) => isSameCalendarDay(v.scheduled_start || v.created_at, today))
 
     let latestCompletedLabel = '—'
-    const withEnd = completedToday
+    const withEnd = visitsToday
       .map((v) => ({ v, t: v.actual_end ? new Date(v.actual_end).getTime() : 0 }))
       .filter((x) => x.t > 0)
       .sort((a, b) => b.t - a.t)
@@ -142,8 +138,8 @@ function ProviderDashboardPage() {
       patientsToday: patientsTodayIds.size,
       activeNow,
       pending,
-      opdLabel: completedToday.length === 0 ? 'No visits completed today' : `${completedToday.length} visit(s) completed today`,
-      opdLatest: completedToday.length === 0 ? '' : `Last closed slot: ${latestCompletedLabel}`,
+      opdLabel: visitsToday.length === 0 ? 'No visits scheduled today' : `${visitsToday.length} visit(s) today`,
+      opdLatest: visitsToday.length === 0 ? '' : `Latest activity: ${latestCompletedLabel}`,
     }
   }, [appointments, visits, today])
 

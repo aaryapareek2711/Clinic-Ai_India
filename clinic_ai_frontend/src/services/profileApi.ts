@@ -36,6 +36,14 @@ export async function fetchMyProfile(): Promise<ProviderProfile> {
   const { data } = await apiClient.get<ProviderProfile>('/api/auth/me', {
     headers: authHeaders(),
   })
+  try {
+    localStorage.setItem('auth_user_full_name', (data.full_name || '').trim())
+    localStorage.setItem('auth_user_username', (data.username || '').trim())
+    localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
+    localStorage.setItem('auth_user_role', (data.role || '').trim())
+  } catch {
+    /* ignore */
+  }
   return data
 }
 
