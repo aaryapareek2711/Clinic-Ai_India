@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
+import { clearAuthSession } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile } from '../services/profileApi'
 
@@ -17,17 +18,6 @@ function navState(pathname: string) {
     visits: pathname.startsWith('/visits') || pathname === '/new-visit',
     templates: pathname.startsWith('/templates'),
     settings: pathname.startsWith('/settings'),
-  }
-}
-
-function clearAuthSession(): void {
-  const keys = ['access_token', 'token', 'refresh_token']
-  for (const k of keys) {
-    try {
-      localStorage.removeItem(k)
-    } catch {
-      /* ignore */
-    }
   }
 }
 

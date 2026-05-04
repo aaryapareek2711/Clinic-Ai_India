@@ -10,6 +10,22 @@ export const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
 
+apiClient.interceptors.request.use((config) => {
+  const path = (config.url ?? '').toString()
+  if (path.includes('/api/auth/login') || path.includes('/api/auth/register')) {
+    return config
+  }
+  const token =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('access_token') ?? localStorage.getItem('token')
+      : null
+  if (token && !config.headers?.Authorization) {
+    config.headers = config.headers ?? {}
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 function backendReachabilityHint(): string {
   if (API_BASE_URL) {
     return `Cannot reach the API at ${API_BASE_URL}. Check the URL, your network, and that the backend allows CORS from this origin.`

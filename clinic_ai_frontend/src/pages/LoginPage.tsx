@@ -2,9 +2,16 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 
+import { getApiErrorMessage } from '../lib/apiClient'
+import { loginWithPassword, persistAuthSession } from '../services/authApi'
+
 function LoginPage() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
+  const [usernameOrEmail, setUsernameOrEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   return (
     <div className="min-h-screen bg-surface text-on-surface flex flex-col items-center px-4 py-10">
@@ -30,35 +37,57 @@ function LoginPage() {
             </p>
           </div>
 
-          {/* <div className="flex p-1 bg-surface-container-low rounded-lg">
-            <button className="w-full py-2 text-sm font-semibold rounded-lg bg-white shadow-sm text-primary">
-              Provider
-            </button>
-          </div> */}
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {error}
+            </div>
+          )}
 
           <form
             className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault()
-              navigate('/dashboard')
+              setError(null)
+              const u = usernameOrEmail.trim()
+              const p = password
+              if (!u || !p) {
+                setError('Enter the email or username and password you used at sign up.')
+                return
+              }
+              void (async () => {
+                try {
+                  setSubmitting(true)
+                  const res = await loginWithPassword(u, p)
+                  persistAuthSession(res)
+                  navigate('/dashboard', { replace: true })
+                } catch (err) {
+                  setError(getApiErrorMessage(err))
+                } finally {
+                  setSubmitting(false)
+                }
+              })()
             }}
           >
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-semibold text-on-surface-variant">
+              <label className="text-sm font-semibold text-on-surface-variant" htmlFor="login-identity">
                 Email or Phone Number
               </label>
               <div>
                 <input
+                  autoComplete="username"
                   className="w-full bg-surface-container-low border border-outline-variant rounded-lg py-3 px-4 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  id="login-identity"
+                  onChange={(e) => setUsernameOrEmail(e.target.value)}
                   placeholder="name@clinic.in"
                   type="text"
+                  value={usernameOrEmail}
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-semibold text-on-surface-variant">
+                <label className="text-sm font-semibold text-on-surface-variant" htmlFor="login-password">
                   Password
                 </label>
                 <Link
@@ -73,9 +102,13 @@ function LoginPage() {
                   lock_open
                 </span>
                 <input
+                  autoComplete="current-password"
                   className="w-full bg-surface-container-low border border-outline-variant rounded-lg py-3 pl-12 pr-12 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  id="login-password"
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   type={showPassword ? 'text' : 'password'}
+                  value={password}
                 />
                 <button
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-primary"
@@ -90,10 +123,11 @@ function LoginPage() {
             </div>
 
             <button
-              className="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:bg-primary-container transition-all mt-2"
+              className="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:bg-primary-container transition-all mt-2 disabled:opacity-60"
+              disabled={submitting}
               type="submit"
             >
-              Login
+              {submitting ? 'Signing in…' : 'Login'}
             </button>
           </form>
 

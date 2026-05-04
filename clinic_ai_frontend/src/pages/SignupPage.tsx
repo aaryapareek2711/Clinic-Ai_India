@@ -2,9 +2,20 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 
+import { getApiErrorMessage } from '../lib/apiClient'
+import { identityForRegister } from '../lib/registerIdentity'
+import { persistAuthSession, registerAccount } from '../services/authApi'
+
 function SignupPage() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [specialty, setSpecialty] = useState('general')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   return (
     <div className="font-manrope text-on-background bg-surface min-h-screen pb-24">
@@ -33,15 +44,46 @@ function SignupPage() {
             </div>
           </div>
 
+          {error && (
+            <div className="mx-8 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {error}
+            </div>
+          )}
+
           <form
             className="p-8 space-y-6"
             onSubmit={(e) => {
               e.preventDefault()
-              const mobileValue =
-                (document.getElementById('mobile') as HTMLInputElement | null)?.value?.trim() ?? ''
-              navigate('/signup-otp', {
-                state: { mobile: mobileValue || '+91 98*** *210' },
-              })
+              setError(null)
+              if (password.length < 8) {
+                setError('Password must be at least 8 characters (same as server sign up).')
+                return
+              }
+              void (async () => {
+                try {
+                  setSubmitting(true)
+                  const { email: regEmail, username, phone } = identityForRegister({
+                    fullName,
+                    email,
+                    mobile,
+                  })
+                  const role = 'doctor'
+                  const res = await registerAccount({
+                    email: regEmail,
+                    username,
+                    password,
+                    full_name: fullName.trim(),
+                    phone,
+                    role,
+                  })
+                  persistAuthSession(res)
+                  navigate('/dashboard', { replace: true })
+                } catch (err) {
+                  setError(getApiErrorMessage(err))
+                } finally {
+                  setSubmitting(false)
+                }
+              })()
             }}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -50,7 +92,14 @@ function SignupPage() {
                   Full Name
                 </label>
                 <div className="relative">
-                  <input className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none" id="full_name" placeholder="Dr. John Doe" type="text" />
+                  <input
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    id="full_name"
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Dr. John Doe"
+                    type="text"
+                    value={fullName}
+                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">person</span>
                 </div>
               </div>
@@ -60,7 +109,14 @@ function SignupPage() {
                   Mobile Number
                 </label>
                 <div className="relative">
-                  <input className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none" id="mobile" placeholder="+91 00000 00000" type="tel" />
+                  <input
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    id="mobile"
+                    onChange={(e) => setMobile(e.target.value)}
+                    placeholder="+91 00000 00000"
+                    type="tel"
+                    value={mobile}
+                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">smartphone</span>
                 </div>
               </div>
@@ -70,7 +126,14 @@ function SignupPage() {
                   Email (Optional)
                 </label>
                 <div className="relative">
-                  <input className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none" id="email" placeholder="john.doe@medgenie.com" type="email" />
+                  <input
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    id="email"
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="john.doe@medgenie.com"
+                    type="email"
+                    value={email}
+                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">mail</span>
                 </div>
               </div>
@@ -80,7 +143,12 @@ function SignupPage() {
                   Medical Registration Number (Optional)
                 </label>
                 <div className="relative">
-                  <input className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none" id="mci" placeholder="MCI/12345" type="text" />
+                  <input
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    id="mci"
+                    placeholder="MCI/12345"
+                    type="text"
+                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">badge</span>
                 </div>
               </div>
@@ -90,7 +158,12 @@ function SignupPage() {
                   Specialty
                 </label>
                 <div className="relative">
-                  <select className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 appearance-none focus:ring-2 focus:ring-primary focus:border-primary outline-none text-slate-600" id="specialty" defaultValue="">
+                  <select
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 appearance-none focus:ring-2 focus:ring-primary focus:border-primary outline-none text-slate-600"
+                    id="specialty"
+                    onChange={(e) => setSpecialty(e.target.value)}
+                    value={specialty}
+                  >
                     <option disabled value="">
                       Select Specialty
                     </option>
@@ -112,8 +185,10 @@ function SignupPage() {
                   <input
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 pr-12 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
                     id="password"
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="Create a secure password"
                     type={showPassword ? 'text' : 'password'}
+                    value={password}
                   />
                   <button
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary"
@@ -127,7 +202,7 @@ function SignupPage() {
                 </div>
                 <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
                   <span className="material-symbols-outlined text-sm">info</span>
-                  Minimum 8 characters with at least one number and one special character.
+                  Minimum 8 characters (required by the server).
                 </p>
               </div>
             </div>
@@ -145,8 +220,12 @@ function SignupPage() {
             </div>
 
             <div className="pt-2 flex flex-col gap-3">
-              <button className="w-full py-4 bg-primary text-on-primary text-xl font-semibold rounded-lg hover:bg-primary-container transition-all shadow-lg active:scale-[0.98]" type="submit">
-                Save &amp; Continue
+              <button
+                className="w-full py-4 bg-primary text-on-primary text-xl font-semibold rounded-lg hover:bg-primary-container transition-all shadow-lg active:scale-[0.98] disabled:opacity-60"
+                disabled={submitting}
+                type="submit"
+              >
+                {submitting ? 'Creating account…' : 'Save & Continue'}
               </button>
               <p className="text-center text-sm text-slate-500">
                 By registering, you agree to our{' '}
