@@ -225,11 +225,7 @@ export default function CarePrepPage() {
           <div className="mb-8">
             <h2 className="mb-2 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep Queue</h2>
             <p className="text-base leading-relaxed text-[#3e4a3d]">
-              Intake status from{' '}
-              <code className="rounded bg-white px-1 text-sm font-mono text-[#171d16]">
-                /api/visits/&lt;visit_id&gt;/intake-session
-              </code>{' '}
-              for active workspace visits.
+              Intake status for active workspace visits.
             </p>
           </div>
 

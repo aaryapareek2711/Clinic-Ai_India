@@ -279,7 +279,7 @@ function TemplatesPage() {
                 </div>
                 <h3 className="mb-2 text-[18px] font-semibold">No templates found</h3>
                 <p className="mb-8 max-w-sm text-center text-[#3e4a3d]">
-                  None returned from `/api/templates` with the current filters. Create one below or widen search.
+                  No templates found with the current filters. Create one below or widen search.
                 </p>
                 <button
                   className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-semibold text-white transition-all hover:shadow-lg active:scale-95"

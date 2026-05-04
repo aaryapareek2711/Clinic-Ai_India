@@ -115,10 +115,14 @@ function ProviderDashboardPage() {
       return s === 'scheduled' || s === 'queued' || s === 'in_queue'
     }).length
     const activeNow = visits.filter((v) => (v.status || '').toLowerCase() === 'in_progress').length
-    const completed = visits.filter((v) => ['completed', 'closed', 'ended'].includes((v.status || '').toLowerCase()))
+    const completedToday = visits.filter((v) => {
+      const status = (v.status || '').toLowerCase()
+      if (!['completed', 'closed', 'ended'].includes(status)) return false
+      return isSameCalendarDay(v.actual_end || v.scheduled_start || v.created_at, today)
+    })
 
     let latestCompletedLabel = '—'
-    const withEnd = completed
+    const withEnd = completedToday
       .map((v) => ({ v, t: v.actual_end ? new Date(v.actual_end).getTime() : 0 }))
       .filter((x) => x.t > 0)
       .sort((a, b) => b.t - a.t)
@@ -130,8 +134,8 @@ function ProviderDashboardPage() {
       patientsToday: patientsTodayIds.size,
       activeNow,
       pending,
-      opdLabel: completed.length === 0 ? 'No closed visits loaded' : `${completed.length} visit(s) completed (loaded)`,
-      opdLatest: completed.length === 0 ? '' : `Last closed slot: ${latestCompletedLabel}`,
+      opdLabel: completedToday.length === 0 ? 'No visits completed today' : `${completedToday.length} visit(s) completed today`,
+      opdLatest: completedToday.length === 0 ? '' : `Last closed slot: ${latestCompletedLabel}`,
     }
   }, [appointments, visits, today])
 
@@ -150,7 +154,7 @@ function ProviderDashboardPage() {
     complaint && complaint.trim() ? complaint.trim() : `Visit — ${name}`
 
   const doctorDisplayName = useMemo(() => doctorNameLabel(welcomeName), [welcomeName])
-  const headerName = doctorDisplayName || (loading ? '' : 'Dr.')
+  const headerName = doctorDisplayName || 'Dr.'
 
   return (
     <div className="text-[#171d16] min-h-screen font-manrope">
@@ -162,7 +166,7 @@ function ProviderDashboardPage() {
             </button>
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-sm font-semibold">{loading && !doctorDisplayName ? '…' : headerName}</p>
+                <p className="text-sm font-semibold">{headerName}</p>
                 <p className="text-[11px] text-gray-500">{welcomeTitle || 'Clinical provider'}</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#00873a] bg-[#eff6ea] text-[#006b2c]">
@@ -177,11 +181,7 @@ function ProviderDashboardPage() {
             <h1 className="text-[28px] font-bold text-white">Provider Dashboard</h1>
             <p className="text-sm text-[#9ca3af]">
               Welcome back
-              {doctorDisplayName
-                ? `, ${doctorDisplayName}`
-                : loading
-                  ? ''
-                  : ', Dr.'}
+              {`, ${headerName}`}
             </p>
           </div>
           <div className="flex gap-3">

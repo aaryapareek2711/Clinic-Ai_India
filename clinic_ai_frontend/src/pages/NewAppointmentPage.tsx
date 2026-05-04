@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
-import { DEFAULT_PROVIDER_ID } from '../services/visitWorkflowApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
 const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
+const DAILY_SLOT_LIMIT = 15
 
 /** `YYYY-MM-DD` in local timezone for `<input type="date" min="…">`. */
 function localDateInputMin(d = new Date()): string {
@@ -32,6 +33,16 @@ function initials(full: string): string {
   return `${p[0][0] ?? ''}${p[1][0] ?? ''}`.toUpperCase()
 }
 
+function dateKeyLocal(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function NewAppointmentPage() {
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
@@ -40,6 +51,7 @@ function NewAppointmentPage() {
   const [appointmentPeriod, setAppointmentPeriod] = useState<'AM' | 'PM'>('AM')
 
   const [patients, setPatients] = useState<PatientSummary[]>([])
+  const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [appointmentDate, setAppointmentDate] = useState('')
@@ -56,8 +68,14 @@ function NewAppointmentPage() {
           setListLoading(true)
           setError(null)
         }
-        const data = await fetchPatients()
-        if (!cancelled) setPatients(data)
+        const [patientsData, upcomingData] = await Promise.all([
+          fetchPatients(),
+          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+        ])
+        if (!cancelled) {
+          setPatients(patientsData)
+          setUpcoming(upcomingData)
+        }
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e))
       } finally {
@@ -80,6 +98,22 @@ function NewAppointmentPage() {
     )
   }, [patients, query])
 
+  const selectedDateBooked = useMemo(() => {
+    const key = appointmentDate.trim()
+    if (!key) return []
+    return upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === key)
+  }, [appointmentDate, upcoming])
+
+  const dayAtCapacity = appointmentDate.trim().length > 0 && selectedDateBooked.length >= DAILY_SLOT_LIMIT
+  const selectedTime24 = to24Hour(appointmentHour, appointmentMinute, appointmentPeriod)
+  const selectedSlotBooked = selectedDateBooked.some((a) => {
+    const d = new Date(a.scheduled_start)
+    if (Number.isNaN(d.getTime())) return false
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}` === selectedTime24
+  })
+
   async function handleConfirm(): Promise<void> {
     setError(null)
     if (!selectedId) {
@@ -100,6 +134,14 @@ function NewAppointmentPage() {
     const when = new Date(`${dateStr}T${t}:00`)
     if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
       setError('Choose a future date and time (appointments cannot be booked in the past).')
+      return
+    }
+    if (dayAtCapacity) {
+      setError(`This date already has ${DAILY_SLOT_LIMIT} appointments. Please choose another date.`)
+      return
+    }
+    if (selectedSlotBooked) {
+      setError('This slot is already booked. Please choose another time.')
       return
     }
     try {
@@ -155,7 +197,7 @@ function NewAppointmentPage() {
         <section className="flex w-1/2 flex-col overflow-hidden border-r border-gray-200 bg-white p-8">
           <div className="mb-6">
             <h3 className="mb-2 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Select Existing Patient</h3>
-            <p className="text-[#3e4a3d]">Loaded from `GET /api/patients`</p>
+            <p className="text-[#3e4a3d]">Showing registered patients</p>
           </div>
           <div className="mb-6 flex items-center gap-3">
             <div className="relative flex-1">
@@ -227,6 +269,11 @@ function NewAppointmentPage() {
                     type="date"
                     value={appointmentDate}
                   />
+                  {appointmentDate.trim().length > 0 && (
+                    <p className="mt-2 text-xs text-[#575e70]">
+                      Slots used: {selectedDateBooked.length}/{DAILY_SLOT_LIMIT}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -282,11 +329,17 @@ function NewAppointmentPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-[#575e70]">
-                    Creates{' '}
-                    <code className="font-mono text-[11px]">POST /api/patients/&lt;patient_id&gt;/visits</code> with{' '}
-                    <code className="font-mono">scheduled_start</code> for{' '}
+                    Appointment will be created for{' '}
                     {patients.find((p) => p.id === selectedId)?.full_name ?? '(choose patient)'}.
                   </p>
+                  {selectedSlotBooked && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">Selected slot is already booked (frozen).</p>
+                  )}
+                  {dayAtCapacity && (
+                    <p className="mt-1 text-xs font-semibold text-red-700">
+                      Daily limit reached ({DAILY_SLOT_LIMIT} appointments). Please pick another date.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -301,7 +354,7 @@ function NewAppointmentPage() {
               </button>
               <button
                 className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-bold text-white shadow-sm transition-all hover:bg-[#00873a] disabled:opacity-50"
-                disabled={submitting}
+                disabled={submitting || dayAtCapacity || selectedSlotBooked}
                 onClick={() => void handleConfirm()}
                 type="button"
               >

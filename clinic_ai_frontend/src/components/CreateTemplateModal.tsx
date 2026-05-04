@@ -41,7 +41,7 @@ const APPOINTMENT_OPTIONS = ['Consultation', 'Follow-up', 'Procedure', 'Teleheal
 type Props = {
   isOpen: boolean
   onClose: () => void
-  /** Called after a successful POST /api/templates */
+  /** Called after a successful template save. */
   onCreated?: () => void
 }
 
@@ -217,10 +217,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
               Create clinical template
             </h2>
             <p className="mt-1 text-sm text-[#3e4a3d]">
-              Matches{' '}
-              <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">POST /api/templates</code> and optional
-              blueprint from{' '}
-              <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">POST /api/notes/clinical-note-template</code>.
+              Save a reusable template and optionally generate a clinical-note blueprint.
             </p>
           </div>
           <button
