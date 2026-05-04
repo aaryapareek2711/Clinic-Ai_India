@@ -257,7 +257,7 @@ function VisitsPage() {
       { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
     ]
     const baseCompleted = [
-      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
+      { label: 'Completed out of total', value: `${completed} / ${total}`, tone: 'text-[#16a34a]' },
       { label: 'In progress', value: String(inProg), tone: 'text-[#3b82f6]' },
       { label: 'Scheduled', value: String(scheduledCount), tone: 'text-[#f59e0b]' },
       { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
