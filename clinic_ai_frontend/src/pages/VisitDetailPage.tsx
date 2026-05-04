@@ -106,6 +106,7 @@ export default function VisitDetailPage() {
   const [transcriptionMessage, setTranscriptionMessage] = useState<string | null>(null)
   const [transcriptionText, setTranscriptionText] = useState<string | null>(null)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
+  const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
   const [recordingPhase, setRecordingPhase] = useState<'idle' | 'recording' | 'paused'>('idle')
@@ -196,6 +197,7 @@ export default function VisitDetailPage() {
       setTranscriptionStatus(null)
       setTranscriptionMessage(null)
       setTranscriptionText(null)
+      pendingTranscriptionAudioRef.current = null
       setPendingTranscriptionAudio(null)
       setRecordingError(null)
       setRecordingPhase('idle')
@@ -267,10 +269,28 @@ export default function VisitDetailPage() {
   )
 
   const clearPendingTranscriptionFile = useCallback(() => {
+    pendingTranscriptionAudioRef.current = null
     setPendingTranscriptionAudio(null)
     const el = transcriptionFileInputRef.current
     if (el) el.value = ''
   }, [])
+
+  const handleUploadPendingTranscription = useCallback(() => {
+    if (recordingPhase !== 'idle' || !patientId || !visitId) return
+    const f = pendingTranscriptionAudioRef.current ?? pendingTranscriptionAudio
+    if (!f) return
+    void (async () => {
+      const ok = await submitTranscriptionAudioFile(f)
+      if (ok) clearPendingTranscriptionFile()
+    })()
+  }, [
+    clearPendingTranscriptionFile,
+    patientId,
+    pendingTranscriptionAudio,
+    recordingPhase,
+    submitTranscriptionAudioFile,
+    visitId,
+  ])
 
   const loadTranscriptBody = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -670,21 +690,23 @@ export default function VisitDetailPage() {
                     </p>
                   </header>
 
-                  <section className={`space-y-3 ${recordingPhase !== 'idle' ? 'pointer-events-none opacity-45' : ''}`}>
+                  <section className={`space-y-3 ${recordingPhase !== 'idle' ? 'opacity-45' : ''}`}>
                     <h4 className="text-sm font-bold tracking-tight text-[#111827]">Upload audio file</h4>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                    <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-stretch">
                       <div className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-gray-200 bg-[#fafcf8] px-3 py-2 sm:px-4">
                         <input
                           ref={transcriptionFileInputRef}
                           accept="audio/*"
                           aria-label="Select audio file to transcribe"
-                          className="sr-only"
+                          className="fixed top-0 left-[-9999px] h-px w-px overflow-hidden opacity-0"
                           disabled={recordingPhase !== 'idle' || !patientId || !visitId}
                           id="visit-transcription-file"
                           onChange={(e) => {
                             const file = e.target.files?.[0] ?? null
+                            pendingTranscriptionAudioRef.current = file
                             setPendingTranscriptionAudio(file)
                           }}
+                          tabIndex={-1}
                           type="file"
                         />
                         <label
@@ -705,18 +727,11 @@ export default function VisitDetailPage() {
                         </span>
                       </div>
                       <button
-                        className="shrink-0 rounded-xl bg-[#16a34a] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                        className="relative z-20 shrink-0 rounded-xl bg-[#16a34a] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                         disabled={
                           recordingPhase !== 'idle' || !pendingTranscriptionAudio || !patientId || !visitId
                         }
-                        onClick={() =>
-                          void (async () => {
-                            const f = pendingTranscriptionAudio
-                            if (!f) return
-                            const ok = await submitTranscriptionAudioFile(f)
-                            if (ok) clearPendingTranscriptionFile()
-                          })()
-                        }
+                        onClick={handleUploadPendingTranscription}
                         type="button"
                       >
                         Upload
@@ -725,7 +740,7 @@ export default function VisitDetailPage() {
                   </section>
 
                   <div className="relative py-2">
-                    <div className="absolute inset-0 flex items-center">
+                    <div className="pointer-events-none absolute inset-0 flex items-center">
                       <div className="w-full border-t border-gray-200" />
                     </div>
                     <div className="relative flex justify-center">
