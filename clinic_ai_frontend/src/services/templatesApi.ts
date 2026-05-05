@@ -115,6 +115,18 @@ export async function createClinicalTemplate(payload: CreateClinicalTemplatePayl
   return { id: String(data.id) }
 }
 
+export async function updateClinicalTemplate(
+  templateId: string,
+  payload: {
+    name: string
+    description: string
+    category: string
+    specialty: string
+  },
+): Promise<void> {
+  await apiClient.put(`/api/templates/${encodeURIComponent(templateId)}`, payload)
+}
+
 export type ClinicalTemplateListItem = {
   id: string
   name: string
@@ -123,6 +135,10 @@ export type ClinicalTemplateListItem = {
   category: string
   specialty: string
   is_favorite: boolean
+}
+
+export type ClinicalTemplateDetail = ClinicalTemplateListItem & {
+  content: TemplateContentPayload
 }
 
 export type ListClinicalTemplatesResponse = {
@@ -147,4 +163,16 @@ export async function listClinicalTemplates(params?: {
     },
   })
   return data
+}
+
+export async function fetchClinicalTemplate(templateId: string): Promise<ClinicalTemplateDetail> {
+  const { data } = await apiClient.get<ClinicalTemplateDetail>(`/api/templates/${encodeURIComponent(templateId)}`)
+  return data
+}
+
+export async function recordClinicalTemplateUsage(
+  templateId: string,
+  body?: { visit_id?: string; patient_id?: string },
+): Promise<void> {
+  await apiClient.post(`/api/templates/${encodeURIComponent(templateId)}/use`, body ?? {})
 }

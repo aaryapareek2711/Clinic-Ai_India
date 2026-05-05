@@ -112,13 +112,6 @@ function SettingsPage() {
                   <span className="material-symbols-outlined text-[1.125rem]">edit</span>
                   Edit Profile
                 </button>
-                <button
-                  aria-label="Share profile"
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.06] text-white transition hover:bg-white/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/30"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[1.125rem]">share</span>
-                </button>
               </div>
             </div>
           </div>

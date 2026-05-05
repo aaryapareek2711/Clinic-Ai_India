@@ -30,6 +30,11 @@ export async function fetchPatients(): Promise<PatientSummary[]> {
   return data
 }
 
+export async function fetchPatientById(patientId: string): Promise<PatientSummary> {
+  const { data } = await apiClient.get<PatientSummary>(`/api/patients/${encodeURIComponent(patientId)}`)
+  return data
+}
+
 export async function fetchPatientVisits(patientId: string): Promise<PatientVisit[]> {
   const { data } = await apiClient.get<PatientVisit[]>(`/api/visits/patient/${encodeURIComponent(patientId)}`)
   return data

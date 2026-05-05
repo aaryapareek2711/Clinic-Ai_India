@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import { getSelectedClinicalTemplate, setSelectedClinicalTemplate } from '../lib/clinicalTemplateSelection'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
+import {
+  listClinicalTemplates,
+  recordClinicalTemplateUsage,
+  type ClinicalTemplateListItem,
+  updateClinicalTemplate,
+} from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const RECOMMENDED_TEMPLATES = [
@@ -60,6 +66,13 @@ function TemplatesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [templatesTotal, setTemplatesTotal] = useState(0)
   const [templatesRefreshNonce, setTemplatesRefreshNonce] = useState(0)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => getSelectedClinicalTemplate()?.id || '')
+  const [editingTemplate, setEditingTemplate] = useState<ClinicalTemplateListItem | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editSpecialty, setEditSpecialty] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(templateSearch), 400)
@@ -121,6 +134,72 @@ function TemplatesPage() {
     return list
   }, [specialtyFilter, sortBy])
 
+  async function handleUseTemplate(template: ClinicalTemplateListItem): Promise<void> {
+    try {
+      await recordClinicalTemplateUsage(template.id)
+    } catch {
+      // Selection should still proceed even if analytics call fails.
+    }
+    setSelectedClinicalTemplate({ id: template.id, name: template.name })
+    setSelectedTemplateId(template.id)
+    setTemplateSavedMessage(`Selected template: ${template.name}. It will be used in clinical note generation.`)
+  }
+
+  function openEditTemplate(template: ClinicalTemplateListItem): void {
+    setEditingTemplate(template)
+    setEditName(template.name || '')
+    setEditDescription(template.description || '')
+    setEditCategory(template.category || 'General')
+    setEditSpecialty(template.specialty || '')
+  }
+
+  function closeEditTemplate(): void {
+    if (editSaving) return
+    setEditingTemplate(null)
+    setEditName('')
+    setEditDescription('')
+    setEditCategory('')
+    setEditSpecialty('')
+  }
+
+  async function saveTemplateEdits(): Promise<void> {
+    if (!editingTemplate) return
+    if (!editName.trim()) {
+      setTemplateSavedMessage('Template name is required.')
+      return
+    }
+    try {
+      setEditSaving(true)
+      await updateClinicalTemplate(editingTemplate.id, {
+        name: editName.trim(),
+        description: editDescription.trim(),
+        category: editCategory.trim() || 'General',
+        specialty: editSpecialty.trim(),
+      })
+      setTemplateSavedMessage(`Template updated: ${editName.trim()}`)
+      setTemplatesRefreshNonce((n) => n + 1)
+      closeEditTemplate()
+    } catch (e) {
+      setTemplateSavedMessage(getApiErrorMessage(e))
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  function handleUseRecommended(recommended: (typeof RECOMMENDED_TEMPLATES)[number]): void {
+    const matched = myTemplates.find((t) => {
+      const sameSpecialty = (t.specialty || '').toLowerCase() === recommended.specialty.toLowerCase()
+      const nameMatch = (t.name || '').toLowerCase().includes(recommended.title.toLowerCase())
+      return sameSpecialty || nameMatch
+    })
+    if (matched) {
+      void handleUseTemplate(matched)
+      return
+    }
+    setTemplateSavedMessage('Create this recommended template first, then click Use Template to apply it in clinical note generation.')
+    setIsCreateModalOpen(true)
+  }
+
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-inter">
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
@@ -169,7 +248,7 @@ function TemplatesPage() {
               type="button"
             >
               <span className="material-symbols-outlined text-[20px]">add</span>
-              New template
+              Create New Template
             </button>
             <div className="relative min-w-[300px] flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7b6c]">search</span>
@@ -279,18 +358,14 @@ function TemplatesPage() {
                     auto_awesome_motion
                   </span>
                 </div>
-                <h3 className="mb-2 text-[18px] font-semibold">No templates found</h3>
+                <h3 className="mb-2 text-[18px] font-semibold">
+                  {filteredRecommended.length > 0 ? 'No saved templates yet' : 'No templates found'}
+                </h3>
                 <p className="mb-8 max-w-sm text-center text-[#3e4a3d]">
-                  No templates found with the current filters. Create one below or widen search.
+                  {filteredRecommended.length > 0
+                    ? 'Your saved template list is empty. You can use the recommended templates below or create a new one.'
+                    : 'No templates found with the current filters. Use the Create New Template button above or widen search.'}
                 </p>
-                <button
-                  className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-semibold text-white transition-all hover:shadow-lg active:scale-95"
-                  onClick={() => setIsCreateModalOpen(true)}
-                  type="button"
-                >
-                  <span className="material-symbols-outlined">add_circle</span>
-                  <span>Create New Template</span>
-                </button>
               </div>
             ) : (
               !templatesLoading && (
@@ -299,7 +374,29 @@ function TemplatesPage() {
                     <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                       <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
                       <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
-                      <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                      <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
+                        <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                              selectedTemplateId === t.id
+                                ? 'bg-[#006b2c] text-white'
+                                : 'border border-[#006b2c]/30 bg-white text-[#006b2c] hover:bg-[#f0fdf4]'
+                            }`}
+                            onClick={() => void handleUseTemplate(t)}
+                            type="button"
+                          >
+                            {selectedTemplateId === t.id ? 'Selected' : 'Use This Template'}
+                          </button>
+                          <button
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
+                            onClick={() => openEditTemplate(t)}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -335,8 +432,12 @@ function TemplatesPage() {
                         <span className="material-symbols-outlined text-sm">schedule</span>
                         {t.readMins} min read
                       </span>
-                      <button className="text-sm font-semibold text-[#006b2c] hover:underline" type="button">
-                        Use Template
+                      <button
+                        className="text-sm font-semibold text-[#006b2c] hover:underline"
+                        onClick={() => handleUseRecommended(t)}
+                        type="button"
+                      >
+                        Use This Template
                       </button>
                     </div>
                   </div>
@@ -357,6 +458,44 @@ function TemplatesPage() {
           setTemplatesRefreshNonce((n) => n + 1)
         }}
       />
+
+      {editingTemplate && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <button aria-label="Close edit dialog" className="absolute inset-0 bg-black/40" onClick={closeEditTemplate} type="button" />
+          <div className="relative z-[71] w-full max-w-xl rounded-2xl border border-[#bdcaba] bg-white p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-[#171d16]">Edit Template</h3>
+            <p className="mt-1 text-sm text-[#3e4a3d]">Update template details and click Save.</p>
+            <div className="mt-5 space-y-4">
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Template name</span>
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(e) => setEditName(e.target.value)} value={editName} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Description</span>
+                <textarea className="min-h-[80px] w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(e) => setEditDescription(e.target.value)} value={editDescription} />
+              </label>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Category</span>
+                  <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(e) => setEditCategory(e.target.value)} value={editCategory} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Specialty</span>
+                  <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(e) => setEditSpecialty(e.target.value)} value={editSpecialty} />
+                </label>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-gray-50" onClick={closeEditTemplate} type="button">
+                Cancel
+              </button>
+              <button className="rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#15803d] disabled:opacity-50" disabled={editSaving} onClick={() => void saveTemplateEdits()} type="button">
+                {editSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { fetchPatientVisits, fetchPatients, type PatientSummary, type PatientVisit } from '../services/patientsApi'
+import { fetchPatientById, fetchPatientVisits, fetchPatients, type PatientSummary, type PatientVisit } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function badgeClasses(tone: string) {
@@ -25,6 +25,12 @@ function formatDate(value: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function matchByVisibleSuffix(items: PatientSummary[], opaqueId: string): PatientSummary | null {
+  const suffix = (opaqueId || '').trim().slice(-10)
+  if (!suffix) return null
+  return items.find((p) => (p.id || '').slice(-10) === suffix) ?? null
+}
+
 function PatientDetailPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -45,10 +51,26 @@ function PatientDetailPage() {
           setLoading(true)
           setError(null)
         }
-        const [allPatients, visitRows] = await Promise.all([fetchPatients(), fetchPatientVisits(patientId)])
+        const [patientRes, visitRes] = await Promise.allSettled([fetchPatientById(patientId), fetchPatientVisits(patientId)])
         if (cancelled) return
-        setPatient(allPatients.find((p) => p.id === patientId) ?? null)
-        setVisits(visitRows)
+        if (visitRes.status === 'fulfilled') setVisits(visitRes.value)
+        else setVisits([])
+
+        if (patientRes.status === 'fulfilled') {
+          setPatient(patientRes.value ?? null)
+          return
+        }
+
+        // Backward compatibility: if URL has an older opaque token, fallback by visible suffix.
+        try {
+          const allPatients = await fetchPatients()
+          if (cancelled) return
+          const matched = matchByVisibleSuffix(allPatients, patientId)
+          setPatient(matched)
+          if (!matched) setError(getApiErrorMessage(patientRes.reason))
+        } catch (fallbackErr) {
+          if (!cancelled) setError(getApiErrorMessage(fallbackErr))
+        }
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e))
       } finally {
@@ -123,6 +145,10 @@ function PatientDetailPage() {
                   <span className="material-symbols-outlined text-sm">content_copy</span>
                 </button>
               </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Mobile Number</p>
+              <p className="text-base text-[#171d16]">{patient?.phone_number || '—'}</p>
             </div>
           </div>
         </section>
