@@ -296,12 +296,16 @@ class IntakeChatService:
                 )
                 if not claimed:
                     return
-                # Product behavior: first inbound message (any content) should only start intake
-                # and ask the chief complaint question. The next user message becomes illness.
-                self.whatsapp.send_text(
-                    session["to_number"],
-                    self._chief_complaint_question(session.get("language", "en")),
-                )
+                # If first reply is meaningful symptom text, treat it as illness directly and
+                # move to generated intake questions. For greetings/short acks, ask chief complaint.
+                patient = self.db.patients.find_one({"patient_id": session.get("patient_id")}) or {}
+                if self._should_reask_chief_complaint(cleaned, patient):
+                    self.whatsapp.send_text(
+                        session["to_number"],
+                        self._chief_complaint_question(session.get("language", "en")),
+                    )
+                    return
+                self._save_illness_and_generate_questions(session, cleaned)
                 return
 
             if status == "awaiting_illness":

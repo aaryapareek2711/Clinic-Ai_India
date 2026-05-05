@@ -40,6 +40,11 @@ _BACKGROUND_TASKS: list[asyncio.Task] = []
 _STOP_EVENT: asyncio.Event | None = None
 
 
+def _is_walk_in_visit_type(value: object) -> bool:
+    s = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return s in {"walk_in", "walkin"} or "walk_in" in s or "walkin" in s
+
+
 class TranscriptionWorker:
     """Worker that processes transcription queue jobs."""
 
@@ -76,7 +81,7 @@ class TranscriptionWorker:
             self.consumer.ack_last()
             return True
 
-        if not self._has_previsit(job):
+        if self._requires_previsit(job) and not self._has_previsit(job):
             self.repo.mark_failed(
                 job_id,
                 error_code="PREVISIT_MISSING",
@@ -202,6 +207,13 @@ class TranscriptionWorker:
         if visit_id:
             query["visit_id"] = visit_id
         return self.db.pre_visit_summaries.find_one(query, sort=[("updated_at", -1)]) is not None
+
+    def _requires_previsit(self, job: dict) -> bool:
+        visit_id = self._visit_id(job)
+        if not visit_id:
+            return True
+        visit_doc = self.db.visits.find_one({"visit_id": visit_id}, {"visit_type": 1})
+        return not _is_walk_in_visit_type((visit_doc or {}).get("visit_type"))
 
     @staticmethod
     def _visit_id(job: dict) -> str | None:
