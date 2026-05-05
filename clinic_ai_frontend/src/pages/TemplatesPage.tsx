@@ -3,8 +3,8 @@ import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getSelectedClinicalTemplate, setSelectedClinicalTemplate } from '../lib/clinicalTemplateSelection'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { getClinicalTemplate, listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
 import {
+  getClinicalTemplate,
   listClinicalTemplates,
   recordClinicalTemplateUsage,
   type ClinicalTemplateListItem,
