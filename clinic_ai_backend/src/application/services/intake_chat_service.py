@@ -27,7 +27,7 @@ OPENING_MESSAGES = {
     "te": "Namaskaram! Mee intake prarambhinchadaniki yedaina oka message pampandi.",
     "bn": "Namaskar! Intake shuru korte jekono ekta message pathan.",
     "mr": "Namaskar! Tumcha intake suru karanyasathi kuthalahi ek message pathava.",
-    "kn": "Namaskara! Nimma intake prarambhisalu yavaude ondu message kalisi.",
+    "kn": "ನಮಸ್ಕಾರ! ನಿಮ್ಮ ಇಂಟೇಕ್ ಪ್ರಾರಂಭಿಸಲು ಯಾವುದೇ ಒಂದು ಸಂದೇಶವನ್ನು ಕಳುಹಿಸಿ.",
 }
 
 CHIEF_COMPLAINT_MESSAGES = {
@@ -82,8 +82,8 @@ CLOSING_MESSAGES = {
         "Tumche doctor tumchya bhetisathi purnata tayar astil. Krupaya velat ya."
     ),
     "kn": (
-        "Dhanyavadagalu{maybe_name}, namage bekaada ella mahiti siggide. "
-        "Nimma doctor nimma bheṭige sampoorna siddharagiruttare. Dayavittu samayakke banni."
+        "ಧನ್ಯವಾದಗಳು{maybe_name}, ನಮಗೆ ಬೇಕಾದ ಎಲ್ಲಾ ಮಾಹಿತಿ ಸಿಕ್ಕಿದೆ. "
+        "ನಿಮ್ಮ ವೈದ್ಯರು ನಿಮ್ಮ ಭೇಟಿಗೆ ಸಂಪೂರ್ಣ ಸಿದ್ಧರಾಗಿರುತ್ತಾರೆ. ದಯವಿಟ್ಟು ಸಮಯಕ್ಕೆ ಬನ್ನಿ."
     ),
 }
 
@@ -1050,29 +1050,7 @@ class IntakeChatService:
 
     def _build_recovery_question(self, language: str, topic: str, session: dict) -> str:
         topic_key = str(topic or session.get("pending_topic") or "").strip()
-        if language == "hi":
-            recovery_questions = {
-                "onset_duration": "यह समस्या कब शुरू हुई थी, और क्या यह लगातार रहती है या बीच-बीच में होती है?",
-                "severity_progression": "समय के साथ यह समस्या कैसी बदल रही है - बेहतर, बदतर, या लगभग वैसी ही?",
-                "associated_symptoms": "इस समस्या के साथ और कौन से लक्षण हो रहे हैं? कृपया थोड़ा विस्तार से बताइए।",
-                "red_flag_check": "क्या कोई गंभीर लक्षण हुए हैं, जैसे तेज दर्द, सांस की दिक्कत, बेहोशी, या खून आना?",
-                "current_medications": "अभी आप कौन-कौन सी दवाएं, सप्लीमेंट, या घरेलू इलाज ले रहे हैं?",
-                "impact_daily_life": "यह समस्या आपकी रोज़मर्रा की ज़िंदगी पर कैसे असर डाल रही है - जैसे नींद, खाना, काम या चलना-फिरना?",
-                "treatment_history": "अब तक आपने इसके लिए क्या इलाज कराया है? कृपया थोड़ा विस्तार से बताइए।",
-                "recurrence_status": "क्या यह पुरानी समस्या दोबारा हुई है, या पहले से चली आ रही बीमारी का फॉलो-अप है?",
-            }
-        else:
-            recovery_questions = {
-                "onset_duration": "When did this problem first start, and has it been constant or on and off since then?",
-                "severity_progression": "How has this problem been changing over time - better, worse, or about the same?",
-                "associated_symptoms": "What other symptoms have you noticed along with this? Please describe them a little.",
-                "red_flag_check": "Have you had any serious warning symptoms such as severe pain, breathing trouble, fainting, or bleeding?",
-                "current_medications": "What medicines, supplements, or home remedies are you taking right now for this?",
-                "impact_daily_life": "How is this affecting your daily routine - like sleep, eating, work, or movement?",
-                "treatment_history": "What treatment have you already received for this? Please share a bit more detail.",
-                "recurrence_status": "Is this a recurrence of an older problem, or a follow-up for an existing diagnosis?",
-            }
-        return recovery_questions.get(topic_key, "")
+        return self.openai._topic_message(topic_key, language) if topic_key else ""
 
     def _is_probable_duplicate_reply(self, session: dict, message_text: str) -> bool:
         recent_text = str(session.get("recent_inbound_text", "") or "").strip()
@@ -1196,8 +1174,11 @@ class IntakeChatService:
 
     @staticmethod
     def _final_question(language: str) -> str:
-        if language == "hi":
+        lang = normalize_intake_language(language)
+        if lang == "hi":
             return "कृपया बताइए कि क्या आपकी तकलीफ, स्वास्थ्य, या चिंता के बारे में कोई और महत्वपूर्ण बात है जो अभी तक साझा नहीं हुई है?"
+        if lang == "kn":
+            return "ನಿಮ್ಮ ಲಕ್ಷಣಗಳು, ಆರೋಗ್ಯ ಅಥವಾ ಚಿಂತೆಗಳ ಬಗ್ಗೆ ಇನ್ನೂ ಹಂಚದ ಮುಖ್ಯ ಮಾಹಿತಿಯೇನಾದರೂ ಇದೆಯೆ?"
         return "Please describe anything else about your symptoms, health, or concerns that you feel is important and has not been shared yet?"
 
     @staticmethod

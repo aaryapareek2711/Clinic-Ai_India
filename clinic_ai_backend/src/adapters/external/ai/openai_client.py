@@ -759,8 +759,13 @@ class OpenAIQuestionClient:
                 "llm_message_valid": False,
             }
         message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
-        # Use LLM wording for category questions whenever a non-empty model message exists.
-        # Deterministic category enforcement is still handled via `enforced_topic`.
+        if not allow_llm_message or not bool(message_validation["valid"]):
+            return {
+                "message": cls._topic_message(enforced_topic, language),
+                "source": "template_fallback",
+                "fallback_reason": "message_invalid",
+                "llm_message_valid": bool(message_validation["valid"]),
+            }
         return {
             "message": llm_message,
             "source": "llm",

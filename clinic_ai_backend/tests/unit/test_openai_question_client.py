@@ -179,7 +179,7 @@ def test_select_intake_message_falls_back_when_topic_changes() -> None:
     assert selection["fallback_reason"] == "topic_mismatch"
 
 
-def test_select_intake_message_keeps_llm_message_when_flag_disabled() -> None:
+def test_select_intake_message_falls_back_when_flag_disabled() -> None:
     settings = get_settings()
     settings.intake_use_llm_message = False
 
@@ -191,9 +191,9 @@ def test_select_intake_message_keeps_llm_message_when_flag_disabled() -> None:
         allow_llm_message=settings.intake_use_llm_message,
     )
 
-    assert selection["message"] == "Can you describe all symptoms you noticed with this issue?"
-    assert selection["source"] == "llm"
-    assert selection["fallback_reason"] == ""
+    assert selection["message"] != "Can you describe all symptoms you noticed with this issue?"
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "message_invalid"
 
 
 def test_generate_intake_turn_raises_for_missing_agent_block(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,7 +220,7 @@ def test_generate_intake_turn_raises_for_missing_agent_block(monkeypatch: pytest
     assert exc_info.value.reason_code == "agent_blocks_missing"
 
 
-def test_generate_intake_turn_keeps_llm_message_even_if_validation_flags_it(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_intake_turn_falls_back_when_validation_flags_llm_message(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = get_settings()
     settings.intake_use_llm_message = True
     client = OpenAIQuestionClient()
@@ -246,9 +246,9 @@ def test_generate_intake_turn_keeps_llm_message_even_if_validation_flags_it(monk
         }
     )
 
-    assert result["message"] == "Tell me symptoms now"
-    assert result["last_message_source"] == "llm"
-    assert result["last_fallback_reason"] == ""
+    assert result["message"] != "Tell me symptoms now"
+    assert result["last_message_source"] == "template_fallback"
+    assert result["last_fallback_reason"] == "message_invalid"
     assert result["llm_message_valid"] is False
 
 
@@ -294,6 +294,34 @@ def test_select_intake_message_keeps_closing_deterministic() -> None:
     assert selection["source"] == "template_fallback"
     assert selection["fallback_reason"] == ""
     assert "thank you" in selection["message"].lower()
+
+
+def test_select_intake_message_falls_back_when_language_mismatch() -> None:
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="What health problem brings you in today?",
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="kn",
+        allow_llm_message=True,
+    )
+
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "message_invalid"
+    assert "ಲಕ್ಷಣ" in selection["message"]
+
+
+def test_select_intake_message_falls_back_when_llm_messages_disabled() -> None:
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="What health problem brings you in today?",
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=False,
+    )
+
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "message_invalid"
+    assert "symptoms" in selection["message"].lower()
 
 
 def test_hindi_message_sanity_check_rejects_non_devanagari() -> None:
