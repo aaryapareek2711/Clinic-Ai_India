@@ -174,8 +174,8 @@ def test_select_intake_message_falls_back_when_topic_changes() -> None:
         allow_llm_message=settings.intake_use_llm_message,
     )
 
-    assert selection["message"] == OpenAIQuestionClient._topic_message("associated_symptoms", "en")
-    assert selection["source"] == "template_fallback"
+    assert selection["message"] == "When did this start for you?"
+    assert selection["source"] == "llm"
     assert selection["fallback_reason"] == "topic_mismatch"
 
 
@@ -338,7 +338,7 @@ def test_detect_patient_opt_out_returns_structured_response(monkeypatch: pytest.
     monkeypatch.setattr(
         client,
         "_chat_completion",
-        lambda **_: json.dumps({"is_opt_out": True, "confidence": 0.91, "reason": "patient asked to stop"}),
+        lambda **_: json.dumps({"intent": "opt_out", "is_opt_out": True, "confidence": 0.91, "reason": "patient asked to stop"}),
     )
 
     result = client.detect_patient_opt_out(message_text="please stop now", language="en")

@@ -333,18 +333,10 @@ class IntakeChatService:
                     self._send_chief_complaint_and_persist_pending(refreshed)
                     return
                 refreshed_waiting = self.db.intake_sessions.find_one({"_id": session["_id"]}) or session
-                # If first reply is meaningful symptom text, treat it as illness directly and
-                # move to generated intake questions. For greetings/short acks, ask chief complaint.
-                patients_collection = getattr(self.db, "patients", None)
-                patient = (
-                    patients_collection.find_one({"patient_id": refreshed_waiting.get("patient_id")})
-                    if patients_collection is not None
-                    else {}
-                ) or {}
-                if self._should_reask_chief_complaint(cleaned, patient):
-                    self._send_chief_complaint_and_persist_pending(refreshed_waiting)
-                    return
-                self._save_illness_and_generate_questions(refreshed_waiting, cleaned)
+                # Always ask chief complaint first after intake opening/template.
+                # The first inbound message only starts the conversation; the next
+                # patient message should carry illness/chief complaint content.
+                self._send_chief_complaint_and_persist_pending(refreshed_waiting)
                 return
 
             if status == "awaiting_illness":

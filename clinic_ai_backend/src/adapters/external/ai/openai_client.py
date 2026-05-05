@@ -287,6 +287,49 @@ TOPIC_QUESTION_TEMPLATES = {
     },
 }
 
+SHORT_TOPIC_QUESTION_TEMPLATES = {
+    "en": {
+        "reason_for_visit": "What is your main health issue today?",
+        "onset_duration": "When did this problem first start?",
+        "severity_progression": "Is it getting better, worse, or same?",
+        "associated_symptoms": "Any other symptoms with this?",
+        "red_flag_check": "Any warning signs like severe pain, breathlessness, fainting, or bleeding?",
+        "impact_daily_life": "How is this affecting sleep, food, work, or movement?",
+        "current_medications": "What medicines or home remedies are you taking now?",
+        "past_medical_history": "Any past medical conditions or surgeries related to this?",
+        "treatment_history": "What treatment have you already taken for this?",
+        "recurrence_status": "Is this new, recurring, or follow-up of an old issue?",
+        "family_history": "Any similar illness in close family?",
+        "trigger_cause": "Did anything trigger this (travel, food change, injury, stress)?",
+        "travel_history": "Any recent travel before symptoms started?",
+        "pain_assessment": "If there is pain, where is it and how severe is it?",
+        "past_evaluation": "Any previous doctor visit or tests for this?",
+        "menstrual_pregnancy": "When was your last period, and any chance of pregnancy?",
+        "allergies": "Any allergy to medicine, food, or anything else?",
+        "closing": "Thank you, we have enough details for now.",
+    },
+    "hi-eng": {
+        "reason_for_visit": "Aapki main health problem kya hai?",
+        "onset_duration": "Yeh problem pehli baar kab shuru hui?",
+        "severity_progression": "Yeh better ho rahi hai, worse ho rahi hai, ya same hai?",
+        "associated_symptoms": "Iske saath aur kaunse symptoms hain?",
+        "red_flag_check": "Severe pain, saans ki dikkat, fainting ya bleeding jaise warning signs hain kya?",
+        "impact_daily_life": "Yeh sleep, khana, kaam ya movement ko kaise affect kar rahi hai?",
+        "current_medications": "Abhi kaunsi medicines ya home remedies le rahe ho?",
+        "past_medical_history": "Isse related koi purani bimari ya surgery hai?",
+        "treatment_history": "Is problem ke liye ab tak kya treatment liya hai?",
+        "recurrence_status": "Yeh nayi problem hai, repeat hai, ya follow-up?",
+        "family_history": "Family mein kisi ko aisi problem hai kya?",
+        "trigger_cause": "Travel, food change, injury, stress ya kuch trigger hua tha kya?",
+        "travel_history": "Symptoms se pehle recent travel hua tha kya?",
+        "pain_assessment": "Pain hai to kahan hai aur kitna severe hai?",
+        "past_evaluation": "Pehle doctor consult ya tests huye the kya?",
+        "menstrual_pregnancy": "Last period kab tha, aur pregnancy chance hai kya?",
+        "allergies": "Kisi medicine, food, ya kisi aur cheez se allergy hai kya?",
+        "closing": "Dhanyavaad, abhi ke liye kaafi details mil gayi hain.",
+    }
+}
+
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
@@ -715,20 +758,13 @@ class OpenAIQuestionClient:
                 "fallback_reason": "message_invalid",
                 "llm_message_valid": False,
             }
-        if normalize_topic_key(llm_topic) != enforced_topic:
-            return {
-                "message": cls._topic_message(enforced_topic, language),
-                "source": "template_fallback",
-                "fallback_reason": "topic_mismatch",
-                "llm_message_valid": False,
-            }
         message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
-        # Normal intake questions should stay model-generated; template fallback is reserved
-        # for closing/safety or actual model failure before this selector is reached.
+        # Use LLM wording for category questions whenever a non-empty model message exists.
+        # Deterministic category enforcement is still handled via `enforced_topic`.
         return {
             "message": llm_message,
             "source": "llm",
-            "fallback_reason": "",
+            "fallback_reason": "" if normalize_topic_key(llm_topic) == enforced_topic else "topic_mismatch",
             "llm_message_valid": bool(message_validation["valid"]),
         }
 
@@ -932,6 +968,9 @@ class OpenAIQuestionClient:
     @classmethod
     def _topic_message(cls, topic: str, language: str) -> str:
         lang = normalize_intake_language(language)
+        short_templates = SHORT_TOPIC_QUESTION_TEMPLATES.get(lang)
+        if short_templates and topic in short_templates:
+            return short_templates[topic]
         templates = TOPIC_QUESTION_TEMPLATES.get(lang) or TOPIC_QUESTION_TEMPLATES["en"]
         return templates.get(topic) or templates["reason_for_visit"]
 
