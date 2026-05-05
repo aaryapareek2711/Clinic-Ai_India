@@ -188,6 +188,7 @@ export default function VisitDetailPage() {
     phoneDisplay: string
     languageDisplay: string
   } | null>(null)
+  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('preferred')
   const [labModalOpen, setLabModalOpen] = useState(false)
   const [labReportName, setLabReportName] = useState('')
   const [labCategory, setLabCategory] = useState('')
@@ -364,6 +365,7 @@ export default function VisitDetailPage() {
 
   const breadcrumbTitle = chief.length > 42 ? `${chief.slice(0, 40)}…` : chief
   const langBadge = languageLabel(preVisit?.language ?? 'en')
+  const activeLanguageLabel = languageMode === 'english' ? 'English' : langBadge
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
 
@@ -884,6 +886,29 @@ export default function VisitDetailPage() {
             </div>
 
             <div className="mt-8 overflow-x-auto border-b border-[#bdcaba] px-8">
+              <div className="mb-3 flex items-center justify-end gap-3">
+                <p className="text-xs text-[#575e70]">Display language: {activeLanguageLabel}</p>
+                <div className="inline-flex items-center rounded-lg border border-[#bdcaba] bg-white p-1">
+                  <button
+                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                      languageMode === 'english' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
+                    }`}
+                    onClick={() => setLanguageMode('english')}
+                    type="button"
+                  >
+                    English
+                  </button>
+                  <button
+                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                      languageMode === 'preferred' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
+                    }`}
+                    onClick={() => setLanguageMode('preferred')}
+                    type="button"
+                  >
+                    Patient preferred ({langBadge})
+                  </button>
+                </div>
+              </div>
               <div className="flex min-w-min gap-8 pb-0">
                 {visibleTabs.map((t) => (
                   <button

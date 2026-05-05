@@ -214,7 +214,8 @@ function NewVisitPage() {
           visit_type: visitKind,
         })
         persistAppointmentDuration(selectedSlot.startIso, schedule.defaultSlotMinutes || 15)
-        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=pre-visit`)
+        const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
+        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=${targetTab}`)
         return
       }
       navigate('/dashboard')

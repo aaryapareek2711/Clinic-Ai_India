@@ -12,6 +12,7 @@ import {
   type VisitDetailResponse,
 } from '../services/visitWorkflowApi'
 import type { IntakeSessionResponse, PreVisitSummaryResponse } from '../services/visitWorkflowApi'
+import { languageLabel } from './visit/intakeUtils'
 
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -32,6 +33,7 @@ export default function CarePrepIntakeDetailPage() {
   const [intake, setIntake] = useState<IntakeSessionResponse | null>(null)
   const [preVisit, setPreVisit] = useState<PreVisitSummaryResponse | null>(null)
   const [vitals, setVitals] = useState<LatestVitalsResponse | null>(null)
+  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('preferred')
 
   useEffect(() => {
     if (!visitId) return
@@ -91,6 +93,9 @@ export default function CarePrepIntakeDetailPage() {
     intake?.illness?.trim() ||
     'INTAKE REVIEW'
   ).toUpperCase()
+
+  const preferredLanguage = languageLabel((intake?.language || 'en').trim() || 'en')
+  const activeLanguageLabel = languageMode === 'english' ? 'English' : preferredLanguage
 
   const intakeDateLine = useMemo(() => {
     const iso = intake?.updated_at ?? visit?.scheduled_start ?? null
@@ -208,6 +213,26 @@ export default function CarePrepIntakeDetailPage() {
                 </div>
               </div>
               <div className="flex flex-col items-start gap-2 md:items-end">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1">
+                  <button
+                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                      languageMode === 'english' ? 'bg-[#006b2c] text-white' : 'text-slate-600'
+                    }`}
+                    onClick={() => setLanguageMode('english')}
+                    type="button"
+                  >
+                    English
+                  </button>
+                  <button
+                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                      languageMode === 'preferred' ? 'bg-[#006b2c] text-white' : 'text-slate-600'
+                    }`}
+                    onClick={() => setLanguageMode('preferred')}
+                    type="button"
+                  >
+                    Patient preferred ({preferredLanguage})
+                  </button>
+                </div>
                 <div className="text-left md:text-right">
                   <p className="text-[13px] font-medium tracking-[0.05em] text-slate-500 uppercase">Updated</p>
                   <p className="text-[18px] leading-snug font-semibold text-[#171d16]">{intakeDateLine}</p>
@@ -215,6 +240,7 @@ export default function CarePrepIntakeDetailPage() {
                 <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold tracking-wider text-[#006b2c] uppercase">
                   {(intake?.status || 'unknown').replace(/_/g, ' ')}
                 </span>
+                <p className="text-xs text-slate-500">Display language: {activeLanguageLabel}</p>
               </div>
             </div>
 

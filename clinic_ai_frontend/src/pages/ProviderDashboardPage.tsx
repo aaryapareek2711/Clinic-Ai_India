@@ -159,7 +159,15 @@ function ProviderDashboardPage() {
 
   const dayLabel = upcomingDayFilter === 'today' ? 'Today' : 'Tomorrow'
 
-  const selectedDaySlots = useMemo(() => {
+  const selectedDayAllSlots = useMemo(() => {
+    const now = new Date()
+    if (upcomingDayFilter === 'today') {
+      return mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, now))
+    }
+    return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
+  }, [mergedUpcoming, upcomingDayFilter])
+
+  const selectedDayUpcomingSlots = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
       const nowMs = now.getTime()
@@ -173,35 +181,28 @@ function ProviderDashboardPage() {
   }, [mergedUpcoming, upcomingDayFilter])
 
   const stats = useMemo(() => {
-    const now = new Date()
-    const target = new Date(now)
-    if (upcomingDayFilter === 'tomorrow') target.setDate(target.getDate() + 1)
     const patientsForDaySet = new Set<string>()
-    for (const a of selectedDaySlots) {
+    for (const a of selectedDayAllSlots) {
       const pid = (a.patient_id || '').trim()
       if (pid) patientsForDaySet.add(pid)
     }
-    const pending = selectedDaySlots.filter((a) => {
+    const pending = selectedDayAllSlots.filter((a) => {
       const s = (a.status || '').toLowerCase()
       return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
     }).length
-    const activeNow = visits.filter(
-      (v) =>
-        isSameCalendarDay(v.scheduled_start || v.created_at, target) &&
-        (v.status || '').toLowerCase() === 'in_progress',
-    ).length
+    const activeNow = selectedDayAllSlots.filter((a) => (a.status || '').toLowerCase() === 'in_progress').length
 
     return {
       patientsForDay: patientsForDaySet.size,
       activeNow,
       pending,
-      visitsForDayCount: selectedDaySlots.length,
+      visitsForDayCount: selectedDayAllSlots.length,
     }
-  }, [selectedDaySlots, visits, upcomingDayFilter])
+  }, [selectedDayAllSlots])
 
   const upcomingList = useMemo(() => {
-    return selectedDaySlots
-  }, [selectedDaySlots])
+    return selectedDayUpcomingSlots
+  }, [selectedDayUpcomingSlots])
 
   const visibleUpcoming = useMemo(
     () => upcomingList.slice(0, upcomingVisibleCount),
@@ -214,7 +215,7 @@ function ProviderDashboardPage() {
 
   const visitModeLabel = (rawType: string | undefined) => {
     const t = (rawType || '').trim().toLowerCase()
-    if (t === 'walk_in' || t === 'walk-in' || t === 'walkin') return 'Walk-in'
+    if (t.includes('walk_in') || t.includes('walk-in') || t.includes('walkin')) return 'Walk-in'
     return 'Scheduled'
   }
 

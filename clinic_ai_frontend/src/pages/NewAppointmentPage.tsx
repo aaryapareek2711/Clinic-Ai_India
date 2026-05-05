@@ -328,7 +328,8 @@ function NewAppointmentPage() {
               }),
             )
       if (created.length === 1) {
-        navigate(`/visits/detail?visitId=${encodeURIComponent(created[0].visit_id)}&tab=pre-visit`)
+        const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
+        navigate(`/visits/detail?visitId=${encodeURIComponent(created[0].visit_id)}&tab=${targetTab}`)
       } else {
         navigate('/visits')
       }
