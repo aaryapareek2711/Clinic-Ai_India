@@ -32,24 +32,24 @@ OPENING_MESSAGES = {
 
 CHIEF_COMPLAINT_MESSAGES = {
     "en": "Please describe your main health problem in a few words.",
-    "hi": "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen.",
+    "hi": "कृपया अपनी मुख्य स्वास्थ्य समस्या कुछ शब्दों में बताएं।",
     "hi-eng": "Kripya apni main health problem kuch shabdon mein batayen.",
-    "ta": "Ungal mukkiya udal nala pirachanaiyai sila varththaigalil sollungal.",
-    "te": "Mee pradhana arogya samasyani konni matalalo vivarinchandi.",
-    "bn": "Apnar pradhan sharirik samasya koyekti kothay bolun.",
-    "mr": "Kripaya tumchi mukhya arogya samasya kahi shabdat sanga.",
-    "kn": "Dayavittu nimma mukhya aarogya samasyeyannu kelavu padagalalli heli.",
+    "ta": "உங்கள் முக்கிய உடல்நலப் பிரச்சினையை சில வார்த்தைகளில் சொல்லுங்கள்.",
+    "te": "మీ ప్రధాన ఆరోగ్య సమస్యను కొన్ని మాటల్లో వివరించండి.",
+    "bn": "আপনার প্রধান শারীরিক সমস্যাটি কয়েকটি কথায় বলুন।",
+    "mr": "कृपया तुमची मुख्य आरोग्य समस्या काही शब्दांत सांगा.",
+    "kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಮುಖ್ಯ ಆರೋಗ್ಯ ಸಮಸ್ಯೆಯನ್ನು ಕೆಲವು ಪದಗಳಲ್ಲಿ ಹೇಳಿ.",
 }
 
 OPT_OUT_ACK_MESSAGES = {
     "en": "Thank you. We will continue with your submitted answers.",
-    "hi": "Dhanyavaad. Hum aapke diye gaye jawaabon ke saath aage badhenge.",
+    "hi": "धन्यवाद। हम आपके दिए गए जवाबों के साथ आगे बढ़ेंगे।",
     "hi-eng": "Dhanyavaad. Hum aapke diye gaye answers ke saath aage badhenge.",
-    "ta": "Nandri. Neenga anuppiya badhilgaludan naangal thodarugiroam.",
-    "te": "Dhanyavadalu. Meeru ichina samadhanala to memu munduku velthamu.",
-    "bn": "Dhonnobad. Apni je uttor diyechen, tar sathe amra agiye jabo.",
-    "mr": "Dhanyavaad. Tumhi dilelya uttaransah aamhi pudhe jau.",
-    "kn": "Dhanyavadagalu. Neevu kotta uttaragaloṇḍige naavu munduvariyutteve.",
+    "ta": "நன்றி. நீங்கள் கொடுத்த பதில்களுடன் நாங்கள் தொடர்கிறோம்.",
+    "te": "ధన్యవాదాలు. మీరు ఇచ్చిన సమాధానాలతో మేము ముందుకు వెళ్తాము.",
+    "bn": "ধন্যবাদ। আপনি যে উত্তরগুলো দিয়েছেন, সেগুলো নিয়ে আমরা এগিয়ে যাব।",
+    "mr": "धन्यवाद. तुम्ही दिलेल्या उत्तरांसह आम्ही पुढे जाऊ.",
+    "kn": "ಧನ್ಯವಾದಗಳು. ನೀವು ನೀಡಿದ ಉತ್ತರಗಳೊಂದಿಗೆ ನಾವು ಮುಂದುವರೆಯುತ್ತೇವೆ.",
 }
 
 CLOSING_MESSAGES = {

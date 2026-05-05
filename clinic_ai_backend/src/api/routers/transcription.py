@@ -276,11 +276,7 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
         status_info["message"] = (
             f"Transcription appears stuck (processing for {age_minutes:.1f} minutes). May need manual intervention."
             if is_stale
-            else (
-                f"Transcription in progress (running for {(now - started_at_utc).total_seconds():.0f} seconds)"
-                if started_at_utc is not None
-                else "Transcription in progress"
-            )
+            else "Transcription in progress"
         )
         if is_stale:
             status_info["next_action"] = "retry_or_reset"

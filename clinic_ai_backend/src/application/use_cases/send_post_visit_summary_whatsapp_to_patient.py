@@ -89,6 +89,26 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
             {"$set": {"remind_immediate_sent_at": _utc_now()}},
         )
 
+    # Once post-visit recap reaches WhatsApp, mark visit as completed so
+    # it appears under Visit Management > Completed.
+    if summary_sent:
+        now = _utc_now()
+        db.visits.update_one(
+            {
+                "$or": [{"visit_id": visit_id}, {"id": visit_id}],
+                "patient_id": patient_id,
+            },
+            {
+                "$set": {
+                    "status": "completed",
+                    "actual_end": now,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=False,
+        )
+
     if summary_sent and follow_up_sent:
         message = "Post-visit summary and follow-up template sent on WhatsApp."
     elif summary_sent:
