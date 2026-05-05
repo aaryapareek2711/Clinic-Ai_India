@@ -31,7 +31,17 @@ function toneForStatus(status: string): RowTone {
   return 'blue'
 }
 
-function stageForStatus(status: string): string {
+function stageForStatus(status: string, currentWorkflowStage?: string | null): string {
+  const stage = String(currentWorkflowStage || '').trim().toLowerCase()
+  if (stage === 'intake') return 'Intake'
+  if (stage === 'pre_visit') return 'Pre-Visit'
+  if (stage === 'vitals') return 'Vitals'
+  if (stage === 'transcription') return 'Transcription'
+  if (stage === 'clinical_note') return 'Clinical Note'
+  if (stage === 'post_visit') return 'Post-Visit'
+  if (stage === 'completed') return 'Completed'
+  if (stage === 'cancelled') return 'Cancelled'
+  if (stage === 'no_show') return 'No Show'
   const s = status.toLowerCase()
   if (s === 'scheduled') return 'Intake'
   if (s === 'queued' || s === 'in_queue') return 'Pre-Visit'
@@ -125,7 +135,7 @@ function visitRowFromApi(v: ProviderVisitListItem): {
     name,
     meta,
     status: displayStatus(v.status || 'open'),
-    stage: stageForStatus(v.status || ''),
+    stage: stageForStatus(v.status || '', v.current_workflow_stage),
     date,
     duration,
     tone: toneForStatus(v.status || ''),

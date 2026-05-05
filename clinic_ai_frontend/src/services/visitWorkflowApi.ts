@@ -78,6 +78,9 @@ export type ProviderVisitListItem = {
   patient_created_at?: string | null
   visit_type?: string
   status: string
+  previous_workflow_stage?: string | null
+  current_workflow_stage?: string | null
+  next_workflow_stage?: string | null
   scheduled_start?: string | null
   actual_start?: string | null
   actual_end?: string | null
