@@ -33,6 +33,7 @@ export type IntakeSessionResponse = {
   patient_id?: string
   status: string
   illness?: string | null
+  language?: string | null
   question_answers: IntakeQaItem[]
   updated_at?: string | null
 }
@@ -463,6 +464,24 @@ export async function generatePostVisitSummary(
     ...body,
   })
   return data
+}
+
+export async function fetchLatestPostVisitSummary(
+  patientId: string,
+  visitId: string,
+): Promise<PostVisitSummaryResponse | null> {
+  try {
+    const { data } = await apiClient.get<PostVisitSummaryResponse>('/api/notes/post-visit-summary', {
+      params: {
+        patient_id: patientId,
+        visit_id: visitId,
+      },
+    })
+    return data
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) return null
+    throw new Error(getApiErrorMessage(err), { cause: err })
+  }
 }
 
 export async function sendPostVisitSummaryWhatsApp(

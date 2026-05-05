@@ -26,7 +26,7 @@ function displayStatus(status: string): string {
 
 function toneForStatus(status: string): RowTone {
   const s = status.toLowerCase()
-  if (s === 'completed' || s === 'closed' || s === 'ended') return 'green'
+  if (s === 'completed' || s === 'complete' || s === 'closed' || s === 'ended') return 'green'
   if (s === 'scheduled' || s === 'queued' || s === 'in_queue') return 'amber'
   return 'blue'
 }
@@ -36,7 +36,7 @@ function stageForStatus(status: string): string {
   if (s === 'scheduled') return 'Intake'
   if (s === 'queued' || s === 'in_queue') return 'Pre-Visit'
   if (s === 'in_progress') return 'Vitals / Transcript'
-  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Transcript completed'
+  if (s === 'completed' || s === 'complete' || s === 'closed' || s === 'ended') return 'Transcript completed'
   return 'Intake'
 }
 
@@ -45,7 +45,7 @@ function matchesVisitTab(v: ProviderVisitListItem, tab: VisitTab): boolean {
   if (tab === 'all') return true
   if (tab === 'scheduled') return s === 'scheduled' || s === 'queued' || s === 'in_queue'
   if (tab === 'in-progress') return s === 'in_progress'
-  if (tab === 'completed') return s === 'completed' || s === 'closed' || s === 'ended'
+  if (tab === 'completed') return s === 'completed' || s === 'complete' || s === 'closed' || s === 'ended'
   return true
 }
 

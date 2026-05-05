@@ -81,59 +81,6 @@ function parseSoapFromDoctorNotes(raw: string | null | undefined): { subjective:
   return { subjective, objective }
 }
 
-function formatNoteForExport(
-  visitLabel: string,
-  payload: IndiaClinicalNotePayload,
-  meta: { noteId: string; createdAt: string; noteType?: string; version?: number },
-): string {
-  const lines: string[] = [
-    `Clinical note · ${visitLabel}`,
-    `Note ID: ${meta.noteId} · Saved: ${meta.createdAt}${meta.noteType ? ` · Type: ${meta.noteType}` : ''}${meta.version != null ? ` · v${meta.version}` : ''}`,
-    '',
-  ]
-  if (payload.chief_complaint?.trim()) {
-    lines.push('Chief complaint (context)', payload.chief_complaint.trim(), '')
-  }
-  const soap = parseSoapFromDoctorNotes(payload.doctor_notes)
-  if (soap) {
-    lines.push('Subjective', soap.subjective || '—', '', 'Objective', soap.objective || '—', '')
-  } else if (payload.doctor_notes?.trim()) {
-    lines.push('Clinical narrative / doctor notes', payload.doctor_notes.trim(), '')
-  }
-  lines.push('Assessment', payload.assessment || '—', '', 'Plan', payload.plan || '—', '')
-  if (payload.rx?.length) {
-    lines.push('', 'Prescription (Rx)')
-    for (const r of payload.rx) {
-      const parts = [r.medicine_name, r.dose, r.frequency, r.duration, r.route, r.food_instruction].filter(
-        (x) => (x ?? '').toString().trim(),
-      )
-      lines.push(`  • ${parts.join(' · ') || '—'}`)
-    }
-  }
-  if (payload.investigations?.length) {
-    lines.push('', 'Investigations')
-    for (const inv of payload.investigations) {
-      lines.push(`  • ${inv.test_name} (${inv.urgency})`)
-      if (inv.preparation_instructions?.trim()) lines.push(`    Prep: ${inv.preparation_instructions.trim()}`)
-      if (inv.routing_note?.trim()) lines.push(`    Routing: ${inv.routing_note.trim()}`)
-    }
-  }
-  if (payload.red_flags?.length) {
-    lines.push('', 'Red flags')
-    for (const rf of payload.red_flags) lines.push(`  • ${rf}`)
-  }
-  if (payload.data_gaps?.length) {
-    lines.push('', 'Data gaps')
-    for (const g of payload.data_gaps) lines.push(`  • ${g}`)
-  }
-  const fu =
-    (payload.follow_up_in?.trim() && `In: ${payload.follow_up_in.trim()}`) ||
-    (payload.follow_up_date?.trim() &&
-      `Date: ${payload.follow_up_date.trim()}${payload.follow_up_time?.trim() ? ` at ${payload.follow_up_time.trim()}` : ''}`)
-  if (fu) lines.push('', 'Follow-up', fu)
-  return lines.join('\n')
-}
-
 export type VisitClinicalNotePanelProps = {
   patientId: string
   visitId: string
@@ -166,7 +113,6 @@ export default function VisitClinicalNotePanel({
   const [draftChief, setDraftChief] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
   const [followUpTime, setFollowUpTime] = useState('')
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
@@ -244,23 +190,6 @@ export default function VisitClinicalNotePanel({
     }
   }, [patientId, visitId, approvingNext, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated, onApproveNext])
 
-  const handleCopy = useCallback(async () => {
-    if (!clinicalNote || !displayPayload) return
-    const text = formatNoteForExport(visitTitle, displayPayload, {
-      noteId: clinicalNote.note_id,
-      createdAt: clinicalNote.created_at,
-      noteType: clinicalNote.note_type,
-      version: clinicalNote.version,
-    })
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopyFeedback('Copied to clipboard — paste into your EHR or document.')
-    } catch {
-      setCopyFeedback('Could not access clipboard. Select and copy manually.')
-    }
-    window.setTimeout(() => setCopyFeedback(null), 4000)
-  }, [clinicalNote, displayPayload, visitTitle])
-
   const startEdit = () => {
     if (!payload) return
     setDraftAssessment(payload.assessment ?? '')
@@ -294,14 +223,6 @@ export default function VisitClinicalNotePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-lg border border-[#bdcaba] bg-white px-3 py-2 text-sm font-semibold text-[#171d16] hover:bg-[#f7faf4] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!clinicalNote || generating}
-            onClick={() => void handleCopy()}
-            type="button"
-          >
-            Copy note
-          </button>
           {clinicalNote && payload && (
             <button
               className="rounded-lg border border-[#006b2c]/40 bg-[#f0fdf4] px-3 py-2 text-sm font-semibold text-[#006b2c] hover:bg-[#dcfce7] disabled:opacity-50"
@@ -400,11 +321,6 @@ export default function VisitClinicalNotePanel({
           {message}
         </div>
       )}
-      {copyFeedback && (
-        <p className="text-xs font-medium text-[#006b2c]" role="status">
-          {copyFeedback}
-        </p>
-      )}
 
       {!clinicalNote && (
         <div className="rounded-xl border border-[#e9f0e5] bg-[#fafdfb] px-6 py-10 text-center">
@@ -488,8 +404,7 @@ export default function VisitClinicalNotePanel({
                 />
               </label>
               <p className="text-xs text-[#575e70]">
-                Edits are local only — use <span className="font-semibold">Copy note</span> to paste into your EHR. Regenerate
-                replaces the server copy from AI.
+                Edits are local only. Regenerate replaces the server copy from AI.
               </p>
             </div>
           ) : (

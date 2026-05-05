@@ -6,6 +6,8 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import {
   fetchIntakeSession,
   fetchLatestClinicalNote,
+  fetchLatestPostVisitSummary,
+  fetchLatestVitalsForVisit,
   fetchPreVisitSummary,
   fetchTranscriptionStatus,
   fetchVisitDetail,
@@ -48,9 +50,6 @@ const DR_AVATAR =
 
 const LAB_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 const LAB_UPLOAD_MAX_FILES = 8
-
-/** WhatsApp recap language when no in-UI picker (matches previous default). */
-const POST_VISIT_WHATSAPP_LANGUAGE: PostVisitPatientLanguage = 'en'
 
 const LAB_TEST_CATEGORY_OPTIONS = [
   '',
@@ -102,6 +101,23 @@ function formatIndiaWhatsAppDisplay(digits: string): string {
   return digits.trim() || '—'
 }
 
+function resolvePreferredLanguageCode(
+  intakeLanguage: string | null | undefined,
+  preVisitLanguage: string | null | undefined,
+): string {
+  const preferred = [intakeLanguage, preVisitLanguage]
+    .map((v) => (v || '').trim())
+    .find((v) => v.length > 0 && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'none')
+  return preferred || 'en'
+}
+
+function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLanguage {
+  const c = (languageCode || '').trim().toLowerCase().replace(/_/g, '-')
+  if (c === 'hi-eng') return 'hi-eng'
+  if (c.startsWith('hi')) return 'hi'
+  return 'en'
+}
+
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -109,6 +125,13 @@ function pickRecorderMimeType(): string {
     if (MediaRecorder.isTypeSupported(t)) return t
   }
   return ''
+}
+
+function formatRecordingElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 /** Pre-visit step is aimed at visits that have a scheduled slot (board-style workflow). */
@@ -162,7 +185,7 @@ function transcriptionStatusUiMessage(
     status,
   )
   if (isProcessingLike) {
-    return msg || 'Transcription is processing.'
+    return 'Transcription in progress'
   }
   return msg || status || 'Transcription status unavailable.'
 }
@@ -182,13 +205,6 @@ function transcriptionStatusUiLabel(
   if (status === 'failed') return 'Failed'
   if (!status) return 'Unknown'
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function extractRunningSeconds(message: string | null | undefined): number | null {
-  const m = String(message || '').match(/running for\s+(\d+)\s+seconds?/i)
-  if (!m) return null
-  const n = Number(m[1])
-  return Number.isFinite(n) && n >= 0 ? n : null
 }
 
 /** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string }[]` (one key per turn). */
@@ -227,6 +243,7 @@ export default function VisitDetailPage() {
   const [vitalsValues, setVitalsValues] = useState<Record<string, string>>({})
   const [vitalsMessage, setVitalsMessage] = useState<string | null>(null)
   const [vitalsSubmitting, setVitalsSubmitting] = useState(false)
+  const [vitalsLocked, setVitalsLocked] = useState(false)
   const visitIdRef = useRef('')
   const patientIdRef = useRef('')
   const vitalsFormRef = useRef<VitalsFormResponse | null>(null)
@@ -240,17 +257,19 @@ export default function VisitDetailPage() {
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
-  const maxProcessingSecondsRef = useRef(0)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
   const [recordingPhase, setRecordingPhase] = useState<'idle' | 'recording' | 'paused'>('idle')
   const [recordingError, setRecordingError] = useState<string | null>(null)
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const recorderMimeRef = useRef<string>('')
+  const recordingStartedAtRef = useRef<number | null>(null)
+  const accumulatedRecordingMsRef = useRef(0)
   const [postVisitSummary, setPostVisitSummary] = useState<PostVisitSummaryResponse | null>(null)
   const [postVisitMessage, setPostVisitMessage] = useState<string | null>(null)
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
@@ -357,10 +376,10 @@ export default function VisitDetailPage() {
     setVitalsValues({})
     setVitalsMessage(null)
     setVitalsSubmitting(false)
+    setVitalsLocked(false)
     setVitalsStaffName('Nurse')
     setTranscriptionStatus(null)
     setTranscriptionMessage(null)
-    maxProcessingSecondsRef.current = 0
     setTranscriptionText(null)
     setTranscriptionStructuredDialogue(null)
     setStructureDialogueLoading(false)
@@ -385,6 +404,7 @@ export default function VisitDetailPage() {
     setLabUploading(false)
     setLabModalError(null)
     setLabUploadFeedback(null)
+    setLanguageMode('preferred')
   }, [visitId])
 
   useEffect(() => {
@@ -439,7 +459,9 @@ export default function VisitDetailPage() {
     'Consultation'
 
   const breadcrumbTitle = chief.length > 42 ? `${chief.slice(0, 40)}…` : chief
-  const langBadge = languageLabel(preVisit?.language ?? 'en')
+  const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
+  const langBadge = languageLabel(preferredLanguageCode)
+  const postVisitLanguage = toPostVisitPatientLanguage(preferredLanguageCode)
   const activeLanguageLabel = languageMode === 'english' ? 'English' : langBadge
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
@@ -489,6 +511,7 @@ export default function VisitDetailPage() {
               ? rawId
               : 'saved'
         setVitalsMessage(`Vitals submitted (${short}) · ${new Date().toLocaleTimeString()}`)
+        setVitalsLocked(true)
       } catch (err) {
         setVitalsMessage(getApiErrorMessage(err))
       } finally {
@@ -497,6 +520,52 @@ export default function VisitDetailPage() {
     },
     [vitalsSubmitting],
   )
+
+  useEffect(() => {
+    if (loading) return
+    if (!patientId || !visitId) return
+    if (vitalsForm && postVisitSummary) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const [form, latest, latestPostVisit] = await Promise.all([
+          vitalsForm ? Promise.resolve(vitalsForm) : generateVitalsForm(patientId, visitId),
+          fetchLatestVitalsForVisit(patientId, visitId),
+          postVisitSummary ? Promise.resolve(postVisitSummary) : fetchLatestPostVisitSummary(patientId, visitId),
+        ])
+        if (cancelled) return
+        if (!vitalsForm) {
+          setVitalsForm(form)
+          const hydratedValues: Record<string, string> = {}
+          form.fields.forEach((f) => {
+            const raw = latest?.values?.[f.key]
+            hydratedValues[f.key] = raw == null ? '' : String(raw)
+          })
+          setVitalsValues(hydratedValues)
+          if (latest) {
+            setVitalsStaffName((latest.staff_name || '').trim() || 'Nurse')
+            const rawId = latest.vitals_id
+            const short = typeof rawId === 'string' && rawId.length >= 8 ? rawId.slice(-8) : rawId || 'saved'
+            const at = latest.submitted_at ? ` · ${new Date(latest.submitted_at).toLocaleTimeString()}` : ''
+            setVitalsMessage(`Vitals submitted (${short})${at}`)
+            setVitalsLocked(true)
+          } else {
+            setVitalsMessage(form.reason)
+            setVitalsLocked(false)
+          }
+        }
+        if (!postVisitSummary && latestPostVisit) {
+          setPostVisitSummary(latestPostVisit)
+        }
+      } catch (e) {
+        if (cancelled) return
+        setVitalsMessage((prev) => prev || getApiErrorMessage(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loading, patientId, postVisitSummary, visitId, vitalsForm])
 
   const resetLabForm = useCallback(() => {
     setLabReportName('')
@@ -638,6 +707,7 @@ export default function VisitDetailPage() {
     async (file: File): Promise<boolean> => {
       if (!patientId || !visitId) return false
       setRecordingError(null)
+      setTranscriptionUploading(true)
       try {
         const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
@@ -648,6 +718,8 @@ export default function VisitDetailPage() {
       } catch (err) {
         setTranscriptionMessage(getApiErrorMessage(err))
         return false
+      } finally {
+        setTranscriptionUploading(false)
       }
     },
     [patientId, visitId],
@@ -665,13 +737,8 @@ export default function VisitDetailPage() {
     const f = pendingTranscriptionAudioRef.current ?? pendingTranscriptionAudio
     if (!f) return
     void (async () => {
-      setTranscriptionUploading(true)
-      try {
-        const ok = await submitTranscriptionAudioFile(f)
-        if (ok) clearPendingTranscriptionFile()
-      } finally {
-        setTranscriptionUploading(false)
-      }
+      const ok = await submitTranscriptionAudioFile(f)
+      if (ok) clearPendingTranscriptionFile()
     })()
   }, [
     clearPendingTranscriptionFile,
@@ -729,19 +796,8 @@ export default function VisitDetailPage() {
         statusLower,
       )
       if (processingLike) {
-        const fromMessage = extractRunningSeconds(normalizedStatus.message)
-        const fromStartedAt = (() => {
-          const raw = String((normalizedStatus as { started_at?: unknown }).started_at || '').trim()
-          if (!raw) return null
-          const ms = new Date(raw).getTime()
-          if (Number.isNaN(ms)) return null
-          return Math.max(0, Math.floor((Date.now() - ms) / 1000))
-        })()
-        const candidate = Math.max(fromMessage ?? 0, fromStartedAt ?? 0, maxProcessingSecondsRef.current)
-        maxProcessingSecondsRef.current = candidate
-        setTranscriptionMessage(`Transcription in progress (running for ${candidate} seconds)`)
+        setTranscriptionMessage(baseMessage)
       } else {
-        maxProcessingSecondsRef.current = 0
         setTranscriptionMessage(baseMessage)
       }
       const st = (normalizedStatus.status || '').toLowerCase()
@@ -782,6 +838,20 @@ export default function VisitDetailPage() {
     )
 
   useEffect(() => {
+    if (recordingPhase !== 'recording') return
+    const timer = window.setInterval(() => {
+      const startedAt = recordingStartedAtRef.current
+      const base = accumulatedRecordingMsRef.current
+      if (!startedAt) {
+        setRecordingElapsedMs(base)
+        return
+      }
+      setRecordingElapsedMs(base + Math.max(0, Date.now() - startedAt))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [recordingPhase])
+
+  useEffect(() => {
     if (tab !== 'transcription' || !patientId || !visitId) return
     void loadTranscriptBody({ silent: true })
   }, [tab, patientId, visitId, loadTranscriptBody])
@@ -815,6 +885,9 @@ export default function VisitDetailPage() {
       const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
       mediaRecorderRef.current = mr
       recordedChunksRef.current = []
+      accumulatedRecordingMsRef.current = 0
+      recordingStartedAtRef.current = Date.now()
+      setRecordingElapsedMs(0)
       mr.ondataavailable = (ev) => {
         if (ev.data.size > 0) recordedChunksRef.current.push(ev.data)
       }
@@ -824,6 +897,9 @@ export default function VisitDetailPage() {
         recordedChunksRef.current = []
         stopMediaTracks()
         mediaRecorderRef.current = null
+        recordingStartedAtRef.current = null
+        accumulatedRecordingMsRef.current = 0
+        setRecordingElapsedMs(0)
         setRecordingPhase('idle')
         if (!chunks.length) return
         const blob = new Blob(chunks, { type: m })
@@ -845,6 +921,12 @@ export default function VisitDetailPage() {
     const mr = mediaRecorderRef.current
     if (!mr || mr.state !== 'recording') return
     mr.pause()
+    const startedAt = recordingStartedAtRef.current
+    if (startedAt) {
+      accumulatedRecordingMsRef.current += Math.max(0, Date.now() - startedAt)
+    }
+    recordingStartedAtRef.current = null
+    setRecordingElapsedMs(accumulatedRecordingMsRef.current)
     setRecordingPhase('paused')
   }, [])
 
@@ -852,6 +934,7 @@ export default function VisitDetailPage() {
     const mr = mediaRecorderRef.current
     if (!mr || mr.state !== 'paused') return
     mr.resume()
+    recordingStartedAtRef.current = Date.now()
     setRecordingPhase('recording')
   }, [])
 
@@ -860,9 +943,18 @@ export default function VisitDetailPage() {
     if (!mr || mr.state === 'inactive') {
       stopMediaTracks()
       mediaRecorderRef.current = null
+      recordingStartedAtRef.current = null
+      accumulatedRecordingMsRef.current = 0
+      setRecordingElapsedMs(0)
       setRecordingPhase('idle')
       return
     }
+    const startedAt = recordingStartedAtRef.current
+    if (startedAt && mr.state === 'recording') {
+      accumulatedRecordingMsRef.current += Math.max(0, Date.now() - startedAt)
+      setRecordingElapsedMs(accumulatedRecordingMsRef.current)
+    }
+    recordingStartedAtRef.current = null
     mr.stop()
   }, [stopMediaTracks])
 
@@ -1073,6 +1165,7 @@ export default function VisitDetailPage() {
                             })
                             setVitalsValues(nextValues)
                             setVitalsMessage(form.reason)
+                            setVitalsLocked(false)
                           } catch (e) {
                             setVitalsMessage(getApiErrorMessage(e))
                           }
@@ -1090,6 +1183,7 @@ export default function VisitDetailPage() {
                         Staff Name
                         <input
                           className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
+                          disabled={vitalsLocked || vitalsSubmitting}
                           onChange={(e) => setVitalsStaffName(e.target.value)}
                           value={vitalsStaffName}
                         />
@@ -1100,6 +1194,7 @@ export default function VisitDetailPage() {
                             {isTemperatureCelsiusField(field.key, field.unit) ? 'Temperature (F)' : field.label} ({field.key})
                             <input
                               className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
+                              disabled={vitalsLocked || vitalsSubmitting}
                               onChange={(e) =>
                                 setVitalsValues((prev) => ({
                                   ...prev,
@@ -1121,11 +1216,11 @@ export default function VisitDetailPage() {
                       <div className="relative z-10 pt-1">
                         <button
                           className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={vitalsSubmitting || !vitalsForm}
+                          disabled={vitalsSubmitting || !vitalsForm || vitalsLocked}
                           onClick={(ev) => void handleSubmitVitals(ev)}
                           type="button"
                         >
-                          {vitalsSubmitting ? 'Submitting…' : 'Submit Vitals'}
+                          {vitalsSubmitting ? 'Submitting…' : vitalsLocked ? 'Submitted' : 'Submit Vitals'}
                         </button>
                       </div>
                     </>
@@ -1153,9 +1248,8 @@ export default function VisitDetailPage() {
                           ref={transcriptionFileInputRef}
                           accept="audio/*"
                           aria-label="Select audio file to transcribe"
-                          className="fixed top-0 left-[-9999px] h-px w-px overflow-hidden opacity-0"
-                          disabled={!patientId || !visitId}
-                          id="visit-transcription-file"
+                          className="sr-only"
+                          disabled={!patientId || !visitId || isTranscriptionProcessing}
                           onChange={(e) => {
                             const file = e.target.files?.[0] ?? null
                             pendingTranscriptionAudioRef.current = file
@@ -1164,19 +1258,27 @@ export default function VisitDetailPage() {
                           tabIndex={-1}
                           type="file"
                         />
-                        <label
-                          className={`inline-flex shrink-0 cursor-pointer items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
-                            !patientId || !visitId
+                        <button
+                          className={`inline-flex shrink-0 items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
+                            !patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionProcessing
                               ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                               : 'bg-sky-100 text-sky-900 hover:bg-sky-200'
                           }`}
-                          htmlFor="visit-transcription-file"
+                          disabled={!patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionProcessing}
+                          onClick={() => transcriptionFileInputRef.current?.click()}
                           title={
-                            !patientId || !visitId ? 'Visit is not loaded yet' : 'Browse for an audio file'
+                            !patientId || !visitId
+                              ? 'Visit is not loaded yet'
+                              : isTranscriptionProcessing
+                                ? 'Please wait while transcription is processing'
+                              : recordingPhase !== 'idle'
+                                ? 'Finish or cancel recording before choosing a file'
+                                : 'Browse for an audio file'
                           }
+                          type="button"
                         >
                           Choose file
-                        </label>
+                        </button>
                         <span className="min-w-0 truncate text-sm text-[#575e70]" title={pendingTranscriptionAudio?.name}>
                           {pendingTranscriptionAudio ? pendingTranscriptionAudio.name : 'No file chosen'}
                         </span>
@@ -1184,9 +1286,12 @@ export default function VisitDetailPage() {
                       <button
                         className="relative z-20 shrink-0 rounded-xl bg-[#16a34a] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                         disabled={
+                          transcriptionUploading ||
                           !pendingTranscriptionAudio ||
                           !patientId ||
-                          !visitId
+                          !visitId ||
+                          recordingPhase !== 'idle' ||
+                          isTranscriptionProcessing
                         }
                         onClick={handleUploadPendingTranscription}
                         type="button"
@@ -1212,7 +1317,7 @@ export default function VisitDetailPage() {
                     {recordingPhase === 'idle' ? (
                       <button
                         className="flex min-h-[6.5rem] w-full flex-col items-center justify-center rounded-xl border-2 border-gray-200 bg-white px-6 py-10 text-[#111827] transition-colors hover:border-[#006b2c]/35 hover:bg-[#f8fdf6] disabled:cursor-not-allowed disabled:opacity-45"
-                        disabled={!patientId || !visitId}
+                        disabled={!patientId || !visitId || isTranscriptionProcessing}
                         onClick={() => void handleStartRecording()}
                         type="button"
                       >
@@ -1253,6 +1358,9 @@ export default function VisitDetailPage() {
                             ? 'Recording… Speak clearly; waveform is not saved until you stop.'
                             : 'Paused — resume when ready, then stop to upload for transcription.'}
                         </p>
+                        <p className="text-xs font-semibold text-[#111827]">
+                          Duration: {formatRecordingElapsed(recordingElapsedMs)}
+                        </p>
                       </div>
                     )}
                   </section>
@@ -1271,7 +1379,7 @@ export default function VisitDetailPage() {
                       Check transcription status
                     </button>
                   </div>
-                  {transcriptionMessage && (
+                  {transcriptionMessage && !isTranscriptionProcessing && (
                     <p className="text-xs text-[#575e70]" role="status">
                       {transcriptionMessage}
                     </p>
@@ -1457,7 +1565,7 @@ export default function VisitDetailPage() {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const nextVisitTime = recapFollowUpTimeDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: POST_VISIT_WHATSAPP_LANGUAGE,
+                              preferred_language: postVisitLanguage,
                               follow_up_date: nextVisitDate || undefined,
                               follow_up_time: nextVisitTime || undefined,
                             })
@@ -1495,7 +1603,7 @@ export default function VisitDetailPage() {
                           try {
                             const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
                               phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
-                              preferred_language: POST_VISIT_WHATSAPP_LANGUAGE,
+                              preferred_language: postVisitLanguage,
                             })
                             setPostVisitMessage(res.message)
                             const phoneDisplay =
@@ -1504,7 +1612,7 @@ export default function VisitDetailPage() {
                                 : formatIndiaWhatsAppDisplay(overrideDigits)
                             setPostVisitSendInfo({
                               phoneDisplay,
-                              languageDisplay: languageLabel(POST_VISIT_WHATSAPP_LANGUAGE),
+                              languageDisplay: languageLabel(postVisitLanguage),
                             })
                           } catch (e) {
                             setPostVisitSendInfo(null)

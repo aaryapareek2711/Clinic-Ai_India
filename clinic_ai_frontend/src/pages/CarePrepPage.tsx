@@ -9,12 +9,14 @@ import type { IntakeSessionResponse, ProviderVisitListItem } from '../services/v
 import NotificationsDrawer from './NotificationsDrawer'
 
 type QueueFilter = 'all' | 'ready' | 'in_progress'
+type CarePrepSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
 
 type QueueRow = {
   visitId: string
   patientId: string
   patientName: string
+  mobileNumber: string
   tokenLabel: string
   dobLine: string
   submitted: string
@@ -86,6 +88,7 @@ function mapVisitAndIntake(visit: ProviderVisitListItem, intake: IntakeSessionRe
     visitId,
     patientId,
     patientName: name,
+    mobileNumber: String(visit.mobile_number || ''),
     tokenLabel: visitId.slice(-6).toUpperCase(),
     dobLine: `Patient ID …${patientId.slice(-10)}`,
     submitted: submittedLabelMinutes(mins),
@@ -132,6 +135,9 @@ export default function CarePrepPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [filterField, setFilterField] = useState<'name' | 'patient_id' | 'mobile' | 'visit_id' | null>(null)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<CarePrepSort>('time_newest')
   const [currentPage, setCurrentPage] = useState(1)
   const [rows, setRows] = useState<QueueRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -178,15 +184,22 @@ export default function CarePrepPage() {
     const base = applyQueueFilter(rows, queueFilter)
     const q = searchQuery.trim().toLowerCase()
     const filtered = base.filter((r) => {
-      if (!q) return true
-      return (
-        r.patientName.toLowerCase().includes(q) ||
-        r.tokenLabel.toLowerCase().includes(q) ||
-        r.patientId.toLowerCase().includes(q)
-      )
+      if (!q || !filterField) return true
+      if (filterField === 'name') return r.patientName.toLowerCase().includes(q)
+      if (filterField === 'patient_id') return r.patientId.toLowerCase().includes(q)
+      if (filterField === 'mobile') return r.mobileNumber.toLowerCase().includes(q)
+      return r.visitId.toLowerCase().includes(q)
     })
-    return [...filtered].sort((a, b) => a.submittedMinutesAgo - b.submittedMinutesAgo)
-  }, [rows, queueFilter, searchQuery])
+    const sorted = [...filtered]
+    sorted.sort((a, b) => {
+      if (sortBy === 'time_newest') return a.submittedMinutesAgo - b.submittedMinutesAgo
+      if (sortBy === 'time_oldest') return b.submittedMinutesAgo - a.submittedMinutesAgo
+      if (sortBy === 'name_az') return a.patientName.localeCompare(b.patientName)
+      if (sortBy === 'name_za') return b.patientName.localeCompare(a.patientName)
+      return a.visitId.localeCompare(b.visitId)
+    })
+    return sorted
+  }, [rows, queueFilter, searchQuery, filterField, sortBy])
   const totalPages = Math.max(1, Math.ceil(visiblePatients.length / PAGE_SIZE))
   const pagedPatients = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
@@ -195,7 +208,7 @@ export default function CarePrepPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [queueFilter, searchQuery])
+  }, [queueFilter, searchQuery, filterField, sortBy])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -240,17 +253,42 @@ export default function CarePrepPage() {
             <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-[18px] leading-snug font-semibold text-[#171d16]">Patients</h3>
               <div className="flex flex-wrap items-center gap-3">
-                <div className="relative min-w-[280px]">
-                  <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">
-                    search
-                  </span>
-                  <input
-                    className="w-full rounded-lg border border-[#bdcaba] bg-white py-2.5 pr-4 pl-9 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by patient name or patient ID"
-                    type="search"
-                    value={searchQuery}
-                  />
+                {filterField ? (
+                  <div className="relative min-w-[280px]">
+                    <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                      search
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-[#bdcaba] bg-white py-2.5 pr-4 pl-9 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={`Search by ${filterField === 'patient_id' ? 'patient ID' : filterField === 'visit_id' ? 'visit ID' : filterField}`}
+                      type="search"
+                      value={searchQuery}
+                    />
+                  </div>
+                ) : (
+                  <div className="min-w-[280px] rounded-lg border border-dashed border-[#bdcaba] bg-white px-4 py-2.5 text-sm text-slate-400">
+                    Select filter first, then search bar will open.
+                  </div>
+                )}
+                <div className="relative">
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50"
+                    onClick={() => setIsFilterOpen((v) => !v)}
+                    type="button"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">filter_list</span>
+                    Filter
+                  </button>
+                  {isFilterOpen && (
+                    <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('name'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient name</button>
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('patient_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient ID</button>
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('mobile'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Mobile number</button>
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('visit_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Visit ID</button>
+                      <button className="mt-1 block w-full rounded px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50" onClick={() => { setFilterField(null); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Clear filter</button>
+                    </div>
+                  )}
                 </div>
                 <div className="relative min-w-[170px]">
                   <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">tune</span>
@@ -265,6 +303,26 @@ export default function CarePrepPage() {
                     <option value="in_progress">In progress</option>
                   </select>
                   <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
+                </div>
+                <div className="relative min-w-[220px]">
+                  <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                    sort
+                  </span>
+                  <select
+                    aria-label="Sort patients"
+                    className="w-full appearance-none cursor-pointer rounded-lg border border-[#bdcaba] bg-white py-2.5 pl-9 pr-9 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as CarePrepSort)}
+                  >
+                    <option value="time_newest">Time: newest first</option>
+                    <option value="time_oldest">Time: oldest first</option>
+                    <option value="name_az">Name: A → Z</option>
+                    <option value="name_za">Name: Z → A</option>
+                    <option value="visit_id">Visit ID</option>
+                  </select>
+                  <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    expand_more
+                  </span>
                 </div>
               </div>
             </div>
