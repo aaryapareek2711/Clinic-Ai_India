@@ -93,21 +93,30 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
     # it appears under Visit Management > Completed.
     if summary_sent:
         now = _utc_now()
-        db.visits.update_one(
+        update_doc = {
+            "$set": {
+                "status": "completed",
+                "actual_end": now,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        }
+        result = db.visits.update_one(
             {
                 "$or": [{"visit_id": visit_id}, {"id": visit_id}],
                 "patient_id": patient_id,
             },
-            {
-                "$set": {
-                    "status": "completed",
-                    "actual_end": now,
-                    "updated_at": now,
-                },
-                "$setOnInsert": {"created_at": now},
-            },
+            update_doc,
             upsert=False,
         )
+        # Backward compatibility: some older records have inconsistent patient_id values.
+        # If strict match misses, still complete by visit id so Completed list is accurate.
+        if result.matched_count == 0:
+            db.visits.update_one(
+                {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+                update_doc,
+                upsert=False,
+            )
 
     if summary_sent and follow_up_sent:
         message = "Post-visit summary and follow-up template sent on WhatsApp."
