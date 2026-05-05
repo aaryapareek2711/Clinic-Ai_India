@@ -183,7 +183,7 @@ function TemplatesPage() {
             <div className="relative min-w-[300px] flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7b6c]">search</span>
               <input
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
+                className="w-full rounded-xl border border-[#bdcaba] bg-white py-2.5 pl-10 pr-4 placeholder:text-slate-400 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
                 placeholder="Search templates by name or specialty..."
                 type="text"
                 value={templateSearch}
@@ -194,12 +194,12 @@ function TemplatesPage() {
               <button
                 aria-expanded={isFiltersOpen}
                 aria-haspopup="true"
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#bdcaba] bg-white text-[#3e4a3d] hover:bg-[#e9f0e5] hover:text-[#171d16] transition-all ${isFiltersOpen ? 'ring-2 ring-[#2563eb] border-transparent' : ''}`}
+                className={`inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] transition-all hover:bg-[#e9f0e5] ${isFiltersOpen ? 'border-transparent ring-2 ring-[#2563eb]' : ''}`}
                 onClick={() => setIsFiltersOpen((o) => !o)}
                 type="button"
               >
-                <span className="material-symbols-outlined">filter_list</span>
-                <span>Filters</span>
+                <span className="material-symbols-outlined text-[18px]">filter_list</span>
+                <span>Filter</span>
                 <span className="material-symbols-outlined text-lg text-[#6e7b6c]">{isFiltersOpen ? 'expand_less' : 'expand_more'}</span>
               </button>
               {isFiltersOpen && (

@@ -195,7 +195,7 @@ function CalendarPage() {
         </div>
       </header>
 
-      <main className="min-h-screen p-8 pt-16">
+      <main className="min-h-screen p-8 pt-24">
         <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-[28px] font-bold">Calendar</h2>
@@ -285,7 +285,10 @@ function CalendarPage() {
             {viewMode !== 'day' && (
               <div className="grid grid-cols-7 border-b border-gray-100 bg-white">
                 {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
-                  <div key={d} className="border-r border-gray-100 px-3 py-3 text-left text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
+                  <div
+                    key={d}
+                    className="flex items-center justify-center border-r border-gray-100 px-3 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0"
+                  >
                     {d}
                   </div>
                 ))}

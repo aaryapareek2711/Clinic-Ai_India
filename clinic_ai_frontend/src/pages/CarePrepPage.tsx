@@ -306,7 +306,7 @@ export default function CarePrepPage() {
                   <div className="relative min-w-[240px]">
                     <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">search</span>
                     <input
-                      className="w-full rounded-lg border border-[#bdcaba] bg-white py-2 pr-3 pl-8 text-xs font-semibold text-[#171d16] shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                      className="w-full rounded-lg border border-[#bdcaba] bg-white py-2.5 pr-4 pl-9 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder={`Search by ${searchField === 'patient_id' ? 'patient ID' : searchField}`}
                       type="search"
@@ -314,17 +314,17 @@ export default function CarePrepPage() {
                     />
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-[#bdcaba] bg-white px-3 py-2 text-xs text-[#3e4a3d]">
+                  <div className="rounded-lg border border-dashed border-[#bdcaba] bg-white px-4 py-2.5 text-sm text-slate-300">
                     Select filter first, then search bar opens.
                   </div>
                 )}
                 <div className="relative">
                   <button
-                    className="inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-3 py-2 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50"
                     onClick={() => setIsFilterOpen((v) => !v)}
                     type="button"
                   >
-                    <span className="material-symbols-outlined text-sm">filter_list</span>
+                    <span className="material-symbols-outlined text-[18px]">filter_list</span>
                     Filter
                   </button>
                   {isFilterOpen && (

@@ -425,7 +425,7 @@ function VisitsPage() {
               <div className="relative flex-1">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
                 <input
-                  className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Search by ${filterField === 'visit_id' ? 'visit ID' : filterField}`}
                   type="text"
@@ -433,7 +433,7 @@ function VisitsPage() {
                 />
               </div>
             ) : (
-              <div className="flex-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-500">
+              <div className="flex-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm text-slate-300">
                 Select filter first, then search bar will open.
               </div>
             )}

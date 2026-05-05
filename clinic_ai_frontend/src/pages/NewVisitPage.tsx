@@ -409,15 +409,26 @@ function NewVisitPage() {
                     <label className="mb-2 block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="appointment-visit-type">
                       Visit Type
                     </label>
-                    <select
-                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      id="appointment-visit-type"
-                      onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
-                      value={visitKind}
-                    >
-                      <option value="scheduled">Scheduled</option>
-                      <option value="walk_in">Walk-in</option>
-                    </select>
+                    <div className="inline-flex w-full rounded-lg border border-gray-200 bg-white p-1">
+                      <button
+                        className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                          visitKind === 'scheduled' ? 'bg-[#16a34a] text-white' : 'text-[#171d16] hover:bg-[#f4fcf0]'
+                        }`}
+                        onClick={() => setVisitKind('scheduled')}
+                        type="button"
+                      >
+                        Scheduled
+                      </button>
+                      <button
+                        className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                          visitKind === 'walk_in' ? 'bg-[#16a34a] text-white' : 'text-[#171d16] hover:bg-[#f4fcf0]'
+                        }`}
+                        onClick={() => setVisitKind('walk_in')}
+                        type="button"
+                      >
+                        Walk-in
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>

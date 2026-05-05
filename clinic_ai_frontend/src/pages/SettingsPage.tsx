@@ -198,10 +198,6 @@ function SettingsPage() {
           />
           <div
             aria-hidden
-            className="pointer-events-none absolute -right-24 top-8 h-[14rem] w-[14rem] rounded-full border border-white/[0.06] sm:h-[18rem] sm:w-[18rem]"
-          />
-          <div
-            aria-hidden
             className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent"
           />
 
@@ -486,7 +482,6 @@ function SettingsPage() {
                   <div className="text-3xl font-extrabold text-[#171d16]">{stats.patientsThisMonth}</div>
                   <div className="text-[13px] tracking-[0.05em] text-gray-500 mt-1">PATIENTS THIS MONTH</div>
                   <div className="mt-4 flex items-center justify-center text-xs text-gray-500 font-bold">
-                    <span className="material-symbols-outlined text-sm">info</span>
                     Based on visits in current month
                   </div>
                 </div>
@@ -497,7 +492,6 @@ function SettingsPage() {
                   <div className="text-3xl font-extrabold text-[#171d16]">{stats.visitsThisMonth}</div>
                   <div className="text-[13px] tracking-[0.05em] text-gray-500 mt-1">VISITS THIS MONTH</div>
                   <div className="mt-4 flex items-center justify-center text-xs text-gray-500 font-bold">
-                    <span className="material-symbols-outlined text-sm">info</span>
                     Based on scheduled/current month rows
                   </div>
                 </div>
@@ -510,7 +504,6 @@ function SettingsPage() {
                   </div>
                   <div className="text-[13px] tracking-[0.05em] text-gray-500 mt-1">AVG CONSULT TIME</div>
                   <div className="mt-4 flex items-center justify-center text-xs text-gray-500 font-bold">
-                    <span className="material-symbols-outlined text-sm">info</span>
                     Average from completed month visits
                   </div>
                 </div>
