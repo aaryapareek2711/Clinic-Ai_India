@@ -38,14 +38,63 @@ def _serialize_datetime(value):
     return value
 
 
+def _workflow_stage_triplet_for_status(status: str) -> dict:
+    s = str(status or "").strip().lower()
+    if s in {"open", "scheduled", "queued"}:
+        return {
+            "previous_workflow_stage": None,
+            "current_workflow_stage": "intake",
+            "next_workflow_stage": "pre_visit",
+        }
+    if s == "in_queue":
+        return {
+            "previous_workflow_stage": "intake",
+            "current_workflow_stage": "pre_visit",
+            "next_workflow_stage": "vitals",
+        }
+    if s == "in_progress":
+        return {
+            "previous_workflow_stage": "pre_visit",
+            "current_workflow_stage": "vitals",
+            "next_workflow_stage": "transcription",
+        }
+    if s in {"completed", "closed", "ended"}:
+        return {
+            "previous_workflow_stage": "post_visit",
+            "current_workflow_stage": "completed",
+            "next_workflow_stage": None,
+        }
+    if s == "no_show":
+        return {
+            "previous_workflow_stage": "intake",
+            "current_workflow_stage": "no_show",
+            "next_workflow_stage": None,
+        }
+    if s == "cancelled":
+        return {
+            "previous_workflow_stage": "intake",
+            "current_workflow_stage": "cancelled",
+            "next_workflow_stage": None,
+        }
+    return {
+        "previous_workflow_stage": None,
+        "current_workflow_stage": "intake",
+        "next_workflow_stage": "pre_visit",
+    }
+
+
 def _public_visit_payload(visit: dict) -> dict:
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
     patient_id = str(visit.get("patient_id") or "")
+    default_stage = _workflow_stage_triplet_for_status(visit.get("status") or "open")
     return {
         "visit_id": resolved_visit_id,
         "id": resolved_visit_id,
         "patient_id": encode_patient_id(patient_id) if patient_id else "",
         "status": str(visit.get("status") or "open"),
+        "previous_workflow_stage": visit.get("previous_workflow_stage", default_stage["previous_workflow_stage"]),
+        "current_workflow_stage": visit.get("current_workflow_stage", default_stage["current_workflow_stage"]),
+        "next_workflow_stage": visit.get("next_workflow_stage", default_stage["next_workflow_stage"]),
         "scheduled_start": visit.get("scheduled_start"),
         "actual_start": _serialize_datetime(visit.get("actual_start")),
         "actual_end": _serialize_datetime(visit.get("actual_end")),
@@ -130,6 +179,8 @@ def _set_visit_status(db, visit_id: str, status: str) -> dict:
     elif normalized_status == "cancelled":
         raise HTTPException(status_code=400, detail="Use the cancel endpoint to cancel a visit")
 
+    updates.update(_workflow_stage_triplet_for_status(updates.get("status", normalized_status)))
+
     update_query = _visit_update_query(visit, visit_id)
     db.visits.update_one(update_query, {"$set": updates})
     refreshed = _find_visit(db, str(visit.get("visit_id") or visit.get("id") or visit_id)) or {}
@@ -173,7 +224,14 @@ def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRe
     update_query = _visit_update_query(visit, resolved_visit_id)
     db.visits.update_one(
         update_query,
-        {"$set": {"scheduled_start": scheduled_start, "status": "scheduled", "updated_at": now}},
+        {
+            "$set": {
+                "scheduled_start": scheduled_start,
+                "status": "scheduled",
+                "updated_at": now,
+                **_workflow_stage_triplet_for_status("scheduled"),
+            }
+        },
     )
 
     patient = db.patients.find_one({"patient_id": internal_patient_id}) or {}
@@ -341,6 +399,9 @@ def list_provider_visits(
                 "patient_id": 1,
                 "visit_type": 1,
                 "status": 1,
+                "previous_workflow_stage": 1,
+                "current_workflow_stage": 1,
+                "next_workflow_stage": 1,
                 "scheduled_start": 1,
                 "actual_start": 1,
                 "actual_end": 1,
@@ -384,25 +445,41 @@ def list_provider_visits(
 
         out.append(
             {
-                "id": resolved_visit_id,
-                "visit_id": resolved_visit_id,
-                "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
-                "patient_name": patient_name,
-                "mobile_number": patient_phone_number or None,
-                # Pass-through from patients collection — used by dashboard “new registrations today”.
-                "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
-                "visit_type": (
-                    "Visit"
-                    if str(visit.get("visit_type") or "").strip().lower() in {"", "string"}
-                    else str(visit.get("visit_type"))
-                ),
-                "status": str(visit.get("status") or "open"),
-                "scheduled_start": scheduled_start,
-                "actual_start": actual_start,
-                "actual_end": actual_end,
-                "duration_minutes": duration_minutes,
-                "chief_complaint": visit.get("chief_complaint") or None,
-                "created_at": visit.get("created_at") or "",
+                **{
+                    "id": resolved_visit_id,
+                    "visit_id": resolved_visit_id,
+                    "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
+                    "patient_name": patient_name,
+                    "mobile_number": patient_phone_number or None,
+                    # Pass-through from patients collection — used by dashboard “new registrations today”.
+                    "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
+                    "visit_type": (
+                        "Visit"
+                        if str(visit.get("visit_type") or "").strip().lower() in {"", "string"}
+                        else str(visit.get("visit_type"))
+                    ),
+                    "status": str(visit.get("status") or "open"),
+                    "scheduled_start": scheduled_start,
+                    "actual_start": actual_start,
+                    "actual_end": actual_end,
+                    "duration_minutes": duration_minutes,
+                    "chief_complaint": visit.get("chief_complaint") or None,
+                    "created_at": visit.get("created_at") or "",
+                },
+                **{
+                    "previous_workflow_stage": visit.get(
+                        "previous_workflow_stage",
+                        _workflow_stage_triplet_for_status(visit.get("status") or "open")["previous_workflow_stage"],
+                    ),
+                    "current_workflow_stage": visit.get(
+                        "current_workflow_stage",
+                        _workflow_stage_triplet_for_status(visit.get("status") or "open")["current_workflow_stage"],
+                    ),
+                    "next_workflow_stage": visit.get(
+                        "next_workflow_stage",
+                        _workflow_stage_triplet_for_status(visit.get("status") or "open")["next_workflow_stage"],
+                    ),
+                },
             }
         )
 
@@ -433,6 +510,9 @@ def list_patient_visits(
                 "visit_id": resolved_visit_id,
                 "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
                 "status": str(visit.get("status") or "open"),
+                "previous_workflow_stage": visit.get("previous_workflow_stage"),
+                "current_workflow_stage": visit.get("current_workflow_stage"),
+                "next_workflow_stage": visit.get("next_workflow_stage"),
                 "scheduled_start": visit.get("scheduled_start"),
                 "created_at": visit.get("created_at") or "",
                 "updated_at": visit.get("updated_at") or "",
@@ -468,6 +548,9 @@ def get_visit(visit_id: str) -> dict:
         "appointment_id": visit.get("appointment_id"),
         "visit_type": str(visit.get("visit_type") or "Visit"),
         "status": str(visit.get("status") or "open"),
+        "previous_workflow_stage": visit.get("previous_workflow_stage"),
+        "current_workflow_stage": visit.get("current_workflow_stage"),
+        "next_workflow_stage": visit.get("next_workflow_stage"),
         "chief_complaint": resolved_chief_complaint,
         "reason_for_visit": visit.get("reason_for_visit"),
         "scheduled_start": visit.get("scheduled_start"),
@@ -581,7 +664,13 @@ def cancel_visit(visit_id: str) -> dict:
 
     db.visits.update_one(
         _visit_update_query(visit, visit_id),
-        {"$set": {"status": "cancelled", "updated_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "status": "cancelled",
+                "updated_at": datetime.now(timezone.utc),
+                **_workflow_stage_triplet_for_status("cancelled"),
+            }
+        },
     )
     refreshed = _find_visit(db, str(visit.get("visit_id") or visit.get("id") or visit_id)) or {}
     return _public_visit_payload(refreshed)

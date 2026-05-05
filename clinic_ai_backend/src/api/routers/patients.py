@@ -176,6 +176,9 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
             "scheduled_start": scheduled_start,
             "visit_type": visit_type_stored,
             "status": "open",
+            "previous_workflow_stage": None,
+            "current_workflow_stage": "intake",
+            "next_workflow_stage": "pre_visit",
             "created_at": now,
             "updated_at": now,
         }
@@ -232,6 +235,9 @@ def create_visit_from_existing_patient(
             "scheduled_start": payload.scheduled_start,
             "visit_type": visit_type_stored,
             "status": "open",
+            "previous_workflow_stage": None,
+            "current_workflow_stage": "intake",
+            "next_workflow_stage": "pre_visit",
             "created_at": now,
             "updated_at": now,
         }

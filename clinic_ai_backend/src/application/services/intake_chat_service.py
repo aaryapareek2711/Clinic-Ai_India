@@ -147,6 +147,17 @@ class IntakeChatService:
             },
             upsert=True,
         )
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {
+                "$set": {
+                    "previous_workflow_stage": None,
+                    "current_workflow_stage": "intake",
+                    "next_workflow_stage": "pre_visit",
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
         current_session = self.db.intake_sessions.find_one({"visit_id": visit_id}) or {}
         if normalized_to_number:
             self._supersede_other_active_sessions_for_number(
@@ -796,6 +807,19 @@ class IntakeChatService:
                 }
             },
         )
+        visit_id = str(session.get("visit_id") or "").strip()
+        if visit_id:
+            self.db.visits.update_one(
+                {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+                {
+                    "$set": {
+                        "previous_workflow_stage": "intake",
+                        "current_workflow_stage": "pre_visit",
+                        "next_workflow_stage": "vitals",
+                        "updated_at": now,
+                    }
+                },
+            )
         self._supersede_other_active_sessions_for_number(
             to_number=str(session.get("to_number") or ""),
             keep_session_id=session.get("_id"),

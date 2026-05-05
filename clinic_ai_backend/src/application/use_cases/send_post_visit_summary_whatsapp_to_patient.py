@@ -96,6 +96,9 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
         update_doc = {
             "$set": {
                 "status": "completed",
+                    "previous_workflow_stage": "post_visit",
+                    "current_workflow_stage": "completed",
+                    "next_workflow_stage": None,
                 "actual_end": now,
                 "updated_at": now,
             },
