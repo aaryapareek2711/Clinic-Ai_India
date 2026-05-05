@@ -1,12 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
+  updateClinicalTemplate,
+  type ClinicalTemplateListItem,
   createClinicalTemplate,
-  fetchClinicalNoteBlueprint,
   type TemplateContentPayload,
   type TemplateInvestigationPayload,
   type TemplateMedicationPayload,
 } from '../services/templatesApi'
+
+const CLINICAL_CONTENT_SECTIONS = [
+  'assessment',
+  'plan',
+  'chief_complaint',
+  'doctor_notes',
+  'rx',
+  'follow_up_date',
+  'red_flags',
+  'data_gaps',
+  'investigations',
+] as const
+
+type ClinicalContentSection = (typeof CLINICAL_CONTENT_SECTIONS)[number]
 
 const emptyMedication = (): TemplateMedicationPayload => ({
   medicine_name: '',
@@ -37,31 +52,50 @@ const emptyContent = (): TemplateContentPayload => ({
 })
 
 const APPOINTMENT_OPTIONS = ['Consultation', 'Follow-up', 'Procedure', 'Telehealth']
+const QUICK_ADD_SECTIONS = [
+  'Family history',
+  'Present illness history',
+  'General history',
+  'General examination',
+  'Advice',
+  'Menstrual history',
+  'Obstetric history',
+] as const
 
 type Props = {
   isOpen: boolean
   onClose: () => void
   /** Called after a successful template save. */
   onCreated?: () => void
+  onUpdated?: () => void
+  templateToEdit?: ClinicalTemplateListItem | null
 }
 
-export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Props) {
+export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpdated, templateToEdit }: Props) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('General')
-  const [specialty, setSpecialty] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [appointmentTypes, setAppointmentTypes] = useState<string[]>([])
   const [content, setContent] = useState<TemplateContentPayload>(emptyContent)
-  const [blueprintDoctorType, setBlueprintDoctorType] = useState('Allopathic')
-  const [languageStyle, setLanguageStyle] = useState('English clinical')
-  const [region, setRegion] = useState('India OPD')
   const [optionalPreferences, setOptionalPreferences] = useState('')
   const [redFlagsText, setRedFlagsText] = useState('')
   const [dataGapsText, setDataGapsText] = useState('')
-  const [blueprintLoading, setBlueprintLoading] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [contentSectionOrder, setContentSectionOrder] = useState<ClinicalContentSection[]>([
+    ...CLINICAL_CONTENT_SECTIONS,
+  ])
+  const [draggingSectionIndex, setDraggingSectionIndex] = useState<number | null>(null)
+  const [hiddenMedicationFields, setHiddenMedicationFields] = useState<Record<string, boolean>>({})
+  const isEditMode = Boolean(templateToEdit)
+  const minFollowUpDate = useMemo(() => {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const year = tomorrow.getFullYear()
+    const month = String(tomorrow.getMonth() + 1).padStart(2, '0')
+    const day = String(tomorrow.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [])
 
   useEffect(() => {
     if (!isOpen) return
@@ -83,21 +117,31 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
   const resetAll = useCallback(() => {
     setName('')
     setDescription('')
-    setCategory('General')
-    setSpecialty('')
     setTagsInput('')
     setAppointmentTypes([])
     setContent(emptyContent())
-    setBlueprintDoctorType('Allopathic')
-    setLanguageStyle('English clinical')
-    setRegion('India OPD')
     setOptionalPreferences('')
     setRedFlagsText('')
     setDataGapsText('')
     setError(null)
-    setBlueprintLoading(false)
     setSaveLoading(false)
+    setContentSectionOrder([...CLINICAL_CONTENT_SECTIONS])
+    setDraggingSectionIndex(null)
+    setHiddenMedicationFields({})
   }, [])
+
+  const moveContentSection = (fromIndex: number, toIndex: number) => {
+    setContentSectionOrder((previousOrder) => {
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= previousOrder.length || toIndex >= previousOrder.length) {
+        return previousOrder
+      }
+      if (fromIndex === toIndex) return previousOrder
+      const nextOrder = [...previousOrder]
+      const [movedSection] = nextOrder.splice(fromIndex, 1)
+      nextOrder.splice(toIndex, 0, movedSection)
+      return nextOrder
+    })
+  }
 
   function syncRedFlagsFromContent(c: TemplateContentPayload) {
     setRedFlagsText(c.red_flags.filter(Boolean).join('\n'))
@@ -108,31 +152,50 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
   }
 
   useEffect(() => {
-    if (isOpen) resetAll()
-  }, [isOpen, resetAll])
+    if (!isOpen) return
+    if (!templateToEdit) {
+      resetAll()
+      return
+    }
+
+    setName(templateToEdit.name || '')
+    setDescription(templateToEdit.description || '')
+    setTagsInput((templateToEdit.tags || []).join(', '))
+    setAppointmentTypes(templateToEdit.appointment_types || [])
+
+    const contentFromTemplate = templateToEdit.content
+      ? {
+          ...emptyContent(),
+          ...templateToEdit.content,
+          rx:
+            templateToEdit.content.rx && templateToEdit.content.rx.length > 0
+              ? templateToEdit.content.rx
+              : [emptyMedication()],
+          investigations: templateToEdit.content.investigations || [],
+        }
+      : emptyContent()
+    setContent(contentFromTemplate)
+    syncRedFlagsFromContent(contentFromTemplate)
+    syncDataGapsFromContent(contentFromTemplate)
+    setOptionalPreferences('')
+    setError(null)
+    setSaveLoading(false)
+    setContentSectionOrder([...CLINICAL_CONTENT_SECTIONS])
+    setDraggingSectionIndex(null)
+    setHiddenMedicationFields({})
+  }, [isOpen, resetAll, templateToEdit])
 
   const toggleAppointment = (label: string) => {
     setAppointmentTypes((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]))
   }
 
-  const applyBlueprint = async () => {
-    setError(null)
-    setBlueprintLoading(true)
-    try {
-      const c = await fetchClinicalNoteBlueprint({
-        doctor_type: blueprintDoctorType,
-        language_style: languageStyle,
-        region,
-        optional_preferences: optionalPreferences.trim() || null,
-      })
-      setContent(c)
-      syncRedFlagsFromContent(c)
-      syncDataGapsFromContent(c)
-    } catch (e) {
-      setError(getApiErrorMessage(e))
-    } finally {
-      setBlueprintLoading(false)
-    }
+  const addSectionToOptionalPreferences = (sectionLabel: (typeof QUICK_ADD_SECTIONS)[number]) => {
+    setOptionalPreferences((previousValue) => {
+      const trimmed = previousValue.trim()
+      const line = `${sectionLabel}:`
+      if (trimmed.toLowerCase().includes(line.toLowerCase())) return previousValue
+      return trimmed ? `${previousValue.replace(/\s*$/, '')}\n${line}` : line
+    })
   }
 
   const submit = async () => {
@@ -174,18 +237,29 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
     }
     setSaveLoading(true)
     try {
-      await createClinicalTemplate({
-        name: name.trim(),
-        description: description.trim(),
-        type: 'personal',
-        category: category.trim() || 'General',
-        specialty: specialty.trim(),
-        content: bodyContent,
-        tags,
-        appointment_types: appointmentTypes,
-        is_favorite: false,
-      })
-      onCreated?.()
+      if (templateToEdit?.id) {
+        await updateClinicalTemplate(templateToEdit.id, {
+          name: name.trim(),
+          description: description.trim(),
+          content: bodyContent,
+          tags,
+          appointment_types: appointmentTypes,
+        })
+        onUpdated?.()
+      } else {
+        await createClinicalTemplate({
+          name: name.trim(),
+          description: description.trim(),
+          type: 'personal',
+          category: 'General',
+          specialty: '',
+          content: bodyContent,
+          tags,
+          appointment_types: appointmentTypes,
+          is_favorite: false,
+        })
+        onCreated?.()
+      }
       onClose()
       resetAll()
     } catch (e) {
@@ -214,7 +288,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
         <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
           <div>
             <h2 className="text-xl font-bold text-[#171d16]" id="create-template-title">
-              Create clinical template
+              {isEditMode ? 'View or edit clinical template' : 'Create clinical template'}
             </h2>
             <p className="mt-1 text-sm text-[#3e4a3d]">
               Save a reusable template and optionally generate a clinical-note blueprint.
@@ -260,50 +334,6 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
                 value={description}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-cat">
-                  Category
-                </label>
-                <select
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="tmpl-cat"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="General">General</option>
-                  <option value="OPD">OPD</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Chronic care">Chronic care</option>
-                  <option value="Procedure">Procedure</option>
-                  <option value="Pediatrics">Pediatrics</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-spec">
-                  Specialty
-                </label>
-                <input
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="tmpl-spec"
-                  onChange={(e) => setSpecialty(e.target.value)}
-                  placeholder="e.g. General medicine"
-                  value={specialty}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-tags">
-                Tags (comma-separated)
-              </label>
-              <input
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                id="tmpl-tags"
-                onChange={(e) => setTagsInput(e.target.value)}
-                placeholder="opd, india, hindi"
-                value={tagsInput}
-              />
-            </div>
             <div>
               <span className="mb-2 block text-sm font-medium">Appointment types</span>
               <div className="flex flex-wrap gap-2">
@@ -323,275 +353,275 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
           </fieldset>
 
           <fieldset className="mt-6 space-y-4 border-b border-gray-100 pb-6">
-            <legend className="text-xs font-semibold uppercase tracking-wider text-[#6e7b6c]">
-              Suggested structure (clinical note blueprint)
-            </legend>
-            <p className="text-sm text-[#575e70]">
-              Uses the same inputs as{' '}
-              <code className="rounded bg-gray-100 px-1 text-[11px]">ClinicalNoteTemplateRequest</code> on the backend.
-              Applying fills placeholders you can edit below.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-dr-type">
-                  Doctor type
-                </label>
-                <select
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="tmpl-dr-type"
-                  value={blueprintDoctorType}
-                  onChange={(e) => setBlueprintDoctorType(e.target.value)}
-                >
-                  <option value="Allopathic">Allopathic</option>
-                  <option value="Ayurvedic">Ayurvedic</option>
-                  <option value="Homeopathic">Homeopathic</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-style">
-                  Language style
-                </label>
-                <input
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="tmpl-style"
-                  value={languageStyle}
-                  onChange={(e) => setLanguageStyle(e.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-region">
-                Region
-              </label>
-              <input
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                id="tmpl-region"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-prefs">
-                Optional preferences
-              </label>
-              <textarea
-                className="min-h-[64px] w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                id="tmpl-prefs"
-                placeholder="Additional instructions baked into doctor_notes hint…"
-                value={optionalPreferences}
-                onChange={(e) => setOptionalPreferences(e.target.value)}
-              />
-            </div>
-            <button
-              className="rounded-xl border border-[#006b2c] bg-[#eff6ea] px-4 py-2.5 text-sm font-semibold text-[#006b2c] hover:bg-[#dfead5] disabled:opacity-60"
-              disabled={blueprintLoading}
-              onClick={() => void applyBlueprint()}
-              type="button"
-            >
-              {blueprintLoading ? 'Applying…' : 'Apply suggested structure'}
-            </button>
-          </fieldset>
-
-          <fieldset className="mt-6 space-y-4 border-b border-gray-100 pb-6">
             <legend className="text-xs font-semibold uppercase tracking-wider text-[#6e7b6c]">Template content</legend>
-            {(
-              [
-                ['chief_complaint', 'Chief complaint', 'chief_complaint'],
-                ['assessment', 'Assessment', 'assessment'],
-                ['plan', 'Plan', 'plan'],
-                ['doctor_notes', 'Doctor notes', 'doctor_notes'],
-              ] as const
-            ).map(([id, label, key]) => (
-              <div key={id}>
-                <label className="mb-1 block text-sm font-medium" htmlFor={id}>
-                  {label}
-                </label>
-                <textarea
-                  className="min-h-[72px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id={id}
-                  value={content[key]}
-                  onChange={(e) => setContent({ ...content, [key]: e.target.value })}
-                />
-              </div>
-            ))}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="fu-in">
-                  Follow-up in
-                </label>
-                <input
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="fu-in"
-                  value={content.follow_up_in}
-                  onChange={(e) => setContent({ ...content, follow_up_in: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="fu-date">
-                  Follow-up date
-                </label>
-                <input
-                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                  id="fu-date"
-                  value={content.follow_up_date}
-                  onChange={(e) => setContent({ ...content, follow_up_date: e.target.value })}
-                  placeholder="<yyyy-mm-dd_or_null>"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="red-flags">
-                Red flags (one per line → list)
-              </label>
-              <textarea
-                className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                id="red-flags"
-                value={redFlagsText}
-                onChange={(e) => setRedFlagsText(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="data-gaps">
-                Data gaps (one per line → list)
-              </label>
-              <textarea
-                className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                id="data-gaps"
-                value={dataGapsText}
-                onChange={(e) => setDataGapsText(e.target.value)}
-              />
-            </div>
-          </fieldset>
-
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#171d16]">Medications (rx)</h3>
-              <button
-                className="text-sm font-semibold text-[#006b2c] hover:underline"
-                onClick={() => setContent({ ...content, rx: [...content.rx, emptyMedication()] })}
-                type="button"
-              >
-                Add row
-              </button>
-            </div>
+            <p className="text-sm text-[#575e70]">Drag and drop these sections to adjust the content order.</p>
             <div className="space-y-3">
-              {content.rx.map((row, idx) => (
-                <div key={`rx-${idx}`} className="rounded-xl border border-gray-100 bg-[#fafcf8] p-3">
-                  <div className="mb-2 flex justify-end">
-                    {content.rx.length > 1 && (
+              {contentSectionOrder.map((section, index) => (
+                <div
+                  key={section}
+                  className={`rounded-xl border bg-[#f9fbf8] p-3 ${
+                    draggingSectionIndex === index ? 'border-[#16a34a] ring-2 ring-[#16a34a]/30' : 'border-[#dce5d8]'
+                  }`}
+                  draggable
+                  onDragStart={() => setDraggingSectionIndex(index)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (draggingSectionIndex === null) return
+                    moveContentSection(draggingSectionIndex, index)
+                    setDraggingSectionIndex(null)
+                  }}
+                  onDragEnd={() => setDraggingSectionIndex(null)}
+                >
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#6e7b6c]">drag_indicator</span>
+                    <span className="flex-1 text-sm font-semibold text-[#171d16]">
+                      {section === 'assessment'
+                        ? 'Assessment'
+                        : section === 'plan'
+                          ? 'Plan'
+                          : section === 'chief_complaint'
+                            ? 'Chief complaint'
+                            : section === 'doctor_notes'
+                              ? 'Doctor notes'
+                              : section === 'rx'
+                                ? 'Medications (rx)'
+                              : section === 'follow_up_date'
+                                ? 'Follow-up date'
+                                : section === 'red_flags'
+                                  ? 'Red flags'
+                                  : section === 'data_gaps'
+                                    ? 'Data gaps'
+                                    : 'Investigations'}
+                    </span>
+                    <div className="flex items-center gap-1">
                       <button
-                        className="text-xs text-red-700 hover:underline"
-                        onClick={() =>
-                          setContent({
-                            ...content,
-                            rx: content.rx.filter((_, i) => i !== idx),
-                          })
-                        }
+                        aria-label={`Move section up`}
+                        className="rounded-md border border-[#d3ddd0] p-1.5 text-[#3e4a3d] hover:bg-[#ecf3e8] disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={index === 0}
+                        onClick={() => moveContentSection(index, index - 1)}
                         type="button"
                       >
-                        Remove
+                        <span className="material-symbols-outlined text-base">arrow_upward</span>
                       </button>
-                    )}
+                      <button
+                        aria-label={`Move section down`}
+                        className="rounded-md border border-[#d3ddd0] p-1.5 text-[#3e4a3d] hover:bg-[#ecf3e8] disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={index === contentSectionOrder.length - 1}
+                        onClick={() => moveContentSection(index, index + 1)}
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-base">arrow_downward</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {(['medicine_name', 'dose', 'frequency', 'duration', 'route', 'food_instruction'] as const).map((k) => (
-                      <div key={k} className={k === 'medicine_name' ? 'sm:col-span-2' : ''}>
-                        <label className="sr-only" htmlFor={`rx-${idx}-${k}`}>
-                          {k}
-                        </label>
-                        <input
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
-                          id={`rx-${idx}-${k}`}
-                          placeholder={k.replace('_', ' ')}
-                          value={row[k]}
-                          onChange={(e) => {
-                            const next = [...content.rx]
-                            next[idx] = { ...next[idx], [k]: e.target.value }
-                            setContent({ ...content, rx: next })
-                          }}
-                        />
+
+                  {(section === 'chief_complaint' ||
+                    section === 'assessment' ||
+                    section === 'plan' ||
+                    section === 'doctor_notes') && (
+                    <textarea
+                      className="min-h-[72px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      value={content[section]}
+                      onChange={(e) => setContent({ ...content, [section]: e.target.value })}
+                    />
+                  )}
+
+                  {section === 'follow_up_date' && (
+                    <input
+                      className="w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      type="date"
+                      min={minFollowUpDate}
+                      value={content.follow_up_date}
+                      onChange={(e) => setContent({ ...content, follow_up_date: e.target.value })}
+                    />
+                  )}
+
+                  {section === 'red_flags' && (
+                    <textarea
+                      className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      value={redFlagsText}
+                      onChange={(e) => setRedFlagsText(e.target.value)}
+                    />
+                  )}
+
+                  {section === 'data_gaps' && (
+                    <textarea
+                      className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      value={dataGapsText}
+                      onChange={(e) => setDataGapsText(e.target.value)}
+                    />
+                  )}
+
+                  {section === 'investigations' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#575e70]">Manage investigation rows for this template.</p>
+                        <button
+                          className="text-sm font-semibold text-[#006b2c] hover:underline"
+                          onClick={() =>
+                            setContent({
+                              ...content,
+                              investigations: [...content.investigations, emptyInvestigation()],
+                            })
+                          }
+                          type="button"
+                        >
+                          Add row
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                      {content.investigations.length === 0 && (
+                        <p className="text-sm text-[#575e70]">No investigations yet. Use “Add row” or apply the blueprint.</p>
+                      )}
+                      {content.investigations.map((row, idx) => (
+                        <div key={`inv-${idx}`} className="rounded-xl border border-gray-100 bg-white p-3">
+                          <div className="mb-2 flex justify-end">
+                            <button
+                              className="text-xs text-red-700 hover:underline"
+                              onClick={() =>
+                                setContent({
+                                  ...content,
+                                  investigations: content.investigations.filter((_, i) => i !== idx),
+                                })
+                              }
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                              <input
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                                placeholder="test name"
+                                value={row.test_name}
+                                onChange={(e) => {
+                                  const next = [...content.investigations]
+                                  next[idx] = { ...next[idx], test_name: e.target.value }
+                                  setContent({ ...content, investigations: next })
+                                }}
+                              />
+                            </div>
+                            <input
+                              className="rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                              placeholder="urgency"
+                              value={row.urgency}
+                              onChange={(e) => {
+                                const next = [...content.investigations]
+                                next[idx] = { ...next[idx], urgency: e.target.value }
+                                setContent({ ...content, investigations: next })
+                              }}
+                            />
+                            <input
+                              className="rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                              placeholder="preparation instructions"
+                              value={row.preparation_instructions}
+                              onChange={(e) => {
+                                const next = [...content.investigations]
+                                next[idx] = { ...next[idx], preparation_instructions: e.target.value }
+                                setContent({ ...content, investigations: next })
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {section === 'rx' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#575e70]">Add medicines for this template.</p>
+                        <button
+                          className="text-sm font-semibold text-[#006b2c] hover:underline"
+                          onClick={() => setContent({ ...content, rx: [...content.rx, emptyMedication()] })}
+                          type="button"
+                        >
+                          Add row
+                        </button>
+                      </div>
+                      {content.rx.map((row, idx) => (
+                        <div key={`rx-${idx}`} className="rounded-xl border border-gray-100 bg-white p-3">
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {(['medicine_name', 'dose', 'frequency', 'duration', 'route', 'food_instruction'] as const).map((k) => (
+                              hiddenMedicationFields[`${idx}-${k}`] ? null : (
+                                <div key={k} className={k === 'medicine_name' ? 'sm:col-span-2' : ''}>
+                                  <label className="sr-only" htmlFor={`rx-${idx}-${k}`}>
+                                    {k}
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      className={`w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb] ${
+                                        k !== 'medicine_name' ? 'pr-8' : ''
+                                      }`}
+                                      id={`rx-${idx}-${k}`}
+                                      placeholder={k.replace('_', ' ')}
+                                      value={row[k]}
+                                      onChange={(e) => {
+                                        const next = [...content.rx]
+                                        next[idx] = { ...next[idx], [k]: e.target.value }
+                                        setContent({ ...content, rx: next })
+                                      }}
+                                    />
+                                    {k !== 'medicine_name' && (
+                                      <button
+                                        aria-label={`Remove ${k.replace('_', ' ')}`}
+                                        className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-red-700 hover:bg-red-50"
+                                        onClick={() => {
+                                          const next = [...content.rx]
+                                          next[idx] = { ...next[idx], [k]: '' }
+                                          setContent({ ...content, rx: next })
+                                          setHiddenMedicationFields((previous) => ({ ...previous, [`${idx}-${k}`]: true }))
+                                        }}
+                                        type="button"
+                                      >
+                                        <span className="material-symbols-outlined text-sm leading-none">close</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                 </div>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="pb-4">
+            <p className="mb-2 text-sm font-medium text-[#171d16]">Quick add sections</p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_ADD_SECTIONS.map((section) => (
+                <button
+                  key={section}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-[#d3ddd0] bg-white px-3 py-1.5 text-xs font-medium text-[#2f3b2f] transition-colors hover:bg-[#eff6ea] active:scale-[0.98]"
+                  onClick={() => addSectionToOptionalPreferences(section)}
+                  type="button"
+                >
+                  <span>{section}</span>
+                  <span className="material-symbols-outlined text-sm">add</span>
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="mt-6 space-y-4 pb-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#171d16]">Investigations</h3>
-              <button
-                className="text-sm font-semibold text-[#006b2c] hover:underline"
-                onClick={() =>
-                  setContent({
-                    ...content,
-                    investigations: [...content.investigations, emptyInvestigation()],
-                  })
-                }
-                type="button"
-              >
-                Add row
-              </button>
-            </div>
-            <div className="space-y-3">
-              {content.investigations.length === 0 && (
-                <p className="text-sm text-[#575e70]">No investigations yet. Use “Add row” or apply the blueprint.</p>
-              )}
-              {content.investigations.map((row, idx) => (
-                <div key={`inv-${idx}`} className="rounded-xl border border-gray-100 bg-[#fafcf8] p-3">
-                  <div className="mb-2 flex justify-end">
-                    <button
-                      className="text-xs text-red-700 hover:underline"
-                      onClick={() =>
-                        setContent({
-                          ...content,
-                          investigations: content.investigations.filter((_, i) => i !== idx),
-                        })
-                      }
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <input
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
-                        placeholder="test name"
-                        value={row.test_name}
-                        onChange={(e) => {
-                          const next = [...content.investigations]
-                          next[idx] = { ...next[idx], test_name: e.target.value }
-                          setContent({ ...content, investigations: next })
-                        }}
-                      />
-                    </div>
-                    <input
-                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
-                      placeholder="urgency"
-                      value={row.urgency}
-                      onChange={(e) => {
-                        const next = [...content.investigations]
-                        next[idx] = { ...next[idx], urgency: e.target.value }
-                        setContent({ ...content, investigations: next })
-                      }}
-                    />
-                    <input
-                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
-                      placeholder="preparation instructions"
-                      value={row.preparation_instructions}
-                      onChange={(e) => {
-                        const next = [...content.investigations]
-                        next[idx] = { ...next[idx], preparation_instructions: e.target.value }
-                        setContent({ ...content, investigations: next })
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="pb-4">
+            <label className="mb-1 block text-sm font-medium" htmlFor="tmpl-prefs">
+              Optional preferences
+            </label>
+            <textarea
+              className="min-h-[64px] w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+              id="tmpl-prefs"
+              placeholder="Additional instructions baked into doctor_notes hint…"
+              value={optionalPreferences}
+              onChange={(e) => setOptionalPreferences(e.target.value)}
+            />
           </div>
+
         </div>
 
         <div className="flex flex-shrink-0 items-center justify-end gap-3 border-t border-gray-200 bg-[#fafcf8] px-6 py-4">
@@ -608,7 +638,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated }: Prop
             onClick={() => void submit()}
             type="button"
           >
-            {saveLoading ? 'Saving…' : 'Save template'}
+            {saveLoading ? 'Saving…' : isEditMode ? 'Update template' : 'Save template'}
           </button>
         </div>
       </div>

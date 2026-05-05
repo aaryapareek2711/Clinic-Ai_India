@@ -123,6 +123,9 @@ export type ClinicalTemplateListItem = {
   category: string
   specialty: string
   is_favorite: boolean
+  content?: TemplateContentPayload
+  tags?: string[]
+  appointment_types?: string[]
 }
 
 export type ListClinicalTemplatesResponse = {
@@ -146,5 +149,31 @@ export async function listClinicalTemplates(params?: {
       page_size: params?.page_size ?? 50,
     },
   })
+  return data
+}
+
+export type UpdateClinicalTemplatePayload = Partial<{
+  name: string
+  description: string
+  type: 'personal' | 'practice' | 'community'
+  category: string
+  specialty: string
+  content: TemplateContentPayload
+  tags: string[]
+  appointment_types: string[]
+  is_favorite: boolean
+  is_active: boolean
+}>
+
+export async function getClinicalTemplate(templateId: string): Promise<ClinicalTemplateListItem> {
+  const { data } = await apiClient.get<ClinicalTemplateListItem>(`/api/templates/${templateId}`)
+  return data
+}
+
+export async function updateClinicalTemplate(
+  templateId: string,
+  payload: UpdateClinicalTemplatePayload,
+): Promise<ClinicalTemplateListItem> {
+  const { data } = await apiClient.put<ClinicalTemplateListItem>(`/api/templates/${templateId}`, payload)
   return data
 }

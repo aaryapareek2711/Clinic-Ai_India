@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
+import { getClinicalTemplate, listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const RECOMMENDED_TEMPLATES = [
@@ -60,6 +60,8 @@ function TemplatesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [templatesTotal, setTemplatesTotal] = useState(0)
   const [templatesRefreshNonce, setTemplatesRefreshNonce] = useState(0)
+  const [templateToEdit, setTemplateToEdit] = useState<ClinicalTemplateListItem | null>(null)
+  const [templateActionLoadingId, setTemplateActionLoadingId] = useState<string | null>(null)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(templateSearch), 400)
@@ -165,7 +167,10 @@ function TemplatesPage() {
           <div className="flex flex-wrap gap-4 mb-8">
             <button
               className="flex shrink-0 items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 font-semibold text-white shadow-sm transition-all hover:bg-[#006b2c] hover:shadow-md active:scale-[0.98]"
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => {
+                setTemplateToEdit(null)
+                setIsCreateModalOpen(true)
+              }}
               type="button"
             >
               <span className="material-symbols-outlined text-[20px]">add</span>
@@ -285,7 +290,10 @@ function TemplatesPage() {
                 </p>
                 <button
                   className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-semibold text-white transition-all hover:shadow-lg active:scale-95"
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => {
+                    setTemplateToEdit(null)
+                    setIsCreateModalOpen(true)
+                  }}
                   type="button"
                 >
                   <span className="material-symbols-outlined">add_circle</span>
@@ -299,7 +307,28 @@ function TemplatesPage() {
                     <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                       <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
                       <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
-                      <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                        <button
+                          className="text-xs font-semibold text-[#006b2c] hover:underline disabled:opacity-50"
+                          disabled={templateActionLoadingId === t.id}
+                          onClick={async () => {
+                            setTemplateActionLoadingId(t.id)
+                            try {
+                              const fullTemplate = await getClinicalTemplate(t.id)
+                              setTemplateToEdit(fullTemplate)
+                              setIsCreateModalOpen(true)
+                            } catch (e) {
+                              setTemplatesError(getApiErrorMessage(e))
+                            } finally {
+                              setTemplateActionLoadingId(null)
+                            }
+                          }}
+                          type="button"
+                        >
+                          {templateActionLoadingId === t.id ? 'Opening…' : 'View/Edit'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -351,9 +380,17 @@ function TemplatesPage() {
 
       <CreateTemplateModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false)
+          setTemplateToEdit(null)
+        }}
+        templateToEdit={templateToEdit}
         onCreated={() => {
           setTemplateSavedMessage('Template saved successfully.')
+          setTemplatesRefreshNonce((n) => n + 1)
+        }}
+        onUpdated={() => {
+          setTemplateSavedMessage('Template updated successfully.')
           setTemplatesRefreshNonce((n) => n + 1)
         }}
       />

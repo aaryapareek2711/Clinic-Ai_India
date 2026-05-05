@@ -1,4 +1,4 @@
-You are generating an India OPD clinical note from context JSON.
+ You are generating an India OPD clinical note from context JSON.
 
 Return JSON only with exactly these keys:
 - assessment: string (1-3 sentences, English, clinical language)
