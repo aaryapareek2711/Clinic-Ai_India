@@ -1476,9 +1476,13 @@ export default function VisitDetailPage() {
                     </button>
                     <button
                       className="rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#006b2c] disabled:opacity-50"
-                      disabled={!patientId || !visitId || recapAction !== null}
+                      disabled={!patientId || !visitId || !postVisitSummary?.whatsapp_payload?.trim() || recapAction !== null}
                       onClick={() => {
                         if (!patientId || !visitId) return
+                        if (!postVisitSummary?.whatsapp_payload?.trim()) {
+                          setPostVisitMessage('Generate the post-visit summary before sending.')
+                          return
+                        }
                         const overrideDigits =
                           recapContactMode === 'patient' ? '' : digitsOnlyPhone(recapPhoneDraft)
                         if (recapContactMode !== 'patient' && !overrideDigits) {

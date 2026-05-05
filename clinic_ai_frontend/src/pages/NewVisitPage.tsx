@@ -88,7 +88,7 @@ function NewVisitPage() {
     d.setDate(1)
     return d
   })
-  const [selectedStartIso, setSelectedStartIso] = useState('')
+  const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -144,7 +144,19 @@ function NewVisitPage() {
     return out
   }, [appointmentDate, schedule, upcoming])
 
-  const selectedSlot = slotBlocks.find((s) => !s.booked && s.startIso === selectedStartIso) || null
+  const selectedSlots = useMemo(
+    () =>
+      selectedStartIsos
+        .map((iso) => slotBlocks.find((s) => !s.booked && s.startIso === iso))
+        .filter((s): s is SlotBlock => Boolean(s)),
+    [selectedStartIsos, slotBlocks],
+  )
+
+  const selectedSlot = selectedSlots[0] ?? null
+
+  useEffect(() => {
+    setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((s) => !s.booked && s.startIso === iso)))
+  }, [slotBlocks])
 
   const monthCells = useMemo(() => {
     const year = visibleMonth.getFullYear()
@@ -195,6 +207,10 @@ function NewVisitPage() {
       setFormError('Select an appointment slot for Walk-in visit type.')
       return
     }
+    if (visitKind === 'scheduled' && selectedSlots.length === 0) {
+      setFormError('Select at least one appointment slot.')
+      return
+    }
     try {
       setSubmitting(true)
       const registered = await registerPatient({
@@ -207,15 +223,39 @@ function NewVisitPage() {
         consent: true,
         visit_type: visitKind,
       })
-      if (selectedSlot && appointmentDate.trim()) {
-        const createdVisit = await createVisitFromPatient(registered.patient_id, {
-          provider_id: DEFAULT_PROVIDER_ID,
-          scheduled_start: selectedSlot.startIso,
-          visit_type: visitKind,
+      if (appointmentDate.trim()) {
+        const startsToCreate =
+          visitKind === 'walk_in'
+            ? selectedSlot
+              ? [selectedSlot.startIso]
+              : []
+            : selectedSlots
+                .map((s) => s.startIso)
+                .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+
+        if (startsToCreate.length === 0) {
+          setFormError('Select appointment slot(s).')
+          return
+        }
+
+        const createdVisits = await Promise.all(
+          startsToCreate.map((scheduled_start) =>
+            createVisitFromPatient(registered.patient_id, {
+              provider_id: DEFAULT_PROVIDER_ID,
+              scheduled_start,
+              visit_type: visitKind,
+            }),
+          ),
+        )
+        startsToCreate.forEach((scheduled_start) => {
+          persistAppointmentDuration(scheduled_start, schedule.defaultSlotMinutes || 15)
         })
-        persistAppointmentDuration(selectedSlot.startIso, schedule.defaultSlotMinutes || 15)
+        if (createdVisits.length > 1) {
+          navigate('/visits')
+          return
+        }
         const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=${targetTab}`)
+        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisits[0].visit_id)}&tab=${targetTab}`)
         return
       }
       navigate('/dashboard')
@@ -498,7 +538,7 @@ function NewVisitPage() {
                     <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
                     <div className="flex flex-wrap gap-2">
                       {slotBlocks.map((slot) => {
-                        const active = selectedStartIso === slot.startIso && !slot.booked
+                        const active = selectedStartIsos.includes(slot.startIso) && !slot.booked
                         return (
                           <button
                             key={slot.startIso}
@@ -511,7 +551,15 @@ function NewVisitPage() {
                             }`}
                             disabled={slot.booked}
                             onClick={() => {
-                              setSelectedStartIso(slot.startIso)
+                              if (visitKind === 'walk_in') {
+                                setSelectedStartIsos([slot.startIso])
+                                return
+                              }
+                              setSelectedStartIsos((prev) =>
+                                prev.includes(slot.startIso)
+                                  ? prev.filter((x) => x !== slot.startIso)
+                                  : [...prev, slot.startIso],
+                              )
                             }}
                             type="button"
                           >
@@ -523,6 +571,9 @@ function NewVisitPage() {
                     {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
                     {visitKind === 'walk_in' && !selectedSlot && (
                       <p className="mt-2 text-xs font-semibold text-[#0f5132]">Walk-in also needs an appointment time.</p>
+                    )}
+                    {visitKind === 'scheduled' && selectedSlots.length > 0 && (
+                      <p className="mt-2 text-xs font-semibold text-[#0f5132]">Selected slots: {selectedSlots.length}</p>
                     )}
                   </div>
                 </div>
@@ -538,10 +589,10 @@ function NewVisitPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#3e4a3d]">Slot</span>
                     <span className="font-medium">
-                      {selectedSlot
-                        ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${schedule.defaultSlotMinutes || 15}m)${
-                            visitKind === 'walk_in' ? ' · Walk-in' : ''
-                          }`
+                      {selectedSlots.length > 0
+                        ? visitKind === 'walk_in'
+                          ? `${appointmentDate} ${formatChipTime(selectedSlot?.startIso || '')} (${schedule.defaultSlotMinutes || 15}m) · Walk-in`
+                          : `${selectedSlots.length} slot(s) selected on ${appointmentDate}`
                         : visitKind === 'walk_in'
                           ? 'Select walk-in time'
                           : 'Open / TBD'}
