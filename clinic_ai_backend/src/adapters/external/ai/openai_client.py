@@ -123,6 +123,26 @@ WOMENS_HEALTH_KEYWORDS = {
     "abdominal pain",
     "stomach pain",
 }
+SYMPTOM_SIGNAL_KEYWORDS = {
+    "fever",
+    "cough",
+    "cold",
+    "pain",
+    "ache",
+    "vomit",
+    "nausea",
+    "loose motion",
+    "diarrhea",
+    "breath",
+    "dizziness",
+    "fatigue",
+    "weakness",
+    "sore throat",
+    "headache",
+    "rash",
+    "swelling",
+    "burning",
+}
 
 TOPIC_QUESTION_TEMPLATES = {
     "en": {

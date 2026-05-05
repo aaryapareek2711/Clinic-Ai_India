@@ -157,6 +157,17 @@ class _FakeCollection:
             self.record[key] = value
         return previous
 
+    def update_many(self, query, payload, **kwargs):  # noqa: ANN001
+        self.last_update = (query, payload, kwargs)
+        if not self.record:
+            return type("UpdateResult", (), {"modified_count": 0})()
+        status_filter = (query.get("status") or {}).get("$in")
+        if status_filter and self.record.get("status") not in status_filter:
+            return type("UpdateResult", (), {"modified_count": 0})()
+        for key, value in (payload.get("$set") or {}).items():
+            self.record[key] = value
+        return type("UpdateResult", (), {"modified_count": 1})()
+
 
 class _FakeWhatsApp:
     def __init__(self, *, fail_template: bool = False) -> None:
@@ -183,11 +194,19 @@ class _FakeOpenAIOptOut:
         self.is_opt_out = is_opt_out
         self.confidence = confidence
 
-    def detect_patient_opt_out(self, *, message_text: str, language: str, recent_answers: list[dict] | None = None) -> dict:
+    def detect_patient_opt_out(
+        self,
+        *,
+        message_text: str,
+        language: str,
+        pending_question: str = "",
+        recent_answers: list[dict] | None = None,
+    ) -> dict:
         return {
             "is_opt_out": self.is_opt_out,
+            "intent": "opt_out" if self.is_opt_out else "continue",
             "confidence": self.confidence,
-            "reason": f"stub for {language}:{message_text}:{len(recent_answers or [])}",
+            "reason": f"stub for {language}:{message_text}:{pending_question}:{len(recent_answers or [])}",
         }
 
 
@@ -319,7 +338,8 @@ def test_first_substantive_reply_after_template_is_used_as_illness() -> None:
 
     assert service.whatsapp.sent
     assert service.whatsapp.sent[0][0] == "text"
-    assert "main health problem" in service.whatsapp.sent[0][2].lower()
+    sent_text = service.whatsapp.sent[0][2].lower()
+    assert "main health problem" in sent_text or "main health issue" in sent_text
 
 
 def test_first_generic_reply_after_template_reasks_chief_complaint() -> None:

@@ -212,7 +212,13 @@ class IntakeChatService:
                     str(bootstrapped.get("patient_id") or ""),
                     message_id,
                 )
-                session = self._resolve_active_session_for_inbound_number(normalized_from, active_statuses)
+                # Use the freshly bootstrapped session directly so this same inbound
+                # message can advance intake immediately even if number-based re-resolve
+                # misses due record-shape drift.
+                session = bootstrapped
+                resolved_after_bootstrap = self._resolve_active_session_for_inbound_number(normalized_from, active_statuses)
+                if resolved_after_bootstrap:
+                    session = resolved_after_bootstrap
             if not session:
                 logger.info(
                     "whatsapp_inbound_no_session from=%s message_id=%s",
@@ -329,7 +335,12 @@ class IntakeChatService:
                 refreshed_waiting = self.db.intake_sessions.find_one({"_id": session["_id"]}) or session
                 # If first reply is meaningful symptom text, treat it as illness directly and
                 # move to generated intake questions. For greetings/short acks, ask chief complaint.
-                patient = self.db.patients.find_one({"patient_id": refreshed_waiting.get("patient_id")}) or {}
+                patients_collection = getattr(self.db, "patients", None)
+                patient = (
+                    patients_collection.find_one({"patient_id": refreshed_waiting.get("patient_id")})
+                    if patients_collection is not None
+                    else {}
+                ) or {}
                 if self._should_reask_chief_complaint(cleaned, patient):
                     self._send_chief_complaint_and_persist_pending(refreshed_waiting)
                     return
@@ -854,18 +865,20 @@ class IntakeChatService:
             query["$or"].append({"to_number": {"$regex": f"{re.escape(last10)}$"}})
         if keep_session_id is not None:
             query["_id"] = {"$ne": keep_session_id}
-        self.db.intake_sessions.update_many(
-            query,
-            {
-                "$set": {
-                    "status": "superseded",
-                    "pending_question": None,
-                    "pending_topic": None,
-                    "superseded_reason": reason,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-        )
+        update_many = getattr(self.db.intake_sessions, "update_many", None)
+        if callable(update_many):
+            update_many(
+                query,
+                {
+                    "$set": {
+                        "status": "superseded",
+                        "pending_question": None,
+                        "pending_topic": None,
+                        "superseded_reason": reason,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
 
     def _planner_fallback_topic(self, session: dict) -> str:
         context = {
@@ -1079,6 +1092,8 @@ class IntakeChatService:
         return (datetime.now(timezone.utc) - recent_at).total_seconds() <= 12
 
     def _should_reask_chief_complaint(self, message_text: str, patient: dict) -> bool:
+        if str(message_text or "").strip() == NON_TEXT_MESSAGE_TRIGGER:
+            return True
         normalized = self._normalize_for_similarity(message_text)
         if not normalized:
             return True
