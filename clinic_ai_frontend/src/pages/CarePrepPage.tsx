@@ -9,8 +9,6 @@ import type { IntakeSessionResponse, ProviderVisitListItem } from '../services/v
 import NotificationsDrawer from './NotificationsDrawer'
 
 type QueueFilter = 'all' | 'ready' | 'in_progress'
-type QueueSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'token'
-type QueueSearchField = 'name' | 'token' | 'patient_id'
 const PAGE_SIZE = 10
 
 type QueueRow = {
@@ -106,18 +104,6 @@ function applyQueueFilter(rows: QueueRow[], filter: QueueFilter): QueueRow[] {
   return rows
 }
 
-function sortQueueRows(rows: QueueRow[], sort: QueueSort): QueueRow[] {
-  const copy = [...rows]
-  copy.sort((a, b) => {
-    if (sort === 'time_newest') return a.submittedMinutesAgo - b.submittedMinutesAgo
-    if (sort === 'time_oldest') return b.submittedMinutesAgo - a.submittedMinutesAgo
-    if (sort === 'name_az') return a.patientName.localeCompare(b.patientName)
-    if (sort === 'name_za') return b.patientName.localeCompare(a.patientName)
-    return a.tokenLabel.localeCompare(b.tokenLabel)
-  })
-  return copy
-}
-
 function StatusCell({ row }: { row: QueueRow }) {
   if (row.statusKind === 'complete') {
     return (
@@ -145,10 +131,7 @@ export default function CarePrepPage() {
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
-  const [queueSort, setQueueSort] = useState<QueueSort>('time_newest')
-  const [searchField, setSearchField] = useState<QueueSearchField | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [rows, setRows] = useState<QueueRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -195,13 +178,15 @@ export default function CarePrepPage() {
     const base = applyQueueFilter(rows, queueFilter)
     const q = searchQuery.trim().toLowerCase()
     const filtered = base.filter((r) => {
-      if (!q || !searchField) return true
-      if (searchField === 'name') return r.patientName.toLowerCase().includes(q)
-      if (searchField === 'token') return r.tokenLabel.toLowerCase().includes(q)
-      return r.patientId.toLowerCase().includes(q)
+      if (!q) return true
+      return (
+        r.patientName.toLowerCase().includes(q) ||
+        r.tokenLabel.toLowerCase().includes(q) ||
+        r.patientId.toLowerCase().includes(q)
+      )
     })
-    return sortQueueRows(filtered, queueSort)
-  }, [rows, queueFilter, queueSort, searchQuery, searchField])
+    return [...filtered].sort((a, b) => a.submittedMinutesAgo - b.submittedMinutesAgo)
+  }, [rows, queueFilter, searchQuery])
   const totalPages = Math.max(1, Math.ceil(visiblePatients.length / PAGE_SIZE))
   const pagedPatients = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
@@ -210,18 +195,11 @@ export default function CarePrepPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [queueFilter, queueSort, searchQuery, searchField])
+  }, [queueFilter, searchQuery])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
   }, [currentPage, totalPages])
-
-  const totals = useMemo(() => {
-    const total = rows.length
-    const ready = rows.filter((r) => r.statusKind === 'complete').length
-    const prog = rows.filter((r) => r.statusKind === 'progress').length
-    return { total, ready, prog }
-  }, [rows])
 
   function goToIntake(vid: string): void {
     navigate(`/careprep/intake/${encodeURIComponent(vid)}`)
@@ -254,105 +232,27 @@ export default function CarePrepPage() {
 
       <main className="flex flex-1 flex-col pt-16">
         <div className="flex-1 p-8">
-          <div className="mb-8">
-            <h2 className="mb-2 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep Queue</h2>
-            <p className="text-base leading-relaxed text-[#3e4a3d]">
-              Intake status for active workspace visits.
-            </p>
-          </div>
+          <h2 className="mb-6 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep</h2>
 
           {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
-          <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <p className="mb-1 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Loaded Queue</p>
-              <p className="text-3xl font-bold text-[#171d16]">{totals.total}</p>
-              <div className="mt-2 flex items-center text-xs font-medium text-[#006b2c]">
-                <span className="material-symbols-outlined mr-1 text-sm">sync</span>
-                <span>Live from API</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <p className="mb-1 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Ready for Review</p>
-              <p className="text-3xl font-bold text-[#006b2c]">{totals.ready}</p>
-              <div className="mt-2 flex items-center text-xs text-[#3e4a3d]">
-                <span className="material-symbols-outlined mr-1 text-sm">check_circle</span>
-                <span>Heuristic complete</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <p className="mb-1 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">In Progress</p>
-              <p className="text-3xl font-bold text-amber-600">{totals.prog}</p>
-              <div className="mt-2 flex items-center text-xs text-[#3e4a3d]">
-                <span className="material-symbols-outlined mr-1 text-sm">pending</span>
-                <span>Intake ongoing / minimal</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <p className="mb-1 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Status</p>
-              <p className="text-3xl font-bold text-[#171d16]">{loading ? '…' : 'OK'}</p>
-              <div className="mt-2 flex items-center text-xs text-[#3e4a3d]">
-                <span className="material-symbols-outlined mr-1 text-sm">timer</span>
-                <span>Up to 40 visits scanned</span>
-              </div>
-            </div>
-          </div>
-
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-[18px] leading-snug font-semibold text-[#171d16]">Active Intake Queue</h3>
+              <h3 className="text-[18px] leading-snug font-semibold text-[#171d16]">Patients</h3>
               <div className="flex flex-wrap items-center gap-3">
-                {searchField ? (
-                  <div className="relative min-w-[240px]">
-                    <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">search</span>
-                    <input
-                      className="w-full rounded-lg border border-[#bdcaba] bg-white py-2.5 pr-4 pl-9 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={`Search by ${searchField === 'patient_id' ? 'patient ID' : searchField}`}
-                      type="search"
-                      value={searchQuery}
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-[#bdcaba] bg-white px-4 py-2.5 text-sm text-slate-300">
-                    Select filter first, then search bar opens.
-                  </div>
-                )}
-                <div className="relative">
-                  <button
-                    className="inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50"
-                    onClick={() => setIsFilterOpen((v) => !v)}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                    Filter
-                  </button>
-                  {isFilterOpen && (
-                    <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-[#bdcaba] bg-white p-2 shadow-lg">
-                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('name'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient name</button>
-                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('token'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Token</button>
-                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('patient_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient ID</button>
-                      <button className="mt-1 block w-full rounded px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-50" onClick={() => { setSearchField(null); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Clear filter</button>
-                    </div>
-                  )}
+                <div className="relative min-w-[280px]">
+                  <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                    search
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-[#bdcaba] bg-white py-2.5 pr-4 pl-9 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by patient name or patient ID"
+                    type="search"
+                    value={searchQuery}
+                  />
                 </div>
-                <div className="relative min-w-[220px]">
-                  <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">sort</span>
-                  <select
-                    aria-label="Sort queue"
-                    className="w-full cursor-pointer appearance-none rounded-lg border border-[#bdcaba] bg-white py-2 pr-9 pl-9 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
-                    value={queueSort}
-                    onChange={(e) => setQueueSort(e.target.value as QueueSort)}
-                  >
-                    <option value="time_newest">Recency</option>
-                    <option value="time_oldest">Oldest touched</option>
-                    <option value="name_az">Name: A-Z</option>
-                    <option value="name_za">Name: Z-A</option>
-                    <option value="token">Token</option>
-                  </select>
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
-                </div>
-                <div className="relative">
+                <div className="relative min-w-[170px]">
                   <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">tune</span>
                   <select
                     aria-label="Filter queue"
@@ -371,17 +271,15 @@ export default function CarePrepPage() {
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-white">
-                  <th className="px-6 py-4 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Token</th>
                   <th className="px-6 py-4 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Patient Name</th>
                   <th className="px-6 py-4 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Last Activity</th>
                   <th className="px-6 py-4 text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Intake Status</th>
-                  <th className="px-6 py-4 text-right text-[13px] font-medium tracking-[0.05em] text-[#3e4a3d] uppercase">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!loading && visiblePatients.length === 0 && (
                   <tr>
-                    <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={5}>
+                    <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={3}>
                       No qualifying visits. Create or schedule visits in the backend, then refresh.
                     </td>
                   </tr>
@@ -395,9 +293,6 @@ export default function CarePrepPage() {
                     }}
                   >
                     <td className="px-6 py-4">
-                      <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-500">{p.tokenLabel}</span>
-                    </td>
-                    <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${p.initialsClass}`}>{p.initials}</div>
                         <div>
@@ -410,29 +305,6 @@ export default function CarePrepPage() {
                     <td className="px-6 py-4">
                       <StatusCell row={p} />
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      {p.action === 'review' ? (
-                        <button
-                          className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#00873a] active:scale-95"
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            goToIntake(p.visitId)
-                          }}
-                        >
-                          Review Intake
-                        </button>
-                      ) : (
-                        <button
-                          className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-bold text-slate-500"
-                          disabled
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Waiting...
-                        </button>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -442,7 +314,6 @@ export default function CarePrepPage() {
                 {visiblePatients.length === 0
                   ? 'Showing 0 row(s)'
                   : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, visiblePatients.length)} of ${visiblePatients.length} row(s)`}
-                {queueFilter !== 'all' ? ' (filter applied)' : ''}
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -468,23 +339,6 @@ export default function CarePrepPage() {
             </div>
           </div>
         </div>
-
-        <footer className="mt-auto border-t border-slate-200 bg-slate-50 p-8">
-          <div className="flex flex-col items-center justify-between gap-4 text-xs font-medium text-[#3e4a3d] sm:flex-row">
-            <p>© 2026 MedGenie AI Clinical Systems. All rights reserved.</p>
-            <div className="flex gap-6">
-              <a className="hover:text-[#006b2c]" href="#privacy">
-                Privacy Policy
-              </a>
-              <a className="hover:text-[#006b2c]" href="#compliance">
-                Compliance Hub
-              </a>
-              <a className="hover:text-[#006b2c]" href="#support">
-                Support
-              </a>
-            </div>
-          </div>
-        </footer>
       </main>
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />

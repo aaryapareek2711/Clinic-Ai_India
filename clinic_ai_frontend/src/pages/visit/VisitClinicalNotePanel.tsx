@@ -11,6 +11,42 @@ import {
   type IndiaClinicalNotePayload,
 } from '../../services/visitWorkflowApi'
 
+function to12HourTimeDisplay(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const hh = Number(m12[1])
+    const mm = m12[2]
+    const mer = m12[3].toUpperCase()
+    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
+  }
+  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
+  if (!m24) return text
+  const h = Number(m24[1])
+  const mm = m24[2]
+  if (!Number.isFinite(h) || h < 0 || h > 23) return text
+  const mer = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${mm} ${mer}`
+}
+
+function to24HourTimeForApi(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const h12 = Number(m12[1])
+    const mm = Number(m12[2])
+    const mer = m12[3].toUpperCase()
+    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
+      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
+      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    }
+  }
+  return text
+}
+
 function asIndiaPayload(raw: ClinicalNoteLatest['payload']): IndiaClinicalNotePayload | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -146,7 +182,7 @@ export default function VisitClinicalNotePanel({
   useEffect(() => {
     // Keep follow-up draft in sync with latest persisted note so Approve & Next forwards current values.
     setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
-    setFollowUpTime(payload?.follow_up_time?.toString().trim() || '')
+    setFollowUpTime(to12HourTimeDisplay(payload?.follow_up_time?.toString().trim() || ''))
   }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
 
   const displayPayload = useMemo((): IndiaClinicalNotePayload | null => {
@@ -168,9 +204,10 @@ export default function VisitClinicalNotePanel({
     setGenerating(true)
     setMessage(null)
     try {
+      const followUpTimeApi = to24HourTimeForApi(followUpTime.trim())
       const res = await generateClinicalNote(patientId, visitId, {
         follow_up_date: followUpDate.trim() || undefined,
-        follow_up_time: followUpTime.trim() || undefined,
+        follow_up_time: followUpTimeApi || undefined,
         template_id: selectedTemplate?.id,
       })
       onNoteUpdated(res)
@@ -189,10 +226,11 @@ export default function VisitClinicalNotePanel({
     setMessage(null)
     const fuDate = followUpDate.trim()
     const fuTime = followUpTime.trim()
+    const fuTimeApi = to24HourTimeForApi(fuTime)
     try {
       const res = await generateClinicalNote(patientId, visitId, {
         follow_up_date: fuDate || undefined,
-        follow_up_time: fuTime || undefined,
+        follow_up_time: fuTimeApi || undefined,
         template_id: selectedTemplate?.id,
       })
       onNoteUpdated(res)
@@ -246,7 +284,7 @@ export default function VisitClinicalNotePanel({
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 rounded-xl border border-[#bdcaba] bg-white p-6 shadow-sm sm:p-8">
+    <div className="w-full space-y-6 rounded-xl border border-[#bdcaba] bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 border-b border-[#e9f0e5] pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold text-[#171d16]">Clinical note</h3>
@@ -332,11 +370,11 @@ export default function VisitClinicalNotePanel({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#575e70]">Time (HH:MM)</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#575e70]">Time (hh:mm AM/PM)</span>
             <input
               className="w-28 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
               onChange={(e) => setFollowUpTime(e.target.value)}
-              placeholder="10:30"
+              placeholder="10:30 AM"
               type="text"
               value={followUpTime}
             />

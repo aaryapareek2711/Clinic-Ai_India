@@ -44,9 +44,6 @@ export function patientPortraitSrc(gender: string | undefined): string {
   return PATIENT_AVATAR_VISIT
 }
 
-const WA_HEADER_IMG =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuCQnSPUVTyL-nhLjEbcbkrmF46xwC8vZWEv52r9qjkUJzEwqgo_rYYaOGpgczIaa7U0zelaLs6CRKgMShALJVdkwXqzIgQ4YlWLp6XVe2phA0JGpVZoImQ-XI1DG3ozERRh36YlZpA-VBq_0xR7A1NnRS7lsmLNDf7VR-DD_P6KQpkwRx0gWiiW3vDOIWEIiURMZZFitEhs8P-VihYzAKk0X7RDGVaJesB5d6X25cxAij-piSMdaKfFM-tzU7rwxZX1II_IOMyGgCpz'
-
 type Props = {
   visitId: string
   patientName: string
@@ -88,24 +85,6 @@ export default function VisitIntakeCanvas({
     return raw.map((s) => String(s).trim()).filter(Boolean)
   }, [sections?.red_flag_indicators])
 
-  const qaRows = intake?.question_answers?.filter((x) => x.question || x.answer) ?? []
-  const qaPreview = qaRows.slice(-2)
-
-  const payload = clinicalNote?.payload
-  const rxRows = payload?.rx?.length ? payload.rx : []
-
-  const preVisitSnapshotLine = useMemo(() => {
-    const reason = displayLine(sections?.chief_complaint?.reason_for_visit)
-    const meds = (sections?.current_medication?.medications_or_home_remedies ?? '').trim()
-    const parts: string[] = []
-    if (reason !== '—') parts.push(reason)
-    if (meds && !/^not provided$/i.test(meds)) {
-      const short = meds.length > 120 ? `${meds.slice(0, 117)}…` : meds
-      parts.push(short)
-    }
-    return parts.join(' · ') || ''
-  }, [sections?.chief_complaint?.reason_for_visit, sections?.current_medication?.medications_or_home_remedies])
-
   async function handleGenerate() {
     if (!patientId || !visitId) return
     setGenerating(true)
@@ -124,8 +103,8 @@ export default function VisitIntakeCanvas({
   const showSummary = Boolean(preVisit?.sections)
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-      <div className="space-y-8 lg:col-span-8">
+    <div className="space-y-8">
+      <div className="space-y-8">
         <div className="rounded-xl border border-[#bdcaba] bg-white p-6">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-[18px] font-semibold text-[#171d16]">Initial Intake Progress</h3>
@@ -312,75 +291,6 @@ export default function VisitIntakeCanvas({
         )}
       </div>
 
-      <div className="lg:col-span-4">
-        <div className="sticky top-24 rounded-xl border border-[#bdcaba] bg-white p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="text-[18px] font-semibold text-[#171d16]">WhatsApp Update</h3>
-            <div className="flex items-center gap-1 text-[#16a34a]">
-              <span className="h-2 w-2 rounded-full bg-[#16a34a]" />
-              <span className="text-xs font-semibold">Active</span>
-            </div>
-          </div>
-          <div className="relative flex aspect-[9/16] flex-col overflow-hidden rounded-xl border border-[#bdcaba] bg-[#e5ddd5]">
-            <div className="flex items-center gap-3 bg-[#075e54] p-3 text-white">
-              <span className="material-symbols-outlined">arrow_back</span>
-              <img alt="" className="h-8 w-8 rounded-full border border-white/20 object-cover" src={WA_HEADER_IMG} />
-              <div>
-                <p className="text-sm font-bold leading-tight">{patientName}</p>
-                <p className="text-[10px] opacity-80">Online</p>
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-              {qaPreview.length === 0 ? (
-                <p className="text-xs text-[#3e4a3d]">Messages appear when intake is in progress.</p>
-              ) : (
-                qaPreview.map((row, i) => (
-                  <div
-                    key={`${row.question}-${i}`}
-                    className="relative max-w-[85%] rounded-lg bg-white p-3 text-xs text-[#171d16] shadow-sm"
-                  >
-                    {row.answer || row.question}
-                  </div>
-                ))
-              )}
-              <div className="relative ml-auto max-w-[85%] rounded-lg bg-[#dcf8c6] p-3 text-xs shadow-sm">
-                {rxRows.length > 0 ? (
-                  <>
-                    <p className="mb-1 font-bold">Prescription (from clinical note):</p>
-                    {rxRows.slice(0, 2).map((r, idx) => (
-                      <span key={`${r.medicine_name ?? 'rx'}-${idx}`} className="block">
-                        — {r.medicine_name ?? 'Medicine'}
-                      </span>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    <p className="mb-1 font-bold">Pre-visit snapshot:</p>
-                    {preVisitSnapshotLine ? (
-                      <span className="block leading-snug text-[#171d16]">{preVisitSnapshotLine}</span>
-                    ) : (
-                      <span className="text-[#575e70]">Generate pre-visit summary or complete the clinical note.</span>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-white p-3">
-              <div className="flex-1 rounded-full bg-[#e9f0e5] px-4 py-2 text-xs text-[#575e70]">Type message…</div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#075e54] text-white">
-                <span className="material-symbols-outlined">mic</span>
-              </div>
-            </div>
-          </div>
-          <button
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-[#16a34a] py-3 font-bold text-white transition-all hover:bg-[#006b2c] active:scale-[0.98]"
-            type="button"
-          >
-            <span className="material-symbols-outlined">send</span>
-            Send Now
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

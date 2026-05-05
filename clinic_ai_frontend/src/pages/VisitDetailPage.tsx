@@ -148,6 +148,49 @@ function visitStatusChip(statusRaw: string | undefined | null): {
   }
 }
 
+function transcriptionStatusUiMessage(
+  statusRaw: string | undefined | null,
+  backendMessage: string | null | undefined,
+): string {
+  const status = (statusRaw || '').trim().toLowerCase()
+  const msg = (backendMessage || '').trim()
+
+  if (status === 'completed') return msg || 'Transcription completed.'
+  if (status === 'failed') return msg || 'Transcription failed.'
+
+  const isProcessingLike = ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
+    status,
+  )
+  if (isProcessingLike) {
+    return msg || 'Transcription is processing.'
+  }
+  return msg || status || 'Transcription status unavailable.'
+}
+
+function transcriptionStatusUiLabel(
+  statusRaw: string | undefined | null,
+  _backendMessage: string | null | undefined,
+): string {
+  const status = (statusRaw || '').trim().toLowerCase()
+  const processingLike = ['pending', 'queued', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
+    status,
+  )
+  if (processingLike) {
+    return 'Processing'
+  }
+  if (status === 'completed') return 'Completed'
+  if (status === 'failed') return 'Failed'
+  if (!status) return 'Unknown'
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function extractRunningSeconds(message: string | null | undefined): number | null {
+  const m = String(message || '').match(/running for\s+(\d+)\s+seconds?/i)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 /** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string }[]` (one key per turn). */
 function flattenStructuredDialogue(
   turns: Array<Record<string, unknown>> | null | undefined,
@@ -197,6 +240,7 @@ export default function VisitDetailPage() {
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
+  const maxProcessingSecondsRef = useRef(0)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -316,6 +360,7 @@ export default function VisitDetailPage() {
     setVitalsStaffName('Nurse')
     setTranscriptionStatus(null)
     setTranscriptionMessage(null)
+    maxProcessingSecondsRef.current = 0
     setTranscriptionText(null)
     setTranscriptionStructuredDialogue(null)
     setStructureDialogueLoading(false)
@@ -616,7 +661,7 @@ export default function VisitDetailPage() {
   }, [])
 
   const handleUploadPendingTranscription = useCallback(() => {
-    if (recordingPhase !== 'idle' || !patientId || !visitId || transcriptionUploading) return
+    if (recordingPhase !== 'idle' || !patientId || !visitId) return
     const f = pendingTranscriptionAudioRef.current ?? pendingTranscriptionAudio
     if (!f) return
     void (async () => {
@@ -634,7 +679,6 @@ export default function VisitDetailPage() {
     pendingTranscriptionAudio,
     recordingPhase,
     submitTranscriptionAudioFile,
-    transcriptionUploading,
     visitId,
   ])
 
@@ -666,9 +710,41 @@ export default function VisitDetailPage() {
     if (!patientId || !visitId) return
     try {
       const status = await fetchTranscriptionStatus(patientId, visitId)
-      setTranscriptionStatus(status)
-      setTranscriptionMessage(status.message || status.status)
-      const st = (status.status || '').toLowerCase()
+      const rawStatus = (status.status || '').toLowerCase()
+      const rawMessage = (status.message || '').toLowerCase()
+      const prevStatus = (transcriptionStatus?.status || '').toLowerCase()
+      const hadRecentTranscriptionActivity =
+        transcriptionUploading ||
+        ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(prevStatus)
+
+      const normalizedStatus =
+        rawStatus === 'pending' && rawMessage.includes('not started') && hadRecentTranscriptionActivity
+          ? { ...status, status: 'processing', message: 'Transcription in progress' }
+          : status
+
+      setTranscriptionStatus(normalizedStatus)
+      const baseMessage = transcriptionStatusUiMessage(normalizedStatus.status, normalizedStatus.message)
+      const statusLower = (normalizedStatus.status || '').toLowerCase()
+      const processingLike = ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
+        statusLower,
+      )
+      if (processingLike) {
+        const fromMessage = extractRunningSeconds(normalizedStatus.message)
+        const fromStartedAt = (() => {
+          const raw = String((normalizedStatus as { started_at?: unknown }).started_at || '').trim()
+          if (!raw) return null
+          const ms = new Date(raw).getTime()
+          if (Number.isNaN(ms)) return null
+          return Math.max(0, Math.floor((Date.now() - ms) / 1000))
+        })()
+        const candidate = Math.max(fromMessage ?? 0, fromStartedAt ?? 0, maxProcessingSecondsRef.current)
+        maxProcessingSecondsRef.current = candidate
+        setTranscriptionMessage(`Transcription in progress (running for ${candidate} seconds)`)
+      } else {
+        maxProcessingSecondsRef.current = 0
+        setTranscriptionMessage(baseMessage)
+      }
+      const st = (normalizedStatus.status || '').toLowerCase()
       if (st === 'completed') {
         await loadTranscriptBody()
       } else {
@@ -678,7 +754,7 @@ export default function VisitDetailPage() {
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
     }
-  }, [patientId, visitId, loadTranscriptBody])
+  }, [patientId, visitId, loadTranscriptBody, transcriptionStatus?.status, transcriptionUploading])
 
   const handleStructureVisitDialogue = useCallback(async () => {
     if (!patientId || !visitId || structureDialogueLoading) return
@@ -1069,9 +1145,7 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  <section
-                    className={`space-y-3 ${recordingPhase !== 'idle' || transcriptionUploading ? 'opacity-45' : ''}`}
-                  >
+                  <section className="space-y-3">
                     <h4 className="text-sm font-bold tracking-tight text-[#111827]">Upload audio file</h4>
                     <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-stretch">
                       <div className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-gray-200 bg-[#fafcf8] px-3 py-2 sm:px-4">
@@ -1080,7 +1154,7 @@ export default function VisitDetailPage() {
                           accept="audio/*"
                           aria-label="Select audio file to transcribe"
                           className="fixed top-0 left-[-9999px] h-px w-px overflow-hidden opacity-0"
-                          disabled={recordingPhase !== 'idle' || transcriptionUploading || !patientId || !visitId}
+                          disabled={!patientId || !visitId}
                           id="visit-transcription-file"
                           onChange={(e) => {
                             const file = e.target.files?.[0] ?? null
@@ -1092,17 +1166,13 @@ export default function VisitDetailPage() {
                         />
                         <label
                           className={`inline-flex shrink-0 cursor-pointer items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
-                            recordingPhase !== 'idle' || transcriptionUploading || !patientId || !visitId
+                            !patientId || !visitId
                               ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                               : 'bg-sky-100 text-sky-900 hover:bg-sky-200'
                           }`}
                           htmlFor="visit-transcription-file"
                           title={
-                            recordingPhase !== 'idle'
-                              ? 'Stop recording before choosing a file'
-                              : transcriptionUploading
-                                ? 'Wait for upload to finish'
-                                : 'Browse for an audio file'
+                            !patientId || !visitId ? 'Visit is not loaded yet' : 'Browse for an audio file'
                           }
                         >
                           Choose file
@@ -1114,8 +1184,6 @@ export default function VisitDetailPage() {
                       <button
                         className="relative z-20 shrink-0 rounded-xl bg-[#16a34a] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                         disabled={
-                          recordingPhase !== 'idle' ||
-                          transcriptionUploading ||
                           !pendingTranscriptionAudio ||
                           !patientId ||
                           !visitId
@@ -1210,7 +1278,13 @@ export default function VisitDetailPage() {
                   )}
                   {transcriptionStatus && (
                     <div className="rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
-                      <p className="font-medium text-[#171d16]">Status: {transcriptionStatus.status}</p>
+                      <p className="font-medium text-[#171d16]">
+                        Status:{' '}
+                        {transcriptionStatusUiLabel(
+                          transcriptionStatus.status,
+                          transcriptionStatus.message,
+                        )}
+                      </p>
                       {(transcriptionStatus.error || transcriptionStatus.error_message) && (
                         <p className="mt-1 text-red-700">
                           Error: {transcriptionStatus.error || transcriptionStatus.error_message}
@@ -1292,7 +1366,7 @@ export default function VisitDetailPage() {
               )}
 
               {!loading && tab === 'post-visit' && (
-                <div className="mx-auto max-w-3xl space-y-6 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
+                <div className="w-full space-y-6 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
                   <div>
                     <h3 className="text-lg font-semibold text-[#171d16]">Send post-visit recap</h3>
                     <p className="mt-1 text-xs text-[#575e70]">
