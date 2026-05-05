@@ -20,7 +20,7 @@ apiClient.interceptors.request.use((config) => {
       ? localStorage.getItem('access_token') ?? localStorage.getItem('token')
       : null
   if (token && !config.headers?.Authorization) {
-    config.headers = config.headers ?? {}
+    config.headers = config.headers ?? ({} as typeof config.headers)
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -38,6 +38,26 @@ function backendReachabilityHint(): string {
   return `Cannot reach the API through the Vite dev proxy (default target http://localhost:8000).${proxyLine} Start clinic_ai_backend on port 8000, or set VITE_API_BASE_URL (or VITE_API_PROXY_TARGET) in clinic_ai_frontend/.env.local and restart npm run dev.`
 }
 
+function cleanServerMessage(raw: string): string {
+  const text = raw
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) return 'Server returned an invalid response.'
+  if (/service has been suspended/i.test(text)) {
+    return 'API service is currently unavailable (service suspended by provider).'
+  }
+  return text
+}
+
 export function getApiErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     if (!err.response) {
@@ -48,7 +68,7 @@ export function getApiErrorMessage(err: unknown): string {
       return err.message ? `${err.message}. ${backendReachabilityHint()}` : backendReachabilityHint()
     }
     const data = err.response.data
-    if (typeof data === 'string') return data
+    if (typeof data === 'string') return cleanServerMessage(data)
     if (data && typeof data === 'object' && 'detail' in data) {
       const d = (data as { detail: unknown }).detail
       if (typeof d === 'string') return d
