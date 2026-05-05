@@ -95,6 +95,10 @@ class NoteGenerateRequest(BaseModel):
         default=None,
         description='Optional follow-up time in HH:MM format.',
     )
+    template_id: str | None = Field(
+        default=None,
+        description="Optional clinical template id from /api/templates/{id} to guide note generation.",
+    )
 
 
 class NoteGenerateResponse(BaseModel):

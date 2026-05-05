@@ -18,6 +18,37 @@ from src.api.schemas.patient import (
 
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 
+
+def _to_patient_summary(record: dict, latest_visit: dict | None = None) -> PatientSummaryResponse:
+    full_name = (record.get("name") or "").strip()
+    name_parts = [part for part in full_name.split(" ") if part]
+    first_name = name_parts[0] if name_parts else "Unknown"
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    internal_patient_id = str(record.get("patient_id") or "")
+    age = record.get("age")
+    year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
+    estimated_dob = f"{year:04d}-01-01"
+    opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
+    latest_visit_id = str((latest_visit or {}).get("visit_id") or (latest_visit or {}).get("id") or "").strip() or None
+    latest_visit_scheduled_start = (latest_visit or {}).get("scheduled_start")
+
+    return PatientSummaryResponse(
+        id=opaque_patient_id,
+        patient_id=opaque_patient_id,
+        first_name=first_name,
+        last_name=last_name,
+        full_name=full_name or first_name,
+        date_of_birth=str(record.get("date_of_birth") or estimated_dob),
+        mrn=str(record.get("mrn") or internal_patient_id),
+        age=record.get("age"),
+        gender=str(record.get("gender") or "").strip() or None,
+        phone_number=str(record.get("phone_number") or "").strip() or None,
+        created_at=str(record.get("created_at") or "") or None,
+        updated_at=str(record.get("updated_at") or "") or None,
+        latest_visit_id=latest_visit_id,
+        latest_visit_scheduled_start=latest_visit_scheduled_start,
+    )
+
 def _require_appointment_not_in_past(scheduled_start: str | None) -> None:
     """Reject stored appointment instants that are already in the past (naive ISO treated as UTC)."""
     if scheduled_start is None:
@@ -60,41 +91,28 @@ def list_patients() -> list[PatientSummaryResponse]:
     patients: list[PatientSummaryResponse] = []
 
     for record in records:
-        full_name = (record.get("name") or "").strip()
-        name_parts = [part for part in full_name.split(" ") if part]
-        first_name = name_parts[0] if name_parts else "Unknown"
-        last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
         internal_patient_id = str(record.get("patient_id") or "")
-        age = record.get("age")
-        year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
-        estimated_dob = f"{year:04d}-01-01"
-        opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
         latest_visit = latest_visit_by_patient.get(internal_patient_id) if internal_patient_id else None
-        latest_visit_id = (
-            str((latest_visit or {}).get("visit_id") or (latest_visit or {}).get("id") or "").strip() or None
-        )
-        latest_visit_scheduled_start = (latest_visit or {}).get("scheduled_start")
-
-        patients.append(
-            PatientSummaryResponse(
-                id=opaque_patient_id,
-                patient_id=opaque_patient_id,
-                first_name=first_name,
-                last_name=last_name,
-                full_name=full_name or first_name,
-                date_of_birth=str(record.get("date_of_birth") or estimated_dob),
-                mrn=str(record.get("mrn") or internal_patient_id),
-                age=record.get("age"),
-                gender=str(record.get("gender") or "").strip() or None,
-                phone_number=str(record.get("phone_number") or "").strip() or None,
-                created_at=str(record.get("created_at") or "") or None,
-                updated_at=str(record.get("updated_at") or "") or None,
-                latest_visit_id=latest_visit_id,
-                latest_visit_scheduled_start=latest_visit_scheduled_start,
-            )
-        )
+        patients.append(_to_patient_summary(record, latest_visit))
 
     return patients
+
+
+@router.get("/{patient_id}", response_model=PatientSummaryResponse)
+def get_patient(patient_id: str) -> PatientSummaryResponse:
+    """Return one patient profile from opaque or raw patient id."""
+    internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    db = get_database()
+    record = db.patients.find_one({"patient_id": internal_patient_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    latest_visit = db.visits.find_one(
+        {"patient_id": internal_patient_id},
+        {"_id": 0, "visit_id": 1, "id": 1, "scheduled_start": 1, "created_at": 1},
+        sort=[("created_at", -1)],
+    )
+    return _to_patient_summary(record, latest_visit)
 
 
 @router.get("/{patient_id}/latest-visit")

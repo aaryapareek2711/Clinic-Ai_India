@@ -389,6 +389,8 @@ def list_provider_visits(
                 "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
                 "patient_name": patient_name,
                 "mobile_number": patient_phone_number or None,
+                # Pass-through from patients collection — used by dashboard “new registrations today”.
+                "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
                 "visit_type": (
                     "Visit"
                     if str(visit.get("visit_type") or "").strip().lower() in {"", "string"}

@@ -124,6 +124,7 @@ def generate_india_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
         force_regenerate=True,
         follow_up_date=request.follow_up_date,
         follow_up_time=request.follow_up_time,
+        template_id=request.template_id,
     )
     return NoteGenerateResponse(**_encode_note_patient_id(doc))
 
@@ -244,6 +245,7 @@ def _generate_by_type(*, note_type: NoteType, request: NoteGenerateRequest) -> N
             force_regenerate=request.follow_up_date is not None or bool(str(request.follow_up_time or "").strip()),
             follow_up_date=request.follow_up_date,
             follow_up_time=request.follow_up_time,
+            template_id=request.template_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
