@@ -43,6 +43,11 @@ def _iso_utc(value: datetime | None) -> str | None:
     return _as_utc_aware(value).isoformat()
 
 
+def _is_walk_in_visit_type(value: object) -> bool:
+    s = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return s in {"walk_in", "walkin"} or "walk_in" in s or "walkin" in s
+
+
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
 async def upload_transcription_audio(
     patient_id: str = Form(...),
@@ -54,12 +59,15 @@ async def upload_transcription_audio(
     """Upload audio, create job and enqueue async processing (visit session when visit_id is set)."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
-    previsit = db.pre_visit_summaries.find_one(
-        {"patient_id": internal_patient_id, "visit_id": visit_id},
-        sort=[("updated_at", -1)],
-    )
-    if not previsit:
-        raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
+    visit_doc = db.visits.find_one({"visit_id": visit_id}, {"visit_type": 1})
+    is_walk_in = _is_walk_in_visit_type((visit_doc or {}).get("visit_type"))
+    if not is_walk_in:
+        previsit = db.pre_visit_summaries.find_one(
+            {"patient_id": internal_patient_id, "visit_id": visit_id},
+            sort=[("updated_at", -1)],
+        )
+        if not previsit:
+            raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
 
     settings = get_settings()
     if not settings.azure_speech_key:
