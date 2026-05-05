@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
@@ -13,6 +13,7 @@ type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
 type VisitSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
+const AUTO_REFRESH_MS = 15000
 
 function displayStatus(status: string): string {
   const s = status.toLowerCase()
@@ -215,26 +216,45 @@ function VisitsPage() {
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setListError(null)
-        }
-        const data = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
-        if (!cancelled) setVisits(data)
-      } catch (e) {
-        if (!cancelled) setListError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
+  const loadVisits = useCallback(async (opts?: { initial?: boolean }) => {
+    const initial = opts?.initial === true
+    try {
+      if (initial) setLoading(true)
+      setListError(null)
+      const data = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
+      setVisits(data)
+    } catch (e) {
+      setListError(getApiErrorMessage(e))
+    } finally {
+      if (initial) setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void loadVisits({ initial: true })
+  }, [loadVisits])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadVisits()
+    }, AUTO_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [loadVisits])
+
+  useEffect(() => {
+    const onFocus = () => {
+      void loadVisits()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void loadVisits()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [loadVisits])
 
   const filteredVisits = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -272,60 +292,6 @@ function VisitsPage() {
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
   }, [currentPage, totalPages])
-
-  const tabStats = useMemo(() => {
-    const norm = (s: string) => s.toLowerCase()
-    const total = visits.length
-    const activeNow = visits.filter((v) => norm(v.status) === 'in_progress').length
-    const startOfToday = new Date()
-    startOfToday.setHours(0, 0, 0, 0)
-    const scheduledToday = visits.filter((v) => {
-      if (!v.scheduled_start) return false
-      const d = new Date(v.scheduled_start)
-      if (Number.isNaN(d.getTime())) return false
-      return d >= startOfToday && d < new Date(startOfToday.getTime() + 86400000)
-    }).length
-    const completed = visits.filter((v) => ['completed', 'closed', 'ended'].includes(norm(v.status))).length
-    const rate = total > 0 ? `${Math.round((completed / total) * 1000) / 10}%` : '—'
-
-    const scheduledCount = visits.filter((v) =>
-      ['scheduled', 'queued', 'in_queue'].includes(norm(v.status)),
-    ).length
-    const inProg = visits.filter((v) => norm(v.status) === 'in_progress').length
-
-    const baseAll = [
-      { label: 'Total Visits', value: String(total), tone: 'text-[#171d16]' },
-      { label: 'Active Now', value: String(activeNow), tone: 'text-[#3b82f6]' },
-      { label: 'Scheduled Today', value: String(scheduledToday), tone: 'text-[#f59e0b]' },
-      { label: 'Completion Rate', value: rate, tone: 'text-[#16a34a]' },
-    ]
-    const baseScheduled = [
-      { label: 'Scheduled (board)', value: String(scheduledCount), tone: 'text-[#f59e0b]' },
-      { label: 'In queue', value: String(visits.filter((v) => norm(v.status) === 'in_queue').length), tone: 'text-[#2563eb]' },
-      { label: 'Upcoming', value: String(scheduledToday), tone: 'text-[#171d16]' },
-      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
-    ]
-    const baseInProgress = [
-      { label: 'Active Visits', value: String(inProg), tone: 'text-[#3b82f6]' },
-      { label: 'Scheduled next', value: String(scheduledCount), tone: 'text-[#171d16]' },
-      { label: 'Completed', value: String(completed), tone: 'text-[#16a34a]' },
-      { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
-    ]
-    const baseCompleted = [
-      { label: 'Completed out of total', value: `${completed} / ${total}`, tone: 'text-[#16a34a]' },
-      { label: 'In progress', value: String(inProg), tone: 'text-[#3b82f6]' },
-      { label: 'Scheduled', value: String(scheduledCount), tone: 'text-[#f59e0b]' },
-      { label: 'Total', value: String(total), tone: 'text-[#171d16]' },
-    ]
-
-    const byTab: Record<VisitTab, { label: string; value: string; tone: string }[]> = {
-      all: baseAll,
-      scheduled: baseScheduled,
-      'in-progress': baseInProgress,
-      completed: baseCompleted,
-    }
-    return byTab
-  }, [visits])
 
   const tabTitles: Record<VisitTab, string> = {
     all: 'All Visits',
@@ -484,19 +450,6 @@ function VisitsPage() {
                 expand_more
               </span>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            {tabStats[activeTab].map((stat) => (
-              <div key={stat.label} className="bg-white border border-gray-200 rounded-xl p-6">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{stat.label}</p>
-                <h3 className={`text-2xl font-bold ${stat.tone}`}>{stat.value}</h3>
-                <div className="mt-2 text-xs text-gray-500 flex items-center">
-                  <span className="material-symbols-outlined text-sm">insights</span>
-                  <span className="ml-1">Live operational signal</span>
-                </div>
-              </div>
-            ))}
           </div>
 
           <div className="space-y-4">

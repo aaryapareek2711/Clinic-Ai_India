@@ -118,6 +118,36 @@ function showScheduledPreVisitBadge(v: VisitDetailResponse | null): boolean {
   return ['scheduled', 'open', 'queued', 'in_queue', 'in_progress'].includes(s)
 }
 
+function visitStatusChip(statusRaw: string | undefined | null): {
+  label: string
+  className: string
+} {
+  const s = (statusRaw || '').trim().toLowerCase()
+  if (['scheduled', 'open', 'queued', 'in_queue'].includes(s)) {
+    return {
+      label: 'Scheduled',
+      className: 'rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-800',
+    }
+  }
+  if (['in_progress', 'running', 'started', 'processing'].includes(s)) {
+    return {
+      label: 'In Progress',
+      className: 'rounded-full bg-sky-100 px-3 py-0.5 text-xs font-semibold text-sky-800',
+    }
+  }
+  if (['completed', 'closed', 'ended'].includes(s)) {
+    return {
+      label: 'Completed',
+      className: 'rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-800',
+    }
+  }
+  const fallback = s ? `${s[0].toUpperCase()}${s.slice(1).replace(/_/g, ' ')}` : 'Unknown'
+  return {
+    label: fallback,
+    className: 'rounded-full bg-white/15 px-3 py-0.5 text-xs font-semibold text-white',
+  }
+}
+
 /** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string }[]` (one key per turn). */
 function flattenStructuredDialogue(
   turns: Array<Record<string, unknown>> | null | undefined,
@@ -368,6 +398,7 @@ export default function VisitDetailPage() {
   const activeLanguageLabel = languageMode === 'english' ? 'English' : langBadge
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
+  const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
 
@@ -853,6 +884,7 @@ export default function VisitDetailPage() {
                       <span className="rounded-full bg-[#dde5d9]/20 px-3 py-0.5 text-xs font-medium">
                         🌐 {langBadge}
                       </span>
+                      <span className={visitStatus.className}>{visitStatus.label}</span>
                       {skipPreVisitWorkflow && (
                         <span className="rounded-full bg-white/15 px-3 py-0.5 text-xs font-semibold text-white">
                           Walk-in
