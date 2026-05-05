@@ -74,6 +74,7 @@ export async function registerPatient(payload: RegisterPatientPayload): Promise<
 export type CreateVisitFromPatientPayload = {
   provider_id?: string | null
   scheduled_start?: string | null
+  visit_type?: string | null
 }
 
 export type CreateVisitFromPatientResponse = {

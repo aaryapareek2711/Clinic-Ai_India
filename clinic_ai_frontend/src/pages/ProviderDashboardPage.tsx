@@ -162,7 +162,12 @@ function ProviderDashboardPage() {
   const selectedDaySlots = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
-      return mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, now))
+      const nowMs = now.getTime()
+      return mergedUpcoming.filter((a) => {
+        if (!isSameCalendarDay(a.scheduled_start, now)) return false
+        const slotMs = timeValue(a.scheduled_start)
+        return slotMs >= nowMs
+      })
     }
     return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
   }, [mergedUpcoming, upcomingDayFilter])

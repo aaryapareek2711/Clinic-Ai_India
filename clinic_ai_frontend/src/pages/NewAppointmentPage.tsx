@@ -313,6 +313,7 @@ function NewAppointmentPage() {
               await createVisitFromPatient(selectedId, {
                 provider_id: DEFAULT_PROVIDER_ID,
                 scheduled_start: null,
+                visit_type: 'walk_in',
               }),
             ]
           : await Promise.all(
@@ -320,6 +321,7 @@ function NewAppointmentPage() {
                 const res = await createVisitFromPatient(selectedId, {
                   provider_id: DEFAULT_PROVIDER_ID,
                   scheduled_start,
+                  visit_type: 'scheduled',
                 })
                 persistAppointmentDuration(scheduled_start, appointmentDuration)
                 return res

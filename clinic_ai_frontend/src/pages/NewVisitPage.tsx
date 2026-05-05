@@ -191,6 +191,10 @@ function NewVisitPage() {
       setFormError('Consent is required to register.')
       return
     }
+    if (visitKind === 'walk_in' && !selectedSlot) {
+      setFormError('Select an appointment slot for Walk-in visit type.')
+      return
+    }
     try {
       setSubmitting(true)
       const registered = await registerPatient({
@@ -201,11 +205,13 @@ function NewVisitPage() {
         preferred_language: language,
         travelled_recently: false,
         consent: true,
+        visit_type: visitKind,
       })
-      if (visitKind === 'scheduled' && selectedSlot && appointmentDate.trim()) {
+      if (selectedSlot && appointmentDate.trim()) {
         const createdVisit = await createVisitFromPatient(registered.patient_id, {
           provider_id: DEFAULT_PROVIDER_ID,
           scheduled_start: selectedSlot.startIso,
+          visit_type: visitKind,
         })
         persistAppointmentDuration(selectedSlot.startIso, schedule.defaultSlotMinutes || 15)
         navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=pre-visit`)
@@ -405,26 +411,13 @@ function NewVisitPage() {
                     <select
                       className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
                       id="appointment-visit-type"
-                      onChange={(e) => {
-                        const next = e.target.value as 'scheduled' | 'walk_in'
-                        setVisitKind(next)
-                        if (next === 'walk_in') {
-                          setAppointmentDate('')
-                          setSelectedStartIso('')
-                        }
-                      }}
+                      onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
                       value={visitKind}
                     >
                       <option value="scheduled">Scheduled</option>
                       <option value="walk_in">Walk-in</option>
                     </select>
                   </div>
-                  {visitKind === 'walk_in' ? (
-                    <div className="rounded-lg border border-dashed border-gray-300 bg-[#f8faf7] p-4 text-sm text-[#3e4a3d]">
-                      Walk-in selected. No appointment slot required.
-                    </div>
-                  ) : (
-                    <>
                   <div>
                     <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>
                     <div className="rounded-2xl border border-gray-200 bg-white">
@@ -516,9 +509,10 @@ function NewVisitPage() {
                       })}
                     </div>
                     {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
+                    {visitKind === 'walk_in' && !selectedSlot && (
+                      <p className="mt-2 text-xs font-semibold text-[#0f5132]">Walk-in also needs an appointment time.</p>
+                    )}
                   </div>
-                    </>
-                  )}
                 </div>
               </div>
 
@@ -532,10 +526,12 @@ function NewVisitPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#3e4a3d]">Slot</span>
                     <span className="font-medium">
-                      {visitKind === 'walk_in'
-                        ? 'Walk-in (no slot)'
-                        : selectedSlot
-                          ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${schedule.defaultSlotMinutes || 15}m)`
+                      {selectedSlot
+                        ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${schedule.defaultSlotMinutes || 15}m)${
+                            visitKind === 'walk_in' ? ' · Walk-in' : ''
+                          }`
+                        : visitKind === 'walk_in'
+                          ? 'Select walk-in time'
                           : 'Open / TBD'}
                     </span>
                   </div>
