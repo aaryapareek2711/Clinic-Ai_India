@@ -96,12 +96,21 @@ function visitRowFromApi(v: ProviderVisitListItem): {
   duration: string
   tone: RowTone
 } {
+  const toDisplayName = (value: string): string =>
+    value
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`)
+      .join(' ')
+
   const visitId = (v.visit_id || v.id || '').trim()
   const subtitle =
     v.visit_type && v.visit_type.trim() && v.visit_type.toLowerCase() !== 'visit'
       ? v.visit_type.trim()
       : v.chief_complaint?.trim() || 'Consultation'
-  const name = `${v.patient_name.trim() || 'Patient'} — ${subtitle}`
+  const displayName = toDisplayName(v.patient_name || '') || 'Patient'
+  const name = `${displayName} — ${subtitle}`
   const pid = v.patient_id?.trim() || ''
   const meta =
     pid.length > 0
@@ -521,7 +530,7 @@ function VisitsPage() {
                     <span className="material-symbols-outlined text-3xl">person</span>
                   </div>
                   <div>
-                    <h4 className="font-semibold">{row.name}</h4>
+                    <h4 className="font-medium">{row.name}</h4>
                     <p className="text-sm text-gray-500">{row.meta}</p>
                   </div>
                   <div className="hidden lg:flex items-center gap-3">

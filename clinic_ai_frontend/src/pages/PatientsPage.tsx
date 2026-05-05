@@ -41,6 +41,15 @@ function formatVisitDate(value: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function toDisplayName(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'Patient'
+  return raw
+    .split(/\s+/)
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ')
+}
+
 function PatientsPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -204,12 +213,12 @@ function PatientsPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-[#bdcaba]">
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase">Patient Name</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase">Patient ID</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase">Gender / Age</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase">Mobile Number</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase">Last Visit Date</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-medium text-[#3e4a3d] uppercase text-right">Actions</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Patient Name</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Patient ID</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Gender / Age</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Mobile Number</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Last Visit Date</th>
+                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#bdcaba]">
@@ -225,7 +234,7 @@ function PatientsPage() {
                         <span className="material-symbols-outlined text-[18px]">person</span>
                       </div>
                       <div>
-                        <p className="font-bold text-slate-900 group-hover:text-teal-700 transition-colors">{patient.full_name || 'Patient'}</p>
+                        <p className="font-medium text-slate-900 transition-colors group-hover:text-teal-700">{toDisplayName(patient.full_name)}</p>
                         <span className="inline-flex items-center rounded-full bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700">
                           {(patient.gender || 'Unknown').toString()}
                         </span>
