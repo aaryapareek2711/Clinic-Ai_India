@@ -252,8 +252,17 @@ class IntakeChatService:
                 if status != "awaiting_conversation_start":
                     return
                 cleaned = NON_TEXT_MESSAGE_TRIGGER
-            if cleaned == NON_TEXT_MESSAGE_TRIGGER and status != "awaiting_conversation_start":
-                return
+            if cleaned == NON_TEXT_MESSAGE_TRIGGER:
+                # We still want any reply (emoji/symbol-only) to advance the flow.
+                # For pre-illness bootstrap we keep current behavior; for the actual
+                # chief-complaint answer step (awaiting_illness) we convert it into
+                # a neutral placeholder instead of dropping the message.
+                if status == "awaiting_conversation_start":
+                    pass
+                elif status in {"awaiting_illness", "in_progress"}:
+                    cleaned = "Not provided"
+                else:
+                    return
             if not self._claim_inbound_text(session, cleaned):
                 logger.info(
                     "whatsapp_inbound_duplicate_fingerprint_ignored visit_id=%s patient_id=%s",
@@ -312,6 +321,10 @@ class IntakeChatService:
                             return
                         self._save_answer_and_ask_next(refreshed, cleaned)
                         return
+                    # If we still got stuck in awaiting_conversation_start (or any unexpected status),
+                    # ensure the chief complaint prompt is consistently persisted so the next patient
+                    # reply advances the intake flow.
+                    self._send_chief_complaint_and_persist_pending(refreshed)
                     return
                 refreshed_waiting = self.db.intake_sessions.find_one({"_id": session["_id"]}) or session
                 # If first reply is meaningful symptom text, treat it as illness directly and
@@ -1322,7 +1335,9 @@ class IntakeChatService:
                 "$set": {
                     "status": "awaiting_illness",
                     "pending_question": message,
-                    "pending_topic": "chief_complaint_prompt",
+                    # Use canonical topic keys so downstream planner / covered-topics inference
+                    # understands this step as "reason_for_visit".
+                    "pending_topic": "reason_for_visit",
                     "last_outbound_at": now.isoformat(),
                     "updated_at": now,
                 }

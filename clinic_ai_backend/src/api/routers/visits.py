@@ -507,6 +507,7 @@ def get_visit_intake_session(visit_id: str) -> dict:
             "status": "not_started",
             "question_answers": [],
             "illness": None,
+            "language": None,
             "updated_at": None,
         }
 
@@ -529,6 +530,7 @@ def get_visit_intake_session(visit_id: str) -> dict:
         "status": str(intake.get("status") or "in_progress"),
         "illness": intake.get("illness"),
         "question_answers": normalized_answers,
+        "language": intake.get("language"),
         "updated_at": intake.get("updated_at"),
         "created_at": intake.get("created_at"),
     }
