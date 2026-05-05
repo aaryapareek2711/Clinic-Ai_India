@@ -69,6 +69,7 @@ class CreateVisitFromPatientRequest(BaseModel):
 
     provider_id: str | None = None
     scheduled_start: str | None = None
+    visit_type: str | None = None
 
 
 class CreateVisitFromPatientResponse(BaseModel):

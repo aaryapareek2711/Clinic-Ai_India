@@ -219,6 +219,8 @@ def create_visit_from_existing_patient(
 
     if payload.scheduled_start and str(payload.scheduled_start).strip():
         _require_appointment_not_in_past(str(payload.scheduled_start).strip())
+    is_walk_in = _is_walk_in_visit_type(payload.visit_type)
+    visit_type_stored = "walk_in" if is_walk_in else (str(payload.visit_type or "").strip() or "scheduled_visit")
 
     visit_id = VisitId.validate(VisitId.generate())
     now = datetime.now(timezone.utc)
@@ -228,6 +230,7 @@ def create_visit_from_existing_patient(
             "patient_id": internal_patient_id,
             "provider_id": payload.provider_id,
             "scheduled_start": payload.scheduled_start,
+            "visit_type": visit_type_stored,
             "status": "open",
             "created_at": now,
             "updated_at": now,
@@ -237,7 +240,7 @@ def create_visit_from_existing_patient(
     intake_triggered = False
     phone_number = str(patient.get("phone_number") or "").strip()
     pending_schedule_for_intake = not (payload.scheduled_start and str(payload.scheduled_start).strip())
-    if not pending_schedule_for_intake and phone_number:
+    if not pending_schedule_for_intake and phone_number and not is_walk_in:
         try:
             IntakeChatService().start_intake(
                 patient_id=internal_patient_id,
