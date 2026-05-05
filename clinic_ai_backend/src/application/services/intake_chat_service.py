@@ -11,12 +11,81 @@ from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuesti
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
 from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 from src.core.config import get_settings
+from src.core.language_support import normalize_intake_language
 
 
 NON_TEXT_MESSAGE_TRIGGER = "__non_text_message__"
 MIN_FOLLOW_UP_QUESTIONS = 3
 ACTIVE_SESSION_STATUSES = ("awaiting_conversation_start", "awaiting_illness", "in_progress")
 logger = logging.getLogger(__name__)
+
+OPENING_MESSAGES = {
+    "en": "Hello! Please reply with any message to begin your intake.",
+    "hi": "Namaste! Apna intake shuru karne ke liye koi bhi message bhejiye.",
+    "hi-eng": "Namaste! Intake start karne ke liye koi bhi message bhejiye.",
+    "ta": "Vanakkam! Ungal intake-ai thodanga yedhaavadhu oru message anuppunga.",
+    "te": "Namaskaram! Mee intake prarambhinchadaniki yedaina oka message pampandi.",
+    "bn": "Namaskar! Intake shuru korte jekono ekta message pathan.",
+    "mr": "Namaskar! Tumcha intake suru karanyasathi kuthalahi ek message pathava.",
+    "kn": "Namaskara! Nimma intake prarambhisalu yavaude ondu message kalisi.",
+}
+
+CHIEF_COMPLAINT_MESSAGES = {
+    "en": "Please describe your main health problem in a few words.",
+    "hi": "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen.",
+    "hi-eng": "Kripya apni main health problem kuch shabdon mein batayen.",
+    "ta": "Ungal mukkiya udal nala pirachanaiyai sila varththaigalil sollungal.",
+    "te": "Mee pradhana arogya samasyani konni matalalo vivarinchandi.",
+    "bn": "Apnar pradhan sharirik samasya koyekti kothay bolun.",
+    "mr": "Kripaya tumchi mukhya arogya samasya kahi shabdat sanga.",
+    "kn": "Dayavittu nimma mukhya aarogya samasyeyannu kelavu padagalalli heli.",
+}
+
+OPT_OUT_ACK_MESSAGES = {
+    "en": "Thank you. We will continue with your submitted answers.",
+    "hi": "Dhanyavaad. Hum aapke diye gaye jawaabon ke saath aage badhenge.",
+    "hi-eng": "Dhanyavaad. Hum aapke diye gaye answers ke saath aage badhenge.",
+    "ta": "Nandri. Neenga anuppiya badhilgaludan naangal thodarugiroam.",
+    "te": "Dhanyavadalu. Meeru ichina samadhanala to memu munduku velthamu.",
+    "bn": "Dhonnobad. Apni je uttor diyechen, tar sathe amra agiye jabo.",
+    "mr": "Dhanyavaad. Tumhi dilelya uttaransah aamhi pudhe jau.",
+    "kn": "Dhanyavadagalu. Neevu kotta uttaragaloṇḍige naavu munduvariyutteve.",
+}
+
+CLOSING_MESSAGES = {
+    "en": (
+        "Thank you{maybe_name}, we have everything we need. "
+        "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
+    ),
+    "hi": (
+        "धन्यवाद{maybe_name}, हमें सारी ज़रूरी जानकारी मिल गई है। "
+        "आपके डॉक्टर पूरी तरह तैयार रहेंगे। कृपया समय पर पहुँचें। जल्द मिलेंगे।"
+    ),
+    "hi-eng": (
+        "Dhanyavaad{maybe_name}, humein saari zaroori jankari mil gayi hai. "
+        "Aapke doctor poori tarah tayyar rahenge. Kripya samay par pahunchein. Jaldi milenge."
+    ),
+    "ta": (
+        "Nandri{maybe_name}, thevaiyana anaithu thagavalum engalukku kidaithulladhu. "
+        "Ungal doctor sandhippirkku muzhumaiyaga tayaaraga iruppar. Dayavu seithu nerathukku vaarungal."
+    ),
+    "te": (
+        "Dhanyavadalu{maybe_name}, maaku avasaramaina samacharam anta dorikindi. "
+        "Mee doctor mee visit kosam poorthiga siddhanga untaru. Dayachesi samayaniki randi."
+    ),
+    "bn": (
+        "Dhonnobad{maybe_name}, amader dorkarer shob tothyo peyechi. "
+        "Apnar doctor apnar visit-er jonno purotai prostut thakben. Doya kore somoye ashben."
+    ),
+    "mr": (
+        "Dhanyavaad{maybe_name}, aamhalya avashyak asleli sarv mahiti milali aahe. "
+        "Tumche doctor tumchya bhetisathi purnata tayar astil. Krupaya velat ya."
+    ),
+    "kn": (
+        "Dhanyavadagalu{maybe_name}, namage bekaada ella mahiti siggide. "
+        "Nimma doctor nimma bheṭige sampoorna siddharagiruttare. Dayavittu samayakke banni."
+    ),
+}
 
 
 class IntakeChatService:
@@ -210,11 +279,7 @@ class IntakeChatService:
                     keep_session_id=session.get("_id"),
                     reason="patient_opted_out",
                 )
-                end_msg = (
-                    "Thank you. We will continue with your submitted answers."
-                    if session.get("language") == "en"
-                    else "Dhanyavaad. Hum aapke diye gaye jawaabon ke saath aage badhenge."
-                )
+                end_msg = self._opt_out_ack_message(session.get("language", "en"))
                 self.whatsapp.send_text(session["to_number"], end_msg)
                 self._auto_generate_pre_visit_summary(session)
                 return
@@ -1062,26 +1127,11 @@ class IntakeChatService:
 
     @staticmethod
     def _closing_message(language: str, patient_name: str | None) -> str:
+        lang = normalize_intake_language(language)
         name = str(patient_name or "").strip()
-        if language == "hi":
-            if name:
-                return (
-                    f"धन्यवाद {name}, हमें सारी ज़रूरी जानकारी मिल गई है। "
-                    "आपके डॉक्टर पूरी तरह तैयार रहेंगे। कृपया समय पर पहुँचें। जल्द मिलेंगे।"
-                )
-            return (
-                "धन्यवाद, हमें सारी ज़रूरी जानकारी मिल गई है। "
-                "आपके डॉक्टर पूरी तरह तैयार रहेंगे। कृपया समय पर पहुँचें। जल्द मिलेंगे।"
-            )
-        if name:
-            return (
-                f"Thank you {name}, we have everything we need. "
-                "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
-            )
-        return (
-            "Thank you, we have everything we need. "
-            "Your doctor will be fully prepared for your visit. Please arrive on time. See you soon."
-        )
+        template = CLOSING_MESSAGES.get(lang, CLOSING_MESSAGES["en"])
+        maybe_name = f" {name}" if name else ""
+        return template.replace("{maybe_name}", maybe_name)
 
     @staticmethod
     def _final_question(language: str) -> str:
@@ -1215,17 +1265,16 @@ class IntakeChatService:
     @staticmethod
     def _chief_complaint_question(language: str) -> str:
         """Return the question that asks for patient's primary problem."""
-        return (
-            "Please describe your main health problem in a few words."
-            if language == "en"
-            else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
-        )
+        lang = normalize_intake_language(language)
+        return CHIEF_COMPLAINT_MESSAGES.get(lang, CHIEF_COMPLAINT_MESSAGES["en"])
 
     @staticmethod
     def _opening_message(language: str) -> str:
         """Return the initial opening message before intake begins."""
-        return (
-            "Hello! Please reply with any message to begin your intake."
-            if language == "en"
-            else "Namaste! Apna intake shuru karne ke liye koi bhi message bhejiye."
-        )
+        lang = normalize_intake_language(language)
+        return OPENING_MESSAGES.get(lang, OPENING_MESSAGES["en"])
+
+    @staticmethod
+    def _opt_out_ack_message(language: str) -> str:
+        lang = normalize_intake_language(language)
+        return OPT_OUT_ACK_MESSAGES.get(lang, OPT_OUT_ACK_MESSAGES["en"])
