@@ -209,11 +209,10 @@ export default function VisitDetailPage() {
     [searchParams, visitId, setSearchParams],
   )
 
-  const resolvedVisitKey = visit?.visit_id ?? visit?.id ?? ''
   const skipPreVisitWorkflow = useMemo(() => {
-    if (loading || !visitId || !visit || resolvedVisitKey !== visitId) return false
+    if (loading || !visit) return false
     return isWalkInVisitType(visit.visit_type)
-  }, [loading, visitId, visit, resolvedVisitKey])
+  }, [loading, visit])
 
   const tab = useMemo((): VisitWorkflowTab => {
     const defaultTab: VisitWorkflowTab = 'vitals'

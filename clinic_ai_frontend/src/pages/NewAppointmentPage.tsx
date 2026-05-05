@@ -142,6 +142,7 @@ function NewAppointmentPage() {
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [appointmentDate, setAppointmentDate] = useState('')
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const d = new Date()
@@ -262,50 +263,68 @@ function NewAppointmentPage() {
     setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((b) => !b.booked && b.startIso === iso)))
   }, [slotBlocks])
 
+  useEffect(() => {
+    if (visitKind === 'walk_in') {
+      setAppointmentDate('')
+      setSelectedStartIsos([])
+    }
+  }, [visitKind])
+
   async function handleConfirm(): Promise<void> {
     setError(null)
     if (!selectedId) {
       setError('Select a patient.')
       return
     }
-    if (!appointmentDate.trim()) {
-      setError('Choose an appointment date.')
-      return
-    }
-    const dateStr = appointmentDate.trim()
-    if (dateStr < minAppointmentDate) {
-      setError('Appointment date cannot be in the past.')
-      return
-    }
-    if (selectedStartIsos.length === 0) {
-      setError('Select at least one available appointment slot.')
-      return
-    }
-    const uniqueStarts = [...new Set(selectedStartIsos)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-    const invalid = uniqueStarts.find((startIso) => {
-      const when = new Date(startIso)
-      return Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000
-    })
-    if (invalid) {
-      setError('One or more selected slots are in the past. Choose future date/time only.')
-      return
-    }
-    if (selectedDateBooked.length + uniqueStarts.length > DAILY_SLOT_LIMIT) {
-      setError(`This date already has ${DAILY_SLOT_LIMIT} appointments. Please choose another date.`)
-      return
+    let uniqueStarts: string[] = []
+    if (visitKind === 'scheduled') {
+      if (!appointmentDate.trim()) {
+        setError('Choose an appointment date.')
+        return
+      }
+      const dateStr = appointmentDate.trim()
+      if (dateStr < minAppointmentDate) {
+        setError('Appointment date cannot be in the past.')
+        return
+      }
+      if (selectedStartIsos.length === 0) {
+        setError('Select at least one available appointment slot.')
+        return
+      }
+      uniqueStarts = [...new Set(selectedStartIsos)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+      const invalid = uniqueStarts.find((startIso) => {
+        const when = new Date(startIso)
+        return Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000
+      })
+      if (invalid) {
+        setError('One or more selected slots are in the past. Choose future date/time only.')
+        return
+      }
+      if (selectedDateBooked.length + uniqueStarts.length > DAILY_SLOT_LIMIT) {
+        setError(`This date already has ${DAILY_SLOT_LIMIT} appointments. Please choose another date.`)
+        return
+      }
     }
     try {
       setSubmitting(true)
-      const created = await Promise.all(
-        uniqueStarts.map(async (scheduled_start) => {
-          const res = await createVisitFromPatient(selectedId, {
-            provider_id: DEFAULT_PROVIDER_ID,
-            scheduled_start,
-          })
-          persistAppointmentDuration(scheduled_start, appointmentDuration)
-          return res
-        }),
-      )
+      const created =
+        visitKind === 'walk_in'
+          ? [
+              await createVisitFromPatient(selectedId, {
+                provider_id: DEFAULT_PROVIDER_ID,
+                scheduled_start: null,
+              }),
+            ]
+          : await Promise.all(
+              uniqueStarts.map(async (scheduled_start) => {
+                const res = await createVisitFromPatient(selectedId, {
+                  provider_id: DEFAULT_PROVIDER_ID,
+                  scheduled_start,
+                })
+                persistAppointmentDuration(scheduled_start, appointmentDuration)
+                return res
+              }),
+            )
       if (created.length === 1) {
         navigate(`/visits/detail?visitId=${encodeURIComponent(created[0].visit_id)}&tab=pre-visit`)
       } else {
@@ -417,6 +436,32 @@ function NewAppointmentPage() {
             <div>
               <h3 className="mb-6 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Visit Booking</h3>
               <div className="space-y-6">
+                <div>
+                  <p className="mb-3 text-[13px] uppercase tracking-[0.05em] text-[#3e4a3d]">Visit Type</p>
+                  <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1">
+                    <button
+                      className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                        visitKind === 'scheduled' ? 'bg-[#16a34a] text-white' : 'text-[#171d16]'
+                      }`}
+                      onClick={() => setVisitKind('scheduled')}
+                      type="button"
+                    >
+                      Scheduled
+                    </button>
+                    <button
+                      className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                        visitKind === 'walk_in' ? 'bg-[#16a34a] text-white' : 'text-[#171d16]'
+                      }`}
+                      onClick={() => setVisitKind('walk_in')}
+                      type="button"
+                    >
+                      Walk-in
+                    </button>
+                  </div>
+                </div>
+
+                {visitKind === 'scheduled' ? (
+                  <>
                 <div>
                   <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>
                   <div className="rounded-2xl border border-gray-200 bg-white">
@@ -539,6 +584,12 @@ function NewAppointmentPage() {
                     </p>
                   )}
                 </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-[#16a34a]/30 bg-white px-4 py-3 text-sm text-[#0f5132]">
+                    This visit will be created as <span className="font-semibold">Walk-in</span> without a scheduled slot.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -552,11 +603,17 @@ function NewAppointmentPage() {
               </button>
               <button
                 className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-bold text-white shadow-sm transition-all hover:bg-[#00873a] disabled:opacity-50"
-                disabled={submitting || dayAtCapacity || selectedStartIsos.length === 0}
+                disabled={submitting || (visitKind === 'scheduled' && (dayAtCapacity || selectedStartIsos.length === 0))}
                 onClick={() => void handleConfirm()}
                 type="button"
               >
-                {submitting ? 'Saving…' : selectedStartIsos.length > 1 ? 'Confirm Visits' : 'Confirm Visit'}
+                {submitting
+                  ? 'Saving…'
+                  : visitKind === 'walk_in'
+                    ? 'Confirm Walk-in Visit'
+                    : selectedStartIsos.length > 1
+                      ? 'Confirm Visits'
+                      : 'Confirm Visit'}
                 <span className="material-symbols-outlined">check_circle</span>
               </button>
             </div>

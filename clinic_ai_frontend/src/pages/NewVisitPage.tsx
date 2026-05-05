@@ -191,11 +191,6 @@ function NewVisitPage() {
       setFormError('Consent is required to register.')
       return
     }
-    if (visitKind === 'scheduled' && !selectedSlot) {
-      setFormError('Select an appointment slot for Scheduled visit type.')
-      return
-    }
-
     try {
       setSubmitting(true)
       const registered = await registerPatient({
