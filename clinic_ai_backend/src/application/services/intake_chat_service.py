@@ -295,17 +295,32 @@ class IntakeChatService:
                     },
                 )
                 if not claimed:
+                    # Another webhook advanced this session first — attach this inbound text to the
+                    # current state rather than silently dropping it.
+                    refreshed = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
+                    rs = str(refreshed.get("status") or "")
+                    if rs == "awaiting_illness":
+                        patient = self.db.patients.find_one({"patient_id": refreshed.get("patient_id")}) or {}
+                        if self._should_reask_chief_complaint(cleaned, patient):
+                            self._send_chief_complaint_and_persist_pending(refreshed)
+                            return
+                        self._save_illness_and_generate_questions(refreshed, cleaned)
+                        return
+                    if rs == "in_progress":
+                        if self._should_treat_as_illness_correction(refreshed, cleaned):
+                            self._replace_illness_and_regenerate(refreshed, cleaned)
+                            return
+                        self._save_answer_and_ask_next(refreshed, cleaned)
+                        return
                     return
+                refreshed_waiting = self.db.intake_sessions.find_one({"_id": session["_id"]}) or session
                 # If first reply is meaningful symptom text, treat it as illness directly and
                 # move to generated intake questions. For greetings/short acks, ask chief complaint.
-                patient = self.db.patients.find_one({"patient_id": session.get("patient_id")}) or {}
+                patient = self.db.patients.find_one({"patient_id": refreshed_waiting.get("patient_id")}) or {}
                 if self._should_reask_chief_complaint(cleaned, patient):
-                    self.whatsapp.send_text(
-                        session["to_number"],
-                        self._chief_complaint_question(session.get("language", "en")),
-                    )
+                    self._send_chief_complaint_and_persist_pending(refreshed_waiting)
                     return
-                self._save_illness_and_generate_questions(session, cleaned)
+                self._save_illness_and_generate_questions(refreshed_waiting, cleaned)
                 return
 
             if status == "awaiting_illness":
@@ -330,6 +345,8 @@ class IntakeChatService:
                 "$set": {
                     "illness": illness_text,
                     "status": "in_progress",
+                    "pending_question": None,
+                    "pending_topic": None,
                     "updated_at": datetime.now(timezone.utc),
                 },
                 "$push": {"answers": {"question": "illness", "answer": illness_text}},
@@ -347,6 +364,8 @@ class IntakeChatService:
                         "$set": {
                             "illness": illness_text,
                             "status": "in_progress",
+                            "pending_question": None,
+                            "pending_topic": None,
                             "updated_at": datetime.now(timezone.utc),
                         },
                         "$push": {"answers": {"question": "illness", "answer": illness_text}},
@@ -1248,14 +1267,18 @@ class IntakeChatService:
             base_or.append({"to_number": {"$regex": f"{re.escape(last10)}$"}})
         status_priority = ["in_progress", "awaiting_illness", "awaiting_conversation_start"]
         eligible_statuses = [status for status in status_priority if status in active_statuses]
+        if not eligible_statuses:
+            return None
 
-        for status in eligible_statuses:
-            session = self.db.intake_sessions.find_one(
-                {"status": status, "$or": base_or},
-                sort=[("updated_at", -1)],
-            )
-            if session:
-                return session
+        # Prefer the most recently touched active session for this handset.
+        # A strict status priority incorrectly routes replies to an older stale in_progress intake
+        # while the latest visit is still awaiting_conversation_start after the template opening.
+        session = self.db.intake_sessions.find_one(
+            {"status": {"$in": eligible_statuses}, "$or": base_or},
+            sort=[("updated_at", -1)],
+        )
+        if session:
+            return session
 
         # Resolve through patients collection when intake session number shape diverges.
         patients_collection = getattr(self.db, "patients", None)
@@ -1268,14 +1291,11 @@ class IntakeChatService:
         patient_id = str(patient.get("patient_id") or "").strip()
         if not patient_id:
             return None
-        for status in eligible_statuses:
-            session = self.db.intake_sessions.find_one(
-                {"patient_id": patient_id, "status": status},
-                sort=[("updated_at", -1)],
-            )
-            if session:
-                return session
-        return None
+        session = self.db.intake_sessions.find_one(
+            {"patient_id": patient_id, "status": {"$in": eligible_statuses}},
+            sort=[("updated_at", -1)],
+        )
+        return session
 
     @staticmethod
     def _mask_phone_number(phone_number: str) -> str:
@@ -1283,6 +1303,31 @@ class IntakeChatService:
         if len(value) <= 4:
             return "*" * len(value)
         return f"{'*' * (len(value) - 4)}{value[-4:]}"
+
+    def _send_chief_complaint_and_persist_pending(self, session: dict) -> None:
+        """Send the scripted chief complaint ask and persist outbound metadata."""
+        to_number = str(session.get("to_number") or "").strip()
+        if not to_number:
+            logger.warning(
+                "intake_chief_complaint_skipped_missing_to_number visit_id=%s",
+                str(session.get("visit_id") or ""),
+            )
+            return
+        message = self._chief_complaint_question(session.get("language", "en"))
+        now = datetime.now(timezone.utc)
+        self.whatsapp.send_text(to_number, message)
+        self.db.intake_sessions.update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "status": "awaiting_illness",
+                    "pending_question": message,
+                    "pending_topic": "chief_complaint_prompt",
+                    "last_outbound_at": now.isoformat(),
+                    "updated_at": now,
+                }
+            },
+        )
 
     @staticmethod
     def _chief_complaint_question(language: str) -> str:
