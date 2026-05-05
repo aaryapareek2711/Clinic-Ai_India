@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/patients", tags=["Patients"])
 
 def _is_walk_in_visit_type(value: object) -> bool:
     s = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    return s in {"walk_in", "walkin"}
+    return s in {"walk_in", "walkin"} or "walk_in" in s or "walkin" in s
 
 
 def _require_appointment_not_in_past(scheduled_start: str | None) -> None:
