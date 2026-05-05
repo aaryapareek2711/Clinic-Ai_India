@@ -157,39 +157,46 @@ function ProviderDashboardPage() {
     return [...merged.values()].sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
   }, [appointments, visits])
 
-  const stats = useMemo(() => {
-    const today = new Date()
-    const todaySlots = mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, today))
-    const patientsTodaySet = new Set<string>()
-    for (const a of todaySlots) {
-      const pid = (a.patient_id || '').trim()
-      if (pid) patientsTodaySet.add(pid)
-    }
-    const pending = todaySlots.filter((a) => {
-      const s = (a.status || '').toLowerCase()
-      return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
-    }).length
-    const activeNow = visits.filter(
-      (v) =>
-        isSameCalendarDay(v.scheduled_start || v.created_at, today) &&
-        (v.status || '').toLowerCase() === 'in_progress',
-    ).length
+  const dayLabel = upcomingDayFilter === 'today' ? 'Today' : 'Tomorrow'
 
-    return {
-      patientsToday: patientsTodaySet.size,
-      activeNow,
-      pending,
-      visitsTodayCount: todaySlots.length,
-    }
-  }, [mergedUpcoming, visits])
-
-  const upcomingList = useMemo(() => {
+  const selectedDaySlots = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
       return mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, now))
     }
     return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
   }, [mergedUpcoming, upcomingDayFilter])
+
+  const stats = useMemo(() => {
+    const now = new Date()
+    const target = new Date(now)
+    if (upcomingDayFilter === 'tomorrow') target.setDate(target.getDate() + 1)
+    const patientsForDaySet = new Set<string>()
+    for (const a of selectedDaySlots) {
+      const pid = (a.patient_id || '').trim()
+      if (pid) patientsForDaySet.add(pid)
+    }
+    const pending = selectedDaySlots.filter((a) => {
+      const s = (a.status || '').toLowerCase()
+      return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
+    }).length
+    const activeNow = visits.filter(
+      (v) =>
+        isSameCalendarDay(v.scheduled_start || v.created_at, target) &&
+        (v.status || '').toLowerCase() === 'in_progress',
+    ).length
+
+    return {
+      patientsForDay: patientsForDaySet.size,
+      activeNow,
+      pending,
+      visitsForDayCount: selectedDaySlots.length,
+    }
+  }, [selectedDaySlots, visits, upcomingDayFilter])
+
+  const upcomingList = useMemo(() => {
+    return selectedDaySlots
+  }, [selectedDaySlots])
 
   const visibleUpcoming = useMemo(
     () => upcomingList.slice(0, upcomingVisibleCount),
@@ -200,8 +207,11 @@ function ProviderDashboardPage() {
     setUpcomingVisibleCount(INITIAL_UPCOMING_COUNT)
   }, [upcomingDayFilter, upcomingList.length])
 
-  const subtitleComplaint = (name: string, complaint: string) =>
-    complaint && complaint.trim() ? complaint.trim() : `Visit — ${name}`
+  const visitModeLabel = (rawType: string | undefined) => {
+    const t = (rawType || '').trim().toLowerCase()
+    if (t === 'walk_in' || t === 'walk-in' || t === 'walkin') return 'Walk-in'
+    return 'Scheduled'
+  }
 
   const headerName = provider.displayName || 'Dr.'
 
@@ -257,24 +267,24 @@ function ProviderDashboardPage() {
 
           <div className="grid grid-cols-4 gap-6">
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Patients Today</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.patientsToday}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Patients with today slot</p>
+              <p className="text-[13px] uppercase text-gray-500">Patients {dayLabel}</p>
+              <h3 className="mt-1 text-3xl font-bold">{stats.patientsForDay}</h3>
+              <p className="mt-2 text-xs text-[#575e70]">Patients with {upcomingDayFilter} slot</p>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Active Now</p>
+              <p className="text-[13px] uppercase text-gray-500">Active {dayLabel}</p>
               <h3 className="mt-1 text-3xl font-bold">{stats.activeNow}</h3>
               <p className="mt-2 text-xs text-[#575e70]">Visits marked in progress</p>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Pending Tasks</p>
+              <p className="text-[13px] uppercase text-gray-500">Pending {dayLabel}</p>
               <h3 className="mt-1 text-3xl font-bold">{stats.pending}</h3>
               <p className="mt-2 text-xs text-amber-600">Scheduled / queue board</p>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Visit Today</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.visitsTodayCount}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Total patients with today slot</p>
+              <p className="text-[13px] uppercase text-gray-500">Visit {dayLabel}</p>
+              <h3 className="mt-1 text-3xl font-bold">{stats.visitsForDayCount}</h3>
+              <p className="mt-2 text-xs text-[#575e70]">Total patients with {upcomingDayFilter} slot</p>
             </div>
           </div>
 
@@ -322,7 +332,7 @@ function ProviderDashboardPage() {
                 >
                   <div>
                     <p className="font-semibold">{a.patient_name}</p>
-                    <p className="text-xs text-gray-500">Type: {subtitleComplaint(a.patient_name, a.chief_complaint)}</p>
+                    <p className="text-xs text-gray-500">Type: {visitModeLabel(a.appointment_type)}</p>
                   </div>
                   <p className="text-sm font-medium">{formatDateTimeShort(a.scheduled_start)}</p>
                 </button>

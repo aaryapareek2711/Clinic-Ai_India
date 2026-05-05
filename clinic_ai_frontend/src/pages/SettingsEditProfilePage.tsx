@@ -7,7 +7,7 @@ import {
 import { getStoredAuthProfile } from '../lib/authSession'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
-import { fetchMyProfile, getApiErrorMessage, patchMyProfile } from '../services/profileApi'
+import { fetchMyProfile, getApiErrorMessage, patchMyProfile, type ProviderProfile } from '../services/profileApi'
 
 function hasAuthToken(): boolean {
   if (typeof localStorage === 'undefined') return false
@@ -63,8 +63,13 @@ function SettingsEditProfilePage() {
   const [eveningEnd, setEveningEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningEnd)
   const [defaultSlotMinutes, setDefaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
 
-  const readPhone = (profile: ProviderProfile | (ProviderProfile & { phone_number?: string | null })) =>
-    String(profile.phone ?? profile.phone_number ?? '').trim()
+  const readPhone = (profile: ProviderProfile) => {
+    const phoneNumber =
+      typeof (profile as { phone_number?: unknown }).phone_number === 'string'
+        ? (profile as { phone_number?: string }).phone_number
+        : null
+    return String(profile.phone ?? phoneNumber ?? '').trim()
+  }
 
   const applyStoredFallbackProfile = useCallback(() => {
     const cached = getStoredAuthProfile()
