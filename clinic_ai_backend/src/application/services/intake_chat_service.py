@@ -338,6 +338,24 @@ class IntakeChatService:
         if not claimed:
             latest = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
             latest_status = str(latest.get("status") or "")
+            if latest_status in {"awaiting_conversation_start", "awaiting_illness"}:
+                # Recovery guard: if status drift/race kept session in a pre-illness state,
+                # force-capture illness and continue so the flow does not stall.
+                repaired = self.db.intake_sessions.find_one_and_update(
+                    {"_id": session["_id"], "status": {"$in": ["awaiting_conversation_start", "awaiting_illness"]}},
+                    {
+                        "$set": {
+                            "illness": illness_text,
+                            "status": "in_progress",
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                        "$push": {"answers": {"question": "illness", "answer": illness_text}},
+                    },
+                )
+                if repaired:
+                    refreshed = self.db.intake_sessions.find_one({"_id": session["_id"]}) or repaired
+                    self._generate_and_send_next_turn(refreshed)
+                    return
             if latest_status == "in_progress":
                 logger.warning(
                     "intake_awaiting_illness_claim_failed_recovering_as_in_progress visit_id=%s patient_id=%s",
