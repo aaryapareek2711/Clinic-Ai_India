@@ -11,6 +11,8 @@ import {
 
 type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
+type VisitSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+const PAGE_SIZE = 10
 
 function displayStatus(status: string): string {
   const s = status.toLowerCase()
@@ -30,11 +32,11 @@ function toneForStatus(status: string): RowTone {
 
 function stageForStatus(status: string): string {
   const s = status.toLowerCase()
-  if (s === 'scheduled') return 'Check-in pending'
-  if (s === 'in_queue') return 'Waiting'
-  if (s === 'in_progress') return 'Assessment stage'
-  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Billing finalized'
-  return 'Visit'
+  if (s === 'scheduled') return 'Intake'
+  if (s === 'queued' || s === 'in_queue') return 'Pre-Visit'
+  if (s === 'in_progress') return 'Vitals / Transcript'
+  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Transcript completed'
+  return 'Intake'
 }
 
 function matchesVisitTab(v: ProviderVisitListItem, tab: VisitTab): boolean {
@@ -183,11 +185,23 @@ function iconClasses(tone: string) {
   return 'bg-blue-50 text-blue-600'
 }
 
+function visitTimeForSort(v: ProviderVisitListItem): number {
+  const scheduled = new Date(v.scheduled_start || '').getTime()
+  if (!Number.isNaN(scheduled) && scheduled > 0) return scheduled
+  const created = new Date(v.created_at || '').getTime()
+  return Number.isNaN(created) ? 0 : created
+}
+
 function VisitsPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterField, setFilterField] = useState<'name' | 'mobile' | 'visit_id' | null>(null)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
+  const [currentPage, setCurrentPage] = useState(1)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -213,12 +227,42 @@ function VisitsPage() {
     }
   }, [])
 
-  const filteredVisits = useMemo(
-    () => visits.filter((v) => matchesVisitTab(v, activeTab)),
-    [visits, activeTab],
-  )
+  const filteredVisits = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return visits.filter((v) => {
+      if (!matchesVisitTab(v, activeTab)) return false
+      if (!q || !filterField) return true
+      if (filterField === 'name') return (v.patient_name || '').toLowerCase().includes(q)
+      if (filterField === 'mobile') return String(v.mobile_number || '').toLowerCase().includes(q)
+      return String(v.visit_id || v.id || '').toLowerCase().includes(q)
+    })
+  }, [visits, activeTab, searchQuery, filterField])
+  const sortedVisits = useMemo(() => {
+    const copy = [...filteredVisits]
+    copy.sort((a, b) => {
+      if (sortBy === 'time_newest') return visitTimeForSort(b) - visitTimeForSort(a)
+      if (sortBy === 'time_oldest') return visitTimeForSort(a) - visitTimeForSort(b)
+      if (sortBy === 'name_az') return (a.patient_name || '').localeCompare(b.patient_name || '')
+      if (sortBy === 'name_za') return (b.patient_name || '').localeCompare(a.patient_name || '')
+      return String(a.visit_id || a.id || '').localeCompare(String(b.visit_id || b.id || ''))
+    })
+    return copy
+  }, [filteredVisits, sortBy])
 
-  const filteredRows = useMemo(() => filteredVisits.map(visitRowFromApi), [filteredVisits])
+  const filteredRows = useMemo(() => sortedVisits.map(visitRowFromApi), [sortedVisits])
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const pagedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredRows.slice(start, start + PAGE_SIZE)
+  }, [filteredRows, currentPage])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeTab, searchQuery, filterField, sortBy])
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [currentPage, totalPages])
 
   const tabStats = useMemo(() => {
     const norm = (s: string) => s.toLowerCase()
@@ -368,6 +412,69 @@ function VisitsPage() {
                 Completed
               </button>
             </div>
+            <button
+              className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
+              onClick={() => navigate('/new-appointment')}
+              type="button"
+            >
+              New Visit
+            </button>
+          </div>
+          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
+            {filterField ? (
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+                <input
+                  className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Search by ${filterField === 'visit_id' ? 'visit ID' : filterField}`}
+                  type="text"
+                  value={searchQuery}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-500">
+                Select filter first, then search bar will open.
+              </div>
+            )}
+            <div className="relative">
+              <button
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] hover:bg-gray-50"
+                onClick={() => setIsFilterOpen((v) => !v)}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">filter_list</span>
+                Filter
+              </button>
+              {isFilterOpen && (
+                <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('name'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient name</button>
+                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('mobile'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Mobile number</button>
+                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('visit_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Visit ID</button>
+                  <button className="mt-1 block w-full rounded px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50" onClick={() => { setFilterField(null); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Clear filter</button>
+                </div>
+              )}
+            </div>
+            <div className="relative min-w-[220px]">
+              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
+                sort
+              </span>
+              <select
+                aria-label="Sort visits"
+                className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as VisitSort)}
+              >
+                <option value="time_newest">Time: newest first</option>
+                <option value="time_oldest">Time: oldest first</option>
+                <option value="name_az">Name: A → Z</option>
+                <option value="name_za">Name: Z → A</option>
+                <option value="visit_id">Visit ID</option>
+              </select>
+              <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+                expand_more
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -398,7 +505,7 @@ function VisitsPage() {
               </div>
             )}
             {!loading &&
-              filteredRows.map((row, idx) => (
+              pagedRows.map((row, idx) => (
               <div
                 key={row.visitId || `visit-row-${idx}`}
                 className="group bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between hover:border-[#2563eb] transition-all cursor-pointer"
@@ -432,6 +539,35 @@ function VisitsPage() {
               </div>
             ))}
           </div>
+          {!loading && !listError && filteredRows.length > 0 && (
+            <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-sm text-gray-600">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}-
+                {Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  type="button"
+                >
+                  Prev
+                </button>
+                <span className="text-sm text-gray-600">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
       </main>

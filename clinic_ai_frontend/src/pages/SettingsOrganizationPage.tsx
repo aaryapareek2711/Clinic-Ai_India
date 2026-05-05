@@ -40,7 +40,7 @@ function SettingsOrganizationPage() {
           <SettingsHeadingNav />
 
           <div className="grid grid-cols-12 gap-8">
-            <section className="col-span-12 rounded-xl border border-[#bdcaba] bg-white p-8 lg:col-span-8">
+            <section className="col-span-12 rounded-xl border border-[#bdcaba] bg-white p-8">
               <div className="mb-8 flex items-center justify-between">
                 <div>
                   <h3 className="text-[18px] font-semibold text-[#171d16]">Clinic Profile</h3>
@@ -130,28 +130,6 @@ function SettingsOrganizationPage() {
                 </div>
               </form>
             </section>
-
-            <aside className="col-span-12 space-y-6 lg:col-span-4">
-              <div className="relative overflow-hidden rounded-xl bg-[#006b2c] p-6 text-white">
-                <div className="relative z-10">
-                  <h4 className="mb-2 text-xs uppercase tracking-wider text-white/80">Organization Health</h4>
-                  <p className="mb-4 text-3xl font-bold">98.4%</p>
-                  <p className="text-sm leading-relaxed text-white/70">
-                    Your organization profile is nearly complete. Completing the ABDM integration will reach 100%.
-                  </p>
-                </div>
-                <div className="absolute -bottom-8 -right-8 opacity-20">
-                  <span className="material-symbols-outlined text-[120px]">verified_user</span>
-                </div>
-              </div>
-              <div className="h-48 overflow-hidden rounded-xl border border-[#bdcaba]">
-                <img
-                  alt="Modern clinic"
-                  className="h-full w-full object-cover"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSoC1esh9dQbtFMdDSl90kCZQLH5Ol71iTM54RLYUGH8av5BBbae9KHbLxMCpg0ZnJ0FkDKeihqpRbcbcfxlh_FlBOX1D5ks1omJVvjqfvhpC3XsLGZ8M-qIrZT511pngfk91ArPvmfmssHZpOUcZReOnCwwDLXvbxyw2ZM8kJFWDnKPHQqnplQGPUMQ0VcdKlHVHceCyGdn17VjG8yJRvpqT64y4lUQb24get9k6WZIwAzkP91PNOMrjqWx3Z8upRAryfrm_quXqa"
-                />
-              </div>
-            </aside>
 
             {showDigitalIntegrations ? (
               <section className="col-span-12 rounded-xl border border-gray-200 bg-white p-8">

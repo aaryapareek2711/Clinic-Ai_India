@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { DEFAULT_PROVIDER_ID, fetchIntakeSession, fetchProviderVisits } from '../services/visitWorkflowApi'
 import type { IntakeSessionResponse, ProviderVisitListItem } from '../services/visitWorkflowApi'
@@ -9,6 +10,8 @@ import NotificationsDrawer from './NotificationsDrawer'
 
 type QueueFilter = 'all' | 'ready' | 'in_progress'
 type QueueSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'token'
+type QueueSearchField = 'name' | 'token' | 'patient_id'
+const PAGE_SIZE = 10
 
 type QueueRow = {
   visitId: string
@@ -139,9 +142,14 @@ function StatusCell({ row }: { row: QueueRow }) {
 
 export default function CarePrepPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [queueSort, setQueueSort] = useState<QueueSort>('time_newest')
+  const [searchField, setSearchField] = useState<QueueSearchField | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const [rows, setRows] = useState<QueueRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -155,8 +163,13 @@ export default function CarePrepPage() {
           setError(null)
         }
         const visits = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
-        const candidate = visits
-          .filter((v) => ['scheduled', 'open', 'queued', 'in_queue', 'in_progress'].includes((v.status || '').toLowerCase()))
+        const candidate = [...visits]
+          .filter((v) => String(v.visit_id || v.id || '').trim().length > 0)
+          .sort((a, b) => {
+            const ta = new Date(a.scheduled_start || a.created_at || '').getTime()
+            const tb = new Date(b.scheduled_start || b.created_at || '').getTime()
+            return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
+          })
           .slice(0, 40)
 
         const intakes = await Promise.all(
@@ -179,9 +192,29 @@ export default function CarePrepPage() {
   }, [])
 
   const visiblePatients = useMemo(() => {
-    const filtered = applyQueueFilter(rows, queueFilter)
+    const base = applyQueueFilter(rows, queueFilter)
+    const q = searchQuery.trim().toLowerCase()
+    const filtered = base.filter((r) => {
+      if (!q || !searchField) return true
+      if (searchField === 'name') return r.patientName.toLowerCase().includes(q)
+      if (searchField === 'token') return r.tokenLabel.toLowerCase().includes(q)
+      return r.patientId.toLowerCase().includes(q)
+    })
     return sortQueueRows(filtered, queueSort)
-  }, [rows, queueFilter, queueSort])
+  }, [rows, queueFilter, queueSort, searchQuery, searchField])
+  const totalPages = Math.max(1, Math.ceil(visiblePatients.length / PAGE_SIZE))
+  const pagedPatients = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return visiblePatients.slice(start, start + PAGE_SIZE)
+  }, [visiblePatients, currentPage])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [queueFilter, queueSort, searchQuery, searchField])
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [currentPage, totalPages])
 
   const totals = useMemo(() => {
     const total = rows.length
@@ -199,16 +232,8 @@ export default function CarePrepPage() {
       <header className="fixed right-0 top-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-slate-200 bg-white px-8">
         <div className="flex flex-1 items-center gap-6">
           <span className="text-lg font-bold text-slate-900">MedGenie CarePrep</span>
-          <div className="relative w-full max-w-md">
-            <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-slate-400">search</span>
-            <input
-              className="w-full rounded-lg border border-[#bdcaba] bg-[#eff6ea] py-2 pr-4 pl-10 text-sm transition-all outline-none focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20"
-              placeholder="Queue is sourced from workspace visits…"
-              type="search"
-            />
-          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <button
             aria-label="Open notifications"
             className="rounded-full p-2 text-slate-500 transition-transform hover:bg-slate-50 active:scale-95"
@@ -217,6 +242,13 @@ export default function CarePrepPage() {
           >
             <span className="material-symbols-outlined">notifications</span>
           </button>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
+            </div>
+            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+          </div>
         </div>
       </header>
 
@@ -270,8 +302,58 @@ export default function CarePrepPage() {
             <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-[18px] leading-snug font-semibold text-[#171d16]">Active Intake Queue</h3>
               <div className="flex flex-wrap items-center gap-3">
+                {searchField ? (
+                  <div className="relative min-w-[240px]">
+                    <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">search</span>
+                    <input
+                      className="w-full rounded-lg border border-[#bdcaba] bg-white py-2 pr-3 pl-8 text-xs font-semibold text-[#171d16] shadow-sm focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={`Search by ${searchField === 'patient_id' ? 'patient ID' : searchField}`}
+                      type="search"
+                      value={searchQuery}
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-[#bdcaba] bg-white px-3 py-2 text-xs text-[#3e4a3d]">
+                    Select filter first, then search bar opens.
+                  </div>
+                )}
                 <div className="relative">
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">filter_list</span>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#bdcaba] bg-white px-3 py-2 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50"
+                    onClick={() => setIsFilterOpen((v) => !v)}
+                    type="button"
+                  >
+                    <span className="material-symbols-outlined text-sm">filter_list</span>
+                    Filter
+                  </button>
+                  {isFilterOpen && (
+                    <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-[#bdcaba] bg-white p-2 shadow-lg">
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('name'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient name</button>
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('token'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Token</button>
+                      <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setSearchField('patient_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient ID</button>
+                      <button className="mt-1 block w-full rounded px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-50" onClick={() => { setSearchField(null); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Clear filter</button>
+                    </div>
+                  )}
+                </div>
+                <div className="relative min-w-[220px]">
+                  <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">sort</span>
+                  <select
+                    aria-label="Sort queue"
+                    className="w-full cursor-pointer appearance-none rounded-lg border border-[#bdcaba] bg-white py-2 pr-9 pl-9 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
+                    value={queueSort}
+                    onChange={(e) => setQueueSort(e.target.value as QueueSort)}
+                  >
+                    <option value="time_newest">Recency</option>
+                    <option value="time_oldest">Oldest touched</option>
+                    <option value="name_az">Name: A-Z</option>
+                    <option value="name_za">Name: Z-A</option>
+                    <option value="token">Token</option>
+                  </select>
+                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
+                </div>
+                <div className="relative">
+                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">tune</span>
                   <select
                     aria-label="Filter queue"
                     className="cursor-pointer appearance-none rounded-lg border border-[#bdcaba] bg-white py-2 pr-9 pl-9 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
@@ -281,22 +363,6 @@ export default function CarePrepPage() {
                     <option value="all">All intakes</option>
                     <option value="ready">Ready heuristic</option>
                     <option value="in_progress">In progress</option>
-                  </select>
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
-                </div>
-                <div className="relative">
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">sort</span>
-                  <select
-                    aria-label="Sort queue"
-                    className="cursor-pointer appearance-none rounded-lg border border-[#bdcaba] bg-white py-2 pr-9 pl-9 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
-                    value={queueSort}
-                    onChange={(e) => setQueueSort(e.target.value as QueueSort)}
-                  >
-                    <option value="time_newest">Recency</option>
-                    <option value="time_oldest">Oldest touched</option>
-                    <option value="name_az">Name: A → Z</option>
-                    <option value="name_za">Name: Z → A</option>
-                    <option value="token">Token</option>
                   </select>
                   <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
                 </div>
@@ -320,7 +386,7 @@ export default function CarePrepPage() {
                     </td>
                   </tr>
                 )}
-                {visiblePatients.map((p) => (
+                {pagedPatients.map((p) => (
                   <tr
                     key={p.visitId}
                     className={`transition-colors hover:bg-slate-50/80 ${p.action === 'review' ? 'cursor-pointer' : ''}`}
@@ -373,8 +439,32 @@ export default function CarePrepPage() {
             </table>
             <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
               <p className="text-sm text-[#3e4a3d]">
-                Showing {visiblePatients.length} row(s){queueFilter !== 'all' ? ' (filter applied)' : ''}
+                {visiblePatients.length === 0
+                  ? 'Showing 0 row(s)'
+                  : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, visiblePatients.length)} of ${visiblePatients.length} row(s)`}
+                {queueFilter !== 'all' ? ' (filter applied)' : ''}
               </p>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  type="button"
+                >
+                  Prev
+                </button>
+                <span className="text-sm text-slate-600">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         </div>

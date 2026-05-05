@@ -1,4 +1,9 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DEFAULT_DOCTOR_SCHEDULE,
+  getDoctorScheduleSettings,
+  saveDoctorScheduleSettings,
+} from '../lib/doctorScheduleSettings'
 import { getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
@@ -57,8 +62,21 @@ function SettingsEditProfilePage() {
   const [phone, setPhone] = useState('')
   const [license, setLicense] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
+  const [initialProfile, setInitialProfile] = useState<{
+    fullName: string
+    jobTitle: string
+    phone: string
+    license: string
+    avatarUrl: string
+  } | null>(null)
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [opdStart, setOpdStart] = useState(DEFAULT_DOCTOR_SCHEDULE.opdStart)
+  const [opdEnd, setOpdEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.opdEnd)
+  const [addEveningShift, setAddEveningShift] = useState(DEFAULT_DOCTOR_SCHEDULE.addEveningShift)
+  const [eveningStart, setEveningStart] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningStart)
+  const [eveningEnd, setEveningEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningEnd)
+  const [defaultSlotMinutes, setDefaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
 
   const loadProfile = useCallback(async () => {
     setLoading(true)
@@ -70,6 +88,13 @@ function SettingsEditProfilePage() {
       setPhone(DEMO_PROFILE.phone ?? '')
       setLicense(DEMO_PROFILE.medical_license_number ?? '')
       setAvatarUrl(DEMO_PROFILE.avatar_url ?? '')
+      setInitialProfile({
+        fullName: DEMO_PROFILE.full_name,
+        jobTitle: DEMO_PROFILE.job_title ?? '',
+        phone: DEMO_PROFILE.phone ?? '',
+        license: DEMO_PROFILE.medical_license_number ?? '',
+        avatarUrl: DEMO_PROFILE.avatar_url ?? '',
+      })
       setLoading(false)
       return
     }
@@ -81,6 +106,13 @@ function SettingsEditProfilePage() {
       setPhone(me.phone ?? '')
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
+      setInitialProfile({
+        fullName: me.full_name ?? '',
+        jobTitle: me.job_title ?? '',
+        phone: me.phone ?? '',
+        license: me.medical_license_number ?? '',
+        avatarUrl: me.avatar_url ?? '',
+      })
     } catch {
       setFullName(DEMO_PROFILE.full_name)
       setJobTitle(DEMO_PROFILE.job_title ?? '')
@@ -88,6 +120,13 @@ function SettingsEditProfilePage() {
       setPhone(DEMO_PROFILE.phone ?? '')
       setLicense(DEMO_PROFILE.medical_license_number ?? '')
       setAvatarUrl(DEMO_PROFILE.avatar_url ?? '')
+      setInitialProfile({
+        fullName: DEMO_PROFILE.full_name,
+        jobTitle: DEMO_PROFILE.job_title ?? '',
+        phone: DEMO_PROFILE.phone ?? '',
+        license: DEMO_PROFILE.medical_license_number ?? '',
+        avatarUrl: DEMO_PROFILE.avatar_url ?? '',
+      })
       setBanner({ type: 'err', text: 'Could not load profile from server. Showing demo values.' })
     } finally {
       setLoading(false)
@@ -97,6 +136,16 @@ function SettingsEditProfilePage() {
   useEffect(() => {
     loadProfile()
   }, [loadProfile])
+
+  useEffect(() => {
+    const s = getDoctorScheduleSettings()
+    setOpdStart(s.opdStart)
+    setOpdEnd(s.opdEnd)
+    setAddEveningShift(s.addEveningShift)
+    setEveningStart(s.eveningStart)
+    setEveningEnd(s.eveningEnd)
+    setDefaultSlotMinutes(s.defaultSlotMinutes)
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -114,15 +163,31 @@ function SettingsEditProfilePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBanner(null)
+    saveDoctorScheduleSettings({
+      opdStart,
+      opdEnd,
+      addEveningShift,
+      eveningStart,
+      eveningEnd,
+      defaultSlotMinutes,
+    })
     if (!fullName.trim()) {
       setBanner({ type: 'err', text: 'Full name is required.' })
       return
     }
     if (!hasAuthToken()) {
-      setBanner({
-        type: 'err',
-        text: 'Sign in with an account that stores an access token to save changes to the server.',
-      })
+      setBanner({ type: 'ok', text: 'OPD settings saved locally. Sign in to save profile fields to server.' })
+      return
+    }
+    const profileChanged =
+      !initialProfile ||
+      fullName.trim() !== initialProfile.fullName.trim() ||
+      jobTitle.trim() !== initialProfile.jobTitle.trim() ||
+      phone.trim() !== initialProfile.phone.trim() ||
+      license.trim() !== initialProfile.license.trim() ||
+      avatarUrl.trim() !== initialProfile.avatarUrl.trim()
+    if (!profileChanged) {
+      setBanner({ type: 'ok', text: 'OPD settings saved.' })
       return
     }
     setSaving(true)
@@ -140,11 +205,21 @@ function SettingsEditProfilePage() {
       setPhone(updated.phone ?? '')
       setLicense(updated.medical_license_number ?? '')
       setAvatarUrl(updated.avatar_url ?? '')
+      setInitialProfile({
+        fullName: updated.full_name ?? '',
+        jobTitle: updated.job_title ?? '',
+        phone: updated.phone ?? '',
+        license: updated.medical_license_number ?? '',
+        avatarUrl: updated.avatar_url ?? '',
+      })
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
       setBanner({ type: 'ok', text: 'Profile updated successfully.' })
     } catch (err) {
-      setBanner({ type: 'err', text: getApiErrorMessage(err) })
+      setBanner({
+        type: 'ok',
+        text: `OPD settings saved. Profile fields could not be updated right now (${getApiErrorMessage(err)}).`,
+      })
     } finally {
       setSaving(false)
     }
@@ -324,6 +399,47 @@ function SettingsEditProfilePage() {
                       type="url"
                       value={avatarUrl}
                     />
+                  </div>
+                </div>
+
+                <div className="mt-8 rounded-xl border border-[#bdcaba] bg-[#f7faf4] p-4">
+                  <p className="mb-3 text-sm font-semibold text-[#171d16]">OPD hours & slot settings</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">OPD start</span>
+                      <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(ev) => setOpdStart(ev.target.value)} type="time" value={opdStart} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">OPD end</span>
+                      <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(ev) => setOpdEnd(ev.target.value)} type="time" value={opdEnd} />
+                    </label>
+                    <label className="col-span-1 flex items-center gap-2 sm:col-span-2">
+                      <input checked={addEveningShift} onChange={(ev) => setAddEveningShift(ev.target.checked)} type="checkbox" />
+                      <span className="text-sm text-[#171d16]">Add evening shift</span>
+                    </label>
+                    {addEveningShift && (
+                      <>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Evening start</span>
+                          <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(ev) => setEveningStart(ev.target.value)} type="time" value={eveningStart} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Evening end</span>
+                          <input className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm" onChange={(ev) => setEveningEnd(ev.target.value)} type="time" value={eveningEnd} />
+                        </label>
+                      </>
+                    )}
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Default slot minutes</span>
+                      <input
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm"
+                        max={120}
+                        min={5}
+                        onChange={(ev) => setDefaultSlotMinutes(Math.max(5, Math.min(120, Number(ev.target.value) || 15)))}
+                        type="number"
+                        value={defaultSlotMinutes}
+                      />
+                    </label>
                   </div>
                 </div>
 

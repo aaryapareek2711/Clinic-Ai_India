@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import { getSelectedClinicalTemplate, setSelectedClinicalTemplate } from '../lib/clinicalTemplateSelection'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { getClinicalTemplate, listClinicalTemplates, type ClinicalTemplateListItem } from '../services/templatesApi'
+import {
+  listClinicalTemplates,
+  recordClinicalTemplateUsage,
+  type ClinicalTemplateListItem,
+  updateClinicalTemplate,
+} from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const RECOMMENDED_TEMPLATES = [

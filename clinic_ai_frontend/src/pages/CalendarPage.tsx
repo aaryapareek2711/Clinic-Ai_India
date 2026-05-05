@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -18,10 +20,19 @@ function escapeCsvCell(value: string): string {
   return value
 }
 
-function downloadAppointmentsTemplateCsv(): void {
-  const header = ['patient_name', 'appointment_date', 'start_time', 'end_time', 'visit_type', 'status', 'notes']
-  const row = ['Jane Doe', '2024-10-15', '09:00', '09:30', 'Follow-up', 'Confirmed', 'Example row — replace with real data']
-  const csvLines = [header.map(escapeCsvCell).join(','), row.map(escapeCsvCell).join(',')]
+function downloadAppointmentsTemplateCsv(patients: PatientSummary[]): void {
+  const header = ['patient_name', 'age', 'mobile_number', 'gender', 'appointment_date', 'appointment_time']
+  const dataRows = patients.length
+    ? patients.map((p) => [
+        (p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient').trim(),
+        p.age != null ? String(p.age) : '',
+        (p.phone_number || '').trim(),
+        (p.gender || '').trim(),
+        '',
+        '',
+      ])
+    : [['Jane Doe', '35', '9876543210', 'female', '2026-05-15', '10:30']]
+  const csvLines = [header.map(escapeCsvCell).join(','), ...dataRows.map((r) => r.map(escapeCsvCell).join(','))]
   const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -60,12 +71,14 @@ function formatShortTime(iso: string): string {
 
 function CalendarPage() {
   const navigate = useNavigate()
+  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
   const importCsvRef = useRef<HTMLDivElement>(null)
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
   const [focusDate, setFocusDate] = useState(() => new Date())
+  const [patients, setPatients] = useState<PatientSummary[]>([])
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -84,17 +97,26 @@ function CalendarPage() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setLoadError(null)
-        }
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
-        if (!cancelled) setAppointments(data)
-      } catch (e) {
-        if (!cancelled) setLoadError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
+      if (!cancelled) {
+        setLoading(true)
+        setLoadError(null)
+      }
+      const [appointmentsRes, patientsRes] = await Promise.allSettled([
+        fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+        fetchPatients(),
+      ])
+      if (!cancelled && appointmentsRes.status === 'fulfilled') {
+        setAppointments(appointmentsRes.value)
+      }
+      if (!cancelled && patientsRes.status === 'fulfilled') {
+        setPatients(patientsRes.value)
+      }
+      if (!cancelled) {
+        const errs: string[] = []
+        if (appointmentsRes.status === 'rejected') errs.push(getApiErrorMessage(appointmentsRes.reason))
+        if (patientsRes.status === 'rejected') errs.push(`Patient list failed: ${getApiErrorMessage(patientsRes.reason)}`)
+        setLoadError(errs.length ? errs.join(' · ') : null)
+        setLoading(false)
       }
     })()
     return () => {
@@ -165,9 +187,10 @@ function CalendarPage() {
           </button>
           <div className="ml-2 flex items-center gap-3">
             <div className="text-right">
-              <p className="text-sm font-semibold">Schedule</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">Provider calendar</p>
+              <p className="text-sm font-semibold">{provider.displayName}</p>
+              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
+            <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
           </div>
         </div>
       </header>
@@ -194,11 +217,11 @@ function CalendarPage() {
                   role="dialog"
                   aria-label="Import CSV options"
                 >
-                  <p className="mb-3 text-sm text-[#3e4a3d]">Download a template CSV with expected columns.</p>
+                  <p className="mb-2 text-sm text-[#3e4a3d]">CSV columns: patient_name, age, mobile_number, gender, appointment_date, appointment_time</p>
                   <button
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
                     onClick={() => {
-                      downloadAppointmentsTemplateCsv()
+                      downloadAppointmentsTemplateCsv(patients)
                       setIsImportCsvOpen(false)
                     }}
                     type="button"

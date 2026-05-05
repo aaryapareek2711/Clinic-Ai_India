@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import {
+  clearSelectedClinicalTemplate,
+  getSelectedClinicalTemplate,
+} from '../../lib/clinicalTemplateSelection'
 import { getApiErrorMessage } from '../../lib/apiClient'
 import {
   generateClinicalNote,
@@ -127,6 +131,7 @@ export default function VisitClinicalNotePanel({
   const [followUpDate, setFollowUpDate] = useState('')
   const [followUpTime, setFollowUpTime] = useState('')
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
 
@@ -166,6 +171,7 @@ export default function VisitClinicalNotePanel({
       const res = await generateClinicalNote(patientId, visitId, {
         follow_up_date: followUpDate.trim() || undefined,
         follow_up_time: followUpTime.trim() || undefined,
+        template_id: selectedTemplate?.id,
       })
       onNoteUpdated(res)
       setMessage('Clinical note generated and saved on the server.')
@@ -175,7 +181,7 @@ export default function VisitClinicalNotePanel({
     } finally {
       setGenerating(false)
     }
-  }, [patientId, visitId, generating, followUpDate, followUpTime, onNoteUpdated])
+  }, [patientId, visitId, generating, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated])
 
   const handleApproveAndNext = useCallback(async () => {
     if (!patientId || !visitId || approvingNext) return
@@ -187,6 +193,7 @@ export default function VisitClinicalNotePanel({
       const res = await generateClinicalNote(patientId, visitId, {
         follow_up_date: fuDate || undefined,
         follow_up_time: fuTime || undefined,
+        template_id: selectedTemplate?.id,
       })
       onNoteUpdated(res)
       setEditing(false)
@@ -197,7 +204,7 @@ export default function VisitClinicalNotePanel({
     } finally {
       setApprovingNext(false)
     }
-  }, [patientId, visitId, approvingNext, followUpDate, followUpTime, onNoteUpdated, onApproveNext])
+  }, [patientId, visitId, approvingNext, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated, onApproveNext])
 
   const handleCopy = useCallback(async () => {
     if (!clinicalNote || !displayPayload) return
@@ -287,6 +294,28 @@ export default function VisitClinicalNotePanel({
       </div>
 
       <div className="rounded-lg border border-dashed border-[#c5d4c0] bg-[#f7faf4] p-4 text-xs text-[#3e4a3d]">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <p className="font-semibold text-[#171d16]">Selected template</p>
+          {selectedTemplate ? (
+            <>
+              <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-[11px] font-semibold text-[#166534]">
+                {selectedTemplate.name}
+              </span>
+              <button
+                className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#575e70] hover:bg-gray-50"
+                onClick={() => {
+                  clearSelectedClinicalTemplate()
+                  setSelectedTemplate(null)
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <span className="text-[11px] text-[#575e70]">No template selected. Choose one from Templates page.</span>
+          )}
+        </div>
         <p className="font-semibold text-[#171d16]">Optional before generate</p>
         <p className="mt-1 text-[#575e70]">
           Staff follow-up date/time is sent to the server with generation (scheduling + may refresh a cached note). Leave

@@ -1,27 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
-import { registerPatient } from '../services/patientsApi'
+import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
-
-const HOURS_12 = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] as const
-const MINUTES_STEP_15 = ['00', '15', '30', '45'] as const
 
 function localDateInputMin(d = new Date()): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
-}
-
-function to24Hour(hour12: string, minute: string, period: 'AM' | 'PM'): string {
-  let h = parseInt(hour12, 10)
-  if (Number.isNaN(h)) h = 9
-  if (period === 'PM' && h !== 12) h += 12
-  if (period === 'AM' && h === 12) h = 0
-  return `${String(h).padStart(2, '0')}:${minute}`
 }
 
 /** Accept any common India input; return `91` + 10 digits (first digit 6–9) or null if unusable. */
@@ -43,13 +35,47 @@ function normalizeIndiaMobileForApi(raw: string): string | null {
   return null
 }
 
+function dateKeyLocal(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function minutesFromHHmm(v: string): number {
+  const [h, m] = v.split(':').map((n) => Number(n))
+  if (Number.isNaN(h) || Number.isNaN(m)) return 0
+  return h * 60 + m
+}
+
+function hhmmFromMinutes(total: number): string {
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function formatMonthLabel(d: Date): string {
+  return d.toLocaleDateString([], { month: 'long', year: 'numeric' })
+}
+
+function formatChipTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+type SlotBlock = {
+  startIso: string
+  booked: boolean
+}
+
 function NewVisitPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [visitTimeHour, setVisitTimeHour] = useState<string>('9')
-  const [visitTimeMinute, setVisitTimeMinute] = useState<string>('00')
-  const [visitTimePeriod, setVisitTimePeriod] = useState<'AM' | 'PM'>('AM')
   const [fullName, setFullName] = useState('')
   const [mobile, setMobile] = useState('')
   const [age, setAge] = useState('')
@@ -57,9 +83,88 @@ function NewVisitPage() {
   const [language, setLanguage] = useState('en')
   const [consent, setConsent] = useState(false)
   const [appointmentDate, setAppointmentDate] = useState('')
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const d = new Date()
+    d.setDate(1)
+    return d
+  })
+  const [selectedStartIso, setSelectedStartIso] = useState('')
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
+  const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [])
+  const minDate = localDateInputMin()
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+        if (!cancelled) setUpcoming(data)
+      } catch {
+        if (!cancelled) setUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const slotBlocks = useMemo<SlotBlock[]>(() => {
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) return []
+    const step = schedule.defaultSlotMinutes || 15
+    const windows: Array<{ startMin: number; endMin: number }> = []
+    const opdStartMin = minutesFromHHmm(schedule.opdStart)
+    const opdEndMin = minutesFromHHmm(schedule.opdEnd)
+    if (opdEndMin > opdStartMin) windows.push({ startMin: opdStartMin, endMin: opdEndMin })
+    if (schedule.addEveningShift) {
+      const evStart = minutesFromHHmm(schedule.eveningStart)
+      const evEnd = minutesFromHHmm(schedule.eveningEnd)
+      if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
+    }
+    const bookedStarts = new Set(upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr).map((a) => a.scheduled_start))
+    const out: SlotBlock[] = []
+    for (const w of windows) {
+      let pointer = w.startMin
+      while (pointer + step <= w.endMin) {
+        const startIso = `${dateStr}T${hhmmFromMinutes(pointer)}:00`
+        const startTime = new Date(startIso).getTime()
+        const now = Date.now()
+        if (startTime >= now - 60_000) {
+          out.push({
+            startIso,
+            booked: bookedStarts.has(startIso),
+          })
+        }
+        pointer += step
+      }
+    }
+    return out
+  }, [appointmentDate, schedule, upcoming])
+
+  const selectedSlot = slotBlocks.find((s) => !s.booked && s.startIso === selectedStartIso) || null
+
+  const monthCells = useMemo(() => {
+    const year = visibleMonth.getFullYear()
+    const month = visibleMonth.getMonth()
+    const firstWeekday = new Date(year, month, 1).getDay()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const cells: Array<{ key: string; day: number | null; dateStr: string | null; disabled: boolean; selected: boolean }> = []
+    for (let i = 0; i < firstWeekday; i += 1) cells.push({ key: `empty-${i}`, day: null, dateStr: null, disabled: true, selected: false })
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      cells.push({
+        key: dateStr,
+        day,
+        dateStr,
+        disabled: dateStr < minDate,
+        selected: appointmentDate === dateStr,
+      })
+    }
+    return cells
+  }, [visibleMonth, appointmentDate, minDate])
 
   async function handleConfirm(): Promise<void> {
     setFormError(null)
@@ -86,28 +191,14 @@ function NewVisitPage() {
       setFormError('Consent is required to register.')
       return
     }
-
-    const time24 = to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)
-    const dateStr = appointmentDate.trim()
-    const minD = localDateInputMin()
-    if (dateStr) {
-      if (dateStr < minD) {
-        setFormError('Visit date cannot be in the past.')
-        return
-      }
-      const when = new Date(`${dateStr}T${time24}:00`)
-      if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
-        setFormError('Choose a future date and time (appointments cannot be booked in the past).')
-        return
-      }
+    if (visitKind === 'scheduled' && !selectedSlot) {
+      setFormError('Select an appointment slot for Scheduled visit type.')
+      return
     }
-    const appointment_time = dateStr ? time24 : null
-    const appointment_date = dateStr || null
 
     try {
       setSubmitting(true)
-      const visit_type = visitKind === 'walk_in' ? 'walk_in' : 'scheduled_visit'
-      const res = await registerPatient({
+      const registered = await registerPatient({
         name: trimmedName,
         phone_number: normalizedPhone,
         age: ageNum,
@@ -115,12 +206,17 @@ function NewVisitPage() {
         preferred_language: language,
         travelled_recently: false,
         consent: true,
-        appointment_date,
-        appointment_time,
-        visit_type,
       })
-      const startTab = res.workflow_skip_previsit || visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-      navigate(`/visits/detail?visitId=${encodeURIComponent(res.visit_id)}&tab=${startTab}`)
+      if (visitKind === 'scheduled' && selectedSlot && appointmentDate.trim()) {
+        const createdVisit = await createVisitFromPatient(registered.patient_id, {
+          provider_id: DEFAULT_PROVIDER_ID,
+          scheduled_start: selectedSlot.startIso,
+        })
+        persistAppointmentDuration(selectedSlot.startIso, schedule.defaultSlotMinutes || 15)
+        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=pre-visit`)
+        return
+      }
+      navigate('/dashboard')
     } catch (e) {
       setFormError(getApiErrorMessage(e))
     } finally {
@@ -279,20 +375,6 @@ function NewVisitPage() {
                         <option value="mr">Marathi</option>
                       </select>
                     </div>
-                    <div className="col-span-2 space-y-2">
-                      <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-visit-type">
-                        Visit type
-                      </label>
-                      <select
-                        className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                        id="nv-visit-type"
-                        onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
-                        value={visitKind}
-                      >
-                        <option value="scheduled">Scheduled</option>
-                        <option value="walk_in">Walk-in</option>
-                      </select>
-                    </div>
                   </div>
                   <div className="border-t border-gray-100 pt-4">
                     <div className="flex items-start gap-3">
@@ -321,79 +403,127 @@ function NewVisitPage() {
                   <h3 className="text-[18px] leading-[1.4] font-semibold">Appointment Booking</h3>
                 </div>
                 <div className="flex flex-1 flex-col space-y-6">
-                  <div className="space-y-2">
-                    <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-appt-date">
-                      Visit date (optional)
+                  <div>
+                    <label className="mb-2 block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="appointment-visit-type">
+                      Visit Type
                     </label>
-                    <input
-                      className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      id="nv-appt-date"
-                      min={localDateInputMin()}
-                      onChange={(e) => setAppointmentDate(e.target.value)}
-                      type="date"
-                      value={appointmentDate}
-                    />
-                    <div className="mt-4 flex items-center gap-2 rounded-lg bg-[#eff6ea] p-3">
-                      <span className="material-symbols-outlined text-[20px] text-[#006b2c]">event_available</span>
-                      <span className="text-sm font-medium">
-                        {appointmentDate ? `Scheduling helper: ${appointmentDate}` : 'Leave date empty for open visit / staff scheduling'}
-                      </span>
+                    <select
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      id="appointment-visit-type"
+                      onChange={(e) => {
+                        const next = e.target.value as 'scheduled' | 'walk_in'
+                        setVisitKind(next)
+                        if (next === 'walk_in') {
+                          setAppointmentDate('')
+                          setSelectedStartIso('')
+                        }
+                      }}
+                      value={visitKind}
+                    >
+                      <option value="scheduled">Scheduled</option>
+                      <option value="walk_in">Walk-in</option>
+                    </select>
+                  </div>
+                  {visitKind === 'walk_in' ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-[#f8faf7] p-4 text-sm text-[#3e4a3d]">
+                      Walk-in selected. No appointment slot required.
+                    </div>
+                  ) : (
+                    <>
+                  <div>
+                    <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>
+                    <div className="rounded-2xl border border-gray-200 bg-white">
+                      <div className="flex items-center justify-between rounded-t-2xl bg-[#6366f1] px-4 py-3 text-white">
+                        <p className="text-sm font-semibold">{formatMonthLabel(visibleMonth)}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="rounded-md p-1 hover:bg-white/20"
+                            onClick={() => {
+                              const d = new Date(visibleMonth)
+                              d.setMonth(d.getMonth() - 1)
+                              setVisibleMonth(d)
+                            }}
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-base">chevron_left</span>
+                          </button>
+                          <button
+                            className="rounded-md p-1 hover:bg-white/20"
+                            onClick={() => {
+                              const d = new Date(visibleMonth)
+                              d.setMonth(d.getMonth() + 1)
+                              setVisibleMonth(d)
+                            }}
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-base">chevron_right</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-7 border-b border-gray-100 px-3 py-2 text-center text-xs font-semibold text-gray-500">
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                          <div key={d}>{d}</div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-y-1 px-3 py-3">
+                        {monthCells.map((cell) =>
+                          cell.day === null ? (
+                            <div key={cell.key} />
+                          ) : (
+                            <button
+                              key={cell.key}
+                              className={`mx-auto flex h-9 w-9 items-center justify-center rounded-full text-sm ${
+                                cell.disabled
+                                  ? 'cursor-not-allowed text-gray-300'
+                                  : cell.selected
+                                    ? 'bg-[#6366f1] text-white'
+                                    : 'text-[#171d16] hover:bg-[#eef2ff]'
+                              }`}
+                              disabled={cell.disabled}
+                              onClick={() => {
+                                if (!cell.dateStr) return
+                                setAppointmentDate(cell.dateStr)
+                              }}
+                              type="button"
+                            >
+                              {cell.day}
+                            </button>
+                          ),
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Time</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="relative">
-                        <select
-                          aria-label="Hour"
-                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm font-medium focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                          onChange={(e) => setVisitTimeHour(e.target.value)}
-                          value={visitTimeHour}
-                        >
-                          {HOURS_12.map((h) => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
-                          <span className="material-symbols-outlined text-lg">expand_more</span>
-                        </span>
-                      </div>
-                      <div className="relative">
-                        <select
-                          aria-label="Minute"
-                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm font-medium focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                          onChange={(e) => setVisitTimeMinute(e.target.value)}
-                          value={visitTimeMinute}
-                        >
-                          {MINUTES_STEP_15.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
-                          <span className="material-symbols-outlined text-lg">expand_more</span>
-                        </span>
-                      </div>
-                      <div className="relative">
-                        <select
-                          aria-label="AM or PM"
-                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm font-medium focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                          onChange={(e) => setVisitTimePeriod(e.target.value as 'AM' | 'PM')}
-                          value={visitTimePeriod}
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
-                          <span className="material-symbols-outlined text-lg">expand_more</span>
-                        </span>
-                      </div>
+                  <div>
+                    <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
+                    <div className="flex flex-wrap gap-2">
+                      {slotBlocks.map((slot) => {
+                        const active = selectedStartIso === slot.startIso && !slot.booked
+                        return (
+                          <button
+                            key={slot.startIso}
+                            className={`rounded-xl border px-4 py-2 text-sm font-medium ${
+                              slot.booked
+                                ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 line-through'
+                                : active
+                                  ? 'border-[#6366f1] bg-[#6366f1] text-white'
+                                  : 'border-gray-200 bg-white text-[#171d16] hover:border-[#6366f1]/40'
+                            }`}
+                            disabled={slot.booked}
+                            onClick={() => {
+                              setSelectedStartIso(slot.startIso)
+                            }}
+                            type="button"
+                          >
+                            {formatChipTime(slot.startIso)}
+                          </button>
+                        )
+                      })}
                     </div>
+                    {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -407,7 +537,11 @@ function NewVisitPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#3e4a3d]">Slot</span>
                     <span className="font-medium">
-                      {appointmentDate ? `${appointmentDate} ${to24Hour(visitTimeHour, visitTimeMinute, visitTimePeriod)}` : 'Open / TBD'}
+                      {visitKind === 'walk_in'
+                        ? 'Walk-in (no slot)'
+                        : selectedSlot
+                          ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${schedule.defaultSlotMinutes || 15}m)`
+                          : 'Open / TBD'}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">

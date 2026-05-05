@@ -36,6 +36,7 @@ class GenerateIndiaClinicalNoteUseCase:
         force_regenerate: bool = False,
         follow_up_date: date | None = None,
         follow_up_time: str | None = None,
+        template_id: str | None = None,
     ) -> dict:
         """Generate India note and save as canonical default artifact."""
         job = self._resolve_transcription_job(
@@ -54,11 +55,16 @@ class GenerateIndiaClinicalNoteUseCase:
                 return existing
 
         context = self._build_context(patient_id=patient_id, visit_id=visit_id, job=job)
+        template_content = self._load_template_content(template_id)
+        if template_content:
+            context["selected_template"] = template_content
         if follow_up_date is not None:
             context["staff_confirmed_follow_up_date"] = follow_up_date.isoformat()
         if follow_up_time:
             context["staff_confirmed_follow_up_time"] = str(follow_up_time).strip()
         payload = self._generate_payload(context)
+        if template_content:
+            payload = self._apply_template_defaults(payload, template_content)
         if follow_up_date is not None:
             payload["follow_up_date"] = follow_up_date.isoformat()
             payload["follow_up_in"] = None
@@ -80,6 +86,64 @@ class GenerateIndiaClinicalNoteUseCase:
         created = self.note_repo.create_note(note_doc)
         created.pop("_id", None)
         return created
+
+    def _load_template_content(self, template_id: str | None) -> dict | None:
+        template_key = str(template_id or "").strip()
+        if not template_key:
+            return None
+        doc = self.db.templates.find_one({"id": template_key, "is_active": {"$ne": False}})
+        if not doc:
+            return None
+        content = doc.get("content")
+        return content if isinstance(content, dict) else None
+
+    @staticmethod
+    def _apply_template_defaults(payload: dict, template: dict) -> dict:
+        out = deepcopy(payload) if isinstance(payload, dict) else {}
+        tpl = template if isinstance(template, dict) else {}
+
+        def _first_text(*vals: object) -> str | None:
+            for v in vals:
+                s = str(v or "").strip()
+                if s:
+                    return s
+            return None
+
+        for key in ("assessment", "plan", "doctor_notes", "chief_complaint"):
+            if not str(out.get(key) or "").strip():
+                if _first_text(tpl.get(key)):
+                    out[key] = _first_text(tpl.get(key))
+
+        if not isinstance(out.get("rx"), list) or len(out.get("rx") or []) == 0:
+            out["rx"] = list(tpl.get("rx") or [])
+        if not isinstance(out.get("investigations"), list) or len(out.get("investigations") or []) == 0:
+            out["investigations"] = list(tpl.get("investigations") or [])
+        if not isinstance(out.get("red_flags"), list) or len(out.get("red_flags") or []) == 0:
+            out["red_flags"] = list(tpl.get("red_flags") or [])
+
+        has_follow_up_in = bool(str(out.get("follow_up_in") or "").strip())
+        has_follow_up_date = bool(str(out.get("follow_up_date") or "").strip())
+        if not has_follow_up_in and not has_follow_up_date:
+            tpl_follow_in = _first_text(tpl.get("follow_up_in"))
+            tpl_follow_date = _first_text(tpl.get("follow_up_date"))
+            if tpl_follow_date:
+                out["follow_up_date"] = tpl_follow_date
+                out["follow_up_in"] = None
+            elif tpl_follow_in:
+                out["follow_up_in"] = tpl_follow_in
+                out["follow_up_date"] = None
+
+        if not str(out.get("follow_up_time") or "").strip():
+            out["follow_up_time"] = _first_text(tpl.get("follow_up_time"))
+
+        merged_data_gaps: list[str] = []
+        for item in [*(out.get("data_gaps") or []), *(tpl.get("data_gaps") or [])]:
+            s = str(item or "").strip()
+            if s and s not in merged_data_gaps:
+                merged_data_gaps.append(s)
+        out["data_gaps"] = merged_data_gaps
+
+        return out
 
     def _resolve_transcription_job(
         self,

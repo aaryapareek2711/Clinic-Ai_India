@@ -73,6 +73,8 @@ export type ProviderVisitListItem = {
   patient_id: string
   patient_name: string
   mobile_number?: string | null
+  /** From patients.created_at — not visit created time. */
+  patient_created_at?: string | null
   visit_type?: string
   status: string
   scheduled_start?: string | null
@@ -205,6 +207,7 @@ export type ClinicalNoteGenerateOptions = {
   /** ISO date YYYY-MM-DD — when set, backend stores follow-up and may force regenerate. */
   follow_up_date?: string
   follow_up_time?: string
+  template_id?: string
   note_type?: 'india_clinical' | 'soap' | 'post_visit_summary'
 }
 
@@ -330,6 +333,7 @@ export async function generateClinicalNote(
   if (options?.transcription_job_id?.trim()) body.transcription_job_id = options.transcription_job_id.trim()
   if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
   if (options?.follow_up_time?.trim()) body.follow_up_time = options.follow_up_time.trim()
+  if (options?.template_id?.trim()) body.template_id = options.template_id.trim()
   if (options?.note_type) body.note_type = options.note_type
   const { data } = await apiClient.post<ClinicalNoteLatest>('/api/notes/clinical-note', body)
   return data
