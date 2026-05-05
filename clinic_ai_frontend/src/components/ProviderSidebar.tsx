@@ -6,7 +6,7 @@ import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile } from '../services/profileApi'
 
 const ACTIVE =
-  'bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 border-l-4 border-white w-[calc(100%-1rem)]'
+  'bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 w-[calc(100%-1rem)]'
 const IDLE = 'text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full'
 
 function navState(pathname: string) {

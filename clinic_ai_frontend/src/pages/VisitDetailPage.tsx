@@ -76,6 +76,19 @@ function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
   return 'vitals'
 }
 
+function isTemperatureCelsiusField(key: string, unit?: string | null): boolean {
+  const k = (key || '').toLowerCase()
+  const u = (unit || '').toLowerCase()
+  return k.includes('temperature_c') || (k.includes('temperature') && u.includes('c'))
+}
+
+function toCelsiusFromFahrenheit(raw: string): string {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return raw
+  const c = ((n - 32) * 5) / 9
+  return (Math.round(c * 10) / 10).toString()
+}
+
 function digitsOnlyPhone(raw: string): string {
   return raw.replace(/\D/g, '').trim()
 }
@@ -386,7 +399,9 @@ export default function VisitDetailPage() {
       try {
         const values = form.fields.map((f) => ({
           key: f.key,
-          value: vals[f.key] ?? '',
+          value: isTemperatureCelsiusField(f.key, f.unit)
+            ? toCelsiusFromFahrenheit(vals[f.key] ?? '')
+            : vals[f.key] ?? '',
         }))
         const res = await submitVitals(pid, vid, form.form_id || null, staff, values)
         const rawId = res.vitals_id ?? (res as { vitalsId?: string }).vitalsId
@@ -950,7 +965,7 @@ export default function VisitDetailPage() {
                       <div className="grid gap-3 md:grid-cols-2">
                         {vitalsForm.fields.map((field) => (
                           <label className="block text-xs font-semibold text-[#171d16]" key={field.key}>
-                            {field.label} ({field.key})
+                            {isTemperatureCelsiusField(field.key, field.unit) ? 'Temperature (F)' : field.label} ({field.key})
                             <input
                               className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
                               onChange={(e) =>
@@ -959,7 +974,13 @@ export default function VisitDetailPage() {
                                   [field.key]: e.target.value,
                                 }))
                               }
-                              placeholder={field.unit ? `Unit: ${field.unit}` : 'Enter value'}
+                              placeholder={
+                                isTemperatureCelsiusField(field.key, field.unit)
+                                  ? 'Unit: F'
+                                  : field.unit
+                                    ? `Unit: ${field.unit}`
+                                    : 'Enter value'
+                              }
                               value={vitalsValues[field.key] ?? ''}
                             />
                           </label>

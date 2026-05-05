@@ -10,7 +10,6 @@ import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppoin
 import NotificationsDrawer from './NotificationsDrawer'
 
 const DAILY_SLOT_LIMIT = 15
-const DURATION_CHOICES = [10, 15, 20, 30, 45, 60] as const
 
 /** `YYYY-MM-DD` in local timezone for `<input type="date" min="…">`. */
 function localDateInputMin(d = new Date()): string {
@@ -59,13 +58,6 @@ function addMinutesToIsoLocal(isoLocal: string, mins: number): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${y}-${m}-${day}T${hh}:${mm}:00`
-}
-
-function fmtTimeRange(startIso: string, endIso: string): string {
-  const s = new Date(startIso)
-  const e = new Date(endIso)
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return ''
-  return `${s.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${e.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
 }
 
 type SlotBlock = {
@@ -157,9 +149,8 @@ function NewAppointmentPage() {
     return d
   })
   const schedule = useMemo(() => getDoctorScheduleSettings(), [])
-  const [appointmentDuration, setAppointmentDuration] = useState<number>(schedule.defaultSlotMinutes || 15)
-  const [selectedStartIso, setSelectedStartIso] = useState<string>('')
-  const [manualSelectedMinutes, setManualSelectedMinutes] = useState<number>(0)
+  const [appointmentDuration] = useState<number>(schedule.defaultSlotMinutes || 15)
+  const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const minAppointmentDate = localDateInputMin()
   const [listLoading, setListLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -265,43 +256,11 @@ function NewAppointmentPage() {
     return cells
   }, [visibleMonth, appointmentDate, minAppointmentDate, appointmentDuration, schedule, upcoming, durationMap])
 
-  const selectedSlot = slotBlocks.find((b) => b.startIso === selectedStartIso && !b.booked) ?? null
-  const selectedDurationForBooking =
-    manualSelectedMinutes >= 5 ? manualSelectedMinutes : appointmentDuration
-
-  const displaySlots = useMemo(() => {
-    if (!selectedSlot || !appointmentDate.trim() || selectedDurationForBooking === appointmentDuration) return slotBlocks
-    const dateStr = appointmentDate.trim()
-    const selectedStartMin = minutesFromHHmm(selectedSlot.startIso.slice(11, 16))
-    const nextBookedAfter = slotBlocks
-      .filter((s) => s.booked)
-      .map((s) => minutesFromHHmm(s.startIso.slice(11, 16)))
-      .filter((m) => m > selectedStartMin)
-      .sort((a, b) => a - b)[0]
-    const boundary = typeof nextBookedAfter === 'number' ? nextBookedAfter : 24 * 60
-    const step = schedule.defaultSlotMinutes || 15
-    const generated: SlotBlock[] = []
-    let pointer = selectedStartMin + selectedDurationForBooking
-    while (pointer < boundary) {
-      const startIso = `${dateStr}T${hhmmFromMinutes(pointer)}:00`
-      generated.push({
-        startIso,
-        endIso: addMinutesToIsoLocal(startIso, appointmentDuration),
-        booked: false,
-      })
-      pointer += step
-    }
-    const before = slotBlocks.filter((s) => minutesFromHHmm(s.startIso.slice(11, 16)) <= selectedStartMin)
-    const after = slotBlocks.filter((s) => minutesFromHHmm(s.startIso.slice(11, 16)) >= boundary)
-    return [...before, ...generated, ...after]
-  }, [selectedSlot, appointmentDate, selectedDurationForBooking, appointmentDuration, slotBlocks, schedule])
-  const availableSlots = useMemo(() => displaySlots.filter((s) => !s.booked), [displaySlots])
+  const availableSlots = useMemo(() => slotBlocks.filter((s) => !s.booked), [slotBlocks])
 
   useEffect(() => {
-    if (!selectedStartIso) return
-    const stillAvailable = slotBlocks.some((b) => !b.booked && b.startIso === selectedStartIso)
-    if (!stillAvailable) setSelectedStartIso('')
-  }, [selectedStartIso, slotBlocks])
+    setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((b) => !b.booked && b.startIso === iso)))
+  }, [slotBlocks])
 
   async function handleConfirm(): Promise<void> {
     setError(null)
@@ -318,28 +277,40 @@ function NewAppointmentPage() {
       setError('Appointment date cannot be in the past.')
       return
     }
-    if (!selectedSlot) {
-      setError('Select an available appointment slot.')
+    if (selectedStartIsos.length === 0) {
+      setError('Select at least one available appointment slot.')
       return
     }
-    const scheduled_start = selectedSlot.startIso
-    const when = new Date(scheduled_start)
-    if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
-      setError('Choose a future date and time (appointments cannot be booked in the past).')
+    const uniqueStarts = [...new Set(selectedStartIsos)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+    const invalid = uniqueStarts.find((startIso) => {
+      const when = new Date(startIso)
+      return Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000
+    })
+    if (invalid) {
+      setError('One or more selected slots are in the past. Choose future date/time only.')
       return
     }
-    if (dayAtCapacity) {
+    if (selectedDateBooked.length + uniqueStarts.length > DAILY_SLOT_LIMIT) {
       setError(`This date already has ${DAILY_SLOT_LIMIT} appointments. Please choose another date.`)
       return
     }
     try {
       setSubmitting(true)
-      const res = await createVisitFromPatient(selectedId, {
-        provider_id: DEFAULT_PROVIDER_ID,
-        scheduled_start,
-      })
-      persistAppointmentDuration(scheduled_start, selectedDurationForBooking)
-      navigate(`/visits/detail?visitId=${encodeURIComponent(res.visit_id)}&tab=pre-visit`)
+      const created = await Promise.all(
+        uniqueStarts.map(async (scheduled_start) => {
+          const res = await createVisitFromPatient(selectedId, {
+            provider_id: DEFAULT_PROVIDER_ID,
+            scheduled_start,
+          })
+          persistAppointmentDuration(scheduled_start, appointmentDuration)
+          return res
+        }),
+      )
+      if (created.length === 1) {
+        navigate(`/visits/detail?visitId=${encodeURIComponent(created[0].visit_id)}&tab=pre-visit`)
+      } else {
+        navigate('/visits')
+      }
     } catch (e) {
       setError(getApiErrorMessage(e))
     } finally {
@@ -447,28 +418,6 @@ function NewAppointmentPage() {
               <h3 className="mb-6 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Visit Booking</h3>
               <div className="space-y-6">
                 <div>
-                  <label className="mb-3 block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Duration</label>
-                  <div className="flex flex-wrap gap-2">
-                    {DURATION_CHOICES.map((mins) => (
-                      <button
-                        key={mins}
-                        className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${
-                          appointmentDuration === mins ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-gray-200 bg-white text-[#171d16]'
-                        }`}
-                        onClick={() => setAppointmentDuration(mins)}
-                        type="button"
-                      >
-                        {mins} min
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs text-[#575e70]">
-                    OPD window: {schedule.opdStart} - {schedule.opdEnd}
-                    {schedule.addEveningShift ? `, Evening: ${schedule.eveningStart} - ${schedule.eveningEnd}` : ''}
-                  </p>
-                </div>
-
-                <div>
                   <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>
                   <div className="rounded-2xl border border-gray-200 bg-white">
                     <div className="flex items-center justify-between rounded-t-2xl bg-[#6366f1] px-4 py-3 text-white">
@@ -537,8 +486,8 @@ function NewAppointmentPage() {
                 <div>
                   <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
                   <div className="flex flex-wrap gap-2">
-                    {displaySlots.map((slot) => {
-                      const active = selectedStartIso === slot.startIso && !slot.booked
+                    {slotBlocks.map((slot) => {
+                      const active = selectedStartIsos.includes(slot.startIso) && !slot.booked
                       return (
                         <button
                           key={slot.startIso}
@@ -551,7 +500,12 @@ function NewAppointmentPage() {
                           }`}
                           disabled={slot.booked}
                           onClick={() => {
-                            setSelectedStartIso(slot.startIso)
+                            if (slot.booked) return
+                            setSelectedStartIsos((prev) =>
+                              prev.includes(slot.startIso)
+                                ? prev.filter((x) => x !== slot.startIso)
+                                : [...prev, slot.startIso],
+                            )
                           }}
                           type="button"
                         >
@@ -564,25 +518,7 @@ function NewAppointmentPage() {
                   {appointmentDate.trim() && availableSlots.length === 0 && (
                     <p className="mt-2 text-xs font-semibold text-red-700">No slots available in OPD hours for selected duration.</p>
                   )}
-                  <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-                    <label className="mb-2 block text-sm font-semibold text-[#171d16]">Manual minutes for selected slot</label>
-                    {selectedSlot ? (
-                      <div className="flex items-center gap-3">
-                        <input
-                          className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                          min={0}
-                          onChange={(e) => setManualSelectedMinutes(Math.max(0, Number(e.target.value) || 0))}
-                          type="number"
-                          value={manualSelectedMinutes || ''}
-                        />
-                        <span className="text-xs text-[#575e70]">
-                          Example: select `3:00 PM` and enter `20` then next slots shift to `3:20, 3:35, 3:50...` until next booked slot.
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[#575e70]">Select a slot first, then set manual minutes.</p>
-                    )}
-                  </div>
+                  <p className="mt-2 text-xs text-[#575e70]">Doctor can select multiple slots for this patient.</p>
                   {appointmentDate.trim().length > 0 && (
                     <p className="mt-2 text-xs text-[#575e70]">
                       Slots used: {selectedDateBooked.length}/{DAILY_SLOT_LIMIT}
@@ -592,9 +528,9 @@ function NewAppointmentPage() {
                     Visit will be created for{' '}
                     {patients.find((p) => p.id === selectedId)?.full_name ?? '(choose patient)'}.
                   </p>
-                  {selectedSlot && (
+                  {selectedStartIsos.length > 0 && (
                     <p className="mt-1 text-xs font-semibold text-[#0f5132]">
-                      Selected: {fmtTimeRange(selectedSlot.startIso, addMinutesToIsoLocal(selectedSlot.startIso, selectedDurationForBooking))}
+                      Selected slots: {selectedStartIsos.length}
                     </p>
                   )}
                   {dayAtCapacity && (
@@ -616,11 +552,11 @@ function NewAppointmentPage() {
               </button>
               <button
                 className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-bold text-white shadow-sm transition-all hover:bg-[#00873a] disabled:opacity-50"
-                disabled={submitting || dayAtCapacity || !selectedSlot}
+                disabled={submitting || dayAtCapacity || selectedStartIsos.length === 0}
                 onClick={() => void handleConfirm()}
                 type="button"
               >
-                {submitting ? 'Saving…' : 'Confirm Visit'}
+                {submitting ? 'Saving…' : selectedStartIsos.length > 1 ? 'Confirm Visits' : 'Confirm Visit'}
                 <span className="material-symbols-outlined">check_circle</span>
               </button>
             </div>

@@ -89,7 +89,6 @@ function NewVisitPage() {
     return d
   })
   const [selectedStartIso, setSelectedStartIso] = useState('')
-  const [manualSelectedMinutes, setManualSelectedMinutes] = useState<number>(0)
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -146,32 +145,6 @@ function NewVisitPage() {
   }, [appointmentDate, schedule, upcoming])
 
   const selectedSlot = slotBlocks.find((s) => !s.booked && s.startIso === selectedStartIso) || null
-  const selectedDurationForPreview =
-    manualSelectedMinutes >= 5 ? manualSelectedMinutes : schedule.defaultSlotMinutes || 15
-  const displaySlots = useMemo(() => {
-    if (!selectedSlot || !appointmentDate.trim() || selectedDurationForPreview === (schedule.defaultSlotMinutes || 15)) return slotBlocks
-    const dateStr = appointmentDate.trim()
-    const selectedStartMin = minutesFromHHmm(selectedSlot.startIso.slice(11, 16))
-    const nextBookedAfter = slotBlocks
-      .filter((s) => s.booked)
-      .map((s) => minutesFromHHmm(s.startIso.slice(11, 16)))
-      .filter((m) => m > selectedStartMin)
-      .sort((a, b) => a - b)[0]
-    const boundary = typeof nextBookedAfter === 'number' ? nextBookedAfter : 24 * 60
-    const step = schedule.defaultSlotMinutes || 15
-    const generated: SlotBlock[] = []
-    let pointer = selectedStartMin + selectedDurationForPreview
-    while (pointer < boundary) {
-      generated.push({
-        startIso: `${dateStr}T${hhmmFromMinutes(pointer)}:00`,
-        booked: false,
-      })
-      pointer += step
-    }
-    const before = slotBlocks.filter((s) => minutesFromHHmm(s.startIso.slice(11, 16)) <= selectedStartMin)
-    const after = slotBlocks.filter((s) => minutesFromHHmm(s.startIso.slice(11, 16)) >= boundary)
-    return [...before, ...generated, ...after]
-  }, [selectedSlot, appointmentDate, selectedDurationForPreview, schedule, slotBlocks])
 
   const monthCells = useMemo(() => {
     const year = visibleMonth.getFullYear()
@@ -218,6 +191,10 @@ function NewVisitPage() {
       setFormError('Consent is required to register.')
       return
     }
+    if (visitKind === 'scheduled' && !selectedSlot) {
+      setFormError('Select an appointment slot for Scheduled visit type.')
+      return
+    }
 
     try {
       setSubmitting(true)
@@ -230,12 +207,12 @@ function NewVisitPage() {
         travelled_recently: false,
         consent: true,
       })
-      if (selectedSlot && appointmentDate.trim()) {
+      if (visitKind === 'scheduled' && selectedSlot && appointmentDate.trim()) {
         const createdVisit = await createVisitFromPatient(registered.patient_id, {
           provider_id: DEFAULT_PROVIDER_ID,
           scheduled_start: selectedSlot.startIso,
         })
-        persistAppointmentDuration(selectedSlot.startIso, selectedDurationForPreview)
+        persistAppointmentDuration(selectedSlot.startIso, schedule.defaultSlotMinutes || 15)
         navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisit.visit_id)}&tab=pre-visit`)
         return
       }
@@ -398,20 +375,6 @@ function NewVisitPage() {
                         <option value="mr">Marathi</option>
                       </select>
                     </div>
-                    <div className="col-span-2 space-y-2">
-                      <label className="block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="nv-visit-type">
-                        Visit type
-                      </label>
-                      <select
-                        className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                        id="nv-visit-type"
-                        onChange={(e) => setVisitKind(e.target.value as 'scheduled' | 'walk_in')}
-                        value={visitKind}
-                      >
-                        <option value="scheduled">Scheduled</option>
-                        <option value="walk_in">Walk-in</option>
-                      </select>
-                    </div>
                   </div>
                   <div className="border-t border-gray-100 pt-4">
                     <div className="flex items-start gap-3">
@@ -440,6 +403,33 @@ function NewVisitPage() {
                   <h3 className="text-[18px] leading-[1.4] font-semibold">Appointment Booking</h3>
                 </div>
                 <div className="flex flex-1 flex-col space-y-6">
+                  <div>
+                    <label className="mb-2 block text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase" htmlFor="appointment-visit-type">
+                      Visit Type
+                    </label>
+                    <select
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-4 py-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
+                      id="appointment-visit-type"
+                      onChange={(e) => {
+                        const next = e.target.value as 'scheduled' | 'walk_in'
+                        setVisitKind(next)
+                        if (next === 'walk_in') {
+                          setAppointmentDate('')
+                          setSelectedStartIso('')
+                        }
+                      }}
+                      value={visitKind}
+                    >
+                      <option value="scheduled">Scheduled</option>
+                      <option value="walk_in">Walk-in</option>
+                    </select>
+                  </div>
+                  {visitKind === 'walk_in' ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 bg-[#f8faf7] p-4 text-sm text-[#3e4a3d]">
+                      Walk-in selected. No appointment slot required.
+                    </div>
+                  ) : (
+                    <>
                   <div>
                     <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Day</p>
                     <div className="rounded-2xl border border-gray-200 bg-white">
@@ -507,7 +497,7 @@ function NewVisitPage() {
                   <div>
                     <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
                     <div className="flex flex-wrap gap-2">
-                      {displaySlots.map((slot) => {
+                      {slotBlocks.map((slot) => {
                         const active = selectedStartIso === slot.startIso && !slot.booked
                         return (
                           <button
@@ -531,24 +521,9 @@ function NewVisitPage() {
                       })}
                     </div>
                     {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
-                    <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-                      <label className="mb-2 block text-sm font-semibold text-[#171d16]">Manual minutes for selected slot</label>
-                      {selectedSlot ? (
-                        <div className="flex items-center gap-3">
-                          <input
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                            min={0}
-                            onChange={(e) => setManualSelectedMinutes(Math.max(0, Number(e.target.value) || 0))}
-                            type="number"
-                            value={manualSelectedMinutes || ''}
-                          />
-                          <span className="text-xs text-[#575e70]">Ex: 3:00 + 20 then 3:20, 3:35, 3:50 until booked slot.</span>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-[#575e70]">Select a slot first, then set manual minutes.</p>
-                      )}
-                    </div>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -562,7 +537,11 @@ function NewVisitPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#3e4a3d]">Slot</span>
                     <span className="font-medium">
-                      {selectedSlot ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${selectedDurationForPreview}m)` : 'Open / TBD'}
+                      {visitKind === 'walk_in'
+                        ? 'Walk-in (no slot)'
+                        : selectedSlot
+                          ? `${appointmentDate} ${formatChipTime(selectedSlot.startIso)} (${schedule.defaultSlotMinutes || 15}m)`
+                          : 'Open / TBD'}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">

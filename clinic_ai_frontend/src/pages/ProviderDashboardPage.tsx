@@ -217,7 +217,7 @@ function ProviderDashboardPage() {
   const headerName = provider.displayName || 'Dr.'
 
   return (
-    <div className="text-[#171d16] min-h-screen font-manrope">
+    <div className="min-h-screen bg-white text-[#171d16] font-manrope">
       <main className="min-h-screen">
         <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
           <div className="flex items-center gap-6">
@@ -234,39 +234,37 @@ function ProviderDashboardPage() {
           </div>
         </header>
 
-        <section className="mt-16 flex h-[120px] items-center justify-between bg-[#111827] px-8">
-          <div>
-            <h1 className="text-[28px] font-bold text-white">Provider Dashboard</h1>
-            <p className="text-sm text-[#9ca3af]">
-              Welcome back
-              {`, ${headerName}`}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              className="flex w-fit items-center gap-2 rounded-lg border border-white/80 px-6 py-2.5 font-medium text-white hover:bg-white/10"
-              onClick={() => navigate('/new-appointment')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">calendar_add_on</span>
-              New visit
-            </button>
-            <button
-              className="flex w-fit items-center gap-2 rounded-lg bg-[#16a34a] px-6 py-2.5 font-medium text-white hover:opacity-90"
-              onClick={() => navigate('/new-visit')}
-              type="button"
-            >
-              <span className="material-symbols-outlined">person_add</span>
-              New patient registration
-            </button>
-          </div>
-        </section>
-
-        <div className="space-y-8 p-8">
+        <div className="space-y-8 p-8 pt-24">
           {error && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
           )}
           {loading && <p className="text-sm text-gray-500">Loading dashboard…</p>}
+
+          <section className="rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-7 py-7 text-white shadow-lg">
+            <div className="flex flex-wrap items-start justify-between gap-5">
+              <div>
+                <p className="text-2xl font-bold text-gray-300">Welcome back, {headerName}</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="flex w-fit items-center gap-2 rounded-xl border border-white/60 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+                  onClick={() => navigate('/new-appointment')}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                  New visit
+                </button>
+                <button
+                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                  onClick={() => navigate('/new-visit')}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                  New patient registration
+                </button>
+              </div>
+            </div>
+          </section>
 
           <div className="grid grid-cols-4 gap-6">
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">

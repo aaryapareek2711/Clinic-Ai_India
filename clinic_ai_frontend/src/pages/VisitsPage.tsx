@@ -32,11 +32,11 @@ function toneForStatus(status: string): RowTone {
 
 function stageForStatus(status: string): string {
   const s = status.toLowerCase()
-  if (s === 'scheduled') return 'Check-in pending'
-  if (s === 'in_queue') return 'Waiting'
-  if (s === 'in_progress') return 'Assessment stage'
-  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Billing finalized'
-  return 'Visit'
+  if (s === 'scheduled') return 'Intake'
+  if (s === 'queued' || s === 'in_queue') return 'Pre-Visit'
+  if (s === 'in_progress') return 'Vitals / Transcript'
+  if (s === 'completed' || s === 'closed' || s === 'ended') return 'Transcript completed'
+  return 'Intake'
 }
 
 function matchesVisitTab(v: ProviderVisitListItem, tab: VisitTab): boolean {
