@@ -6,7 +6,7 @@ import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile } from '../services/profileApi'
 
 const ACTIVE =
-  'bg-[#2563eb] text-white rounded-lg mx-2 flex items-center px-4 py-2 w-[calc(100%-1rem)]'
+  'bg-[#16a34a] text-white rounded-lg mx-2 flex items-center px-4 py-2 w-[calc(100%-1rem)]'
 const IDLE = 'text-gray-400 hover:text-white flex items-center px-4 py-2 hover:bg-gray-800 w-full'
 
 function navState(pathname: string) {
@@ -64,7 +64,6 @@ export default function ProviderSidebar() {
           </div>
           <div>
             <h1 className="text-xl font-bold leading-none text-white">MedGenie</h1>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Provider</p>
           </div>
         </div>
       </div>

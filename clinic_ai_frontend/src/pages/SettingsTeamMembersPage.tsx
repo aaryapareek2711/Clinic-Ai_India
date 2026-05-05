@@ -143,38 +143,6 @@ function SettingsTeamMembersPage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-[#bdcaba] p-6">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h3 className="text-[18px] font-semibold mb-1">Organization Privacy</h3>
-                    <p className="text-sm text-[#3e4a3d]">Control member access and visibility.</p>
-                  </div>
-                  <span className="material-symbols-outlined text-gray-400">shield</span>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">HIPAA Compliant Logging</p>
-                      <p className="text-xs text-[#3e4a3d]">Detailed audit trails for all actions.</p>
-                    </div>
-                    <div className="inline-flex h-5 w-10 rounded-full bg-[#16a34a]"><span className="translate-x-5 inline-block h-4 w-4 m-[2px] rounded-full bg-white" /></div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Enforce Two-Factor (2FA)</p>
-                      <p className="text-xs text-[#3e4a3d]">Require all members to use 2FA.</p>
-                    </div>
-                    <div className="inline-flex h-5 w-10 rounded-full bg-gray-200"><span className="inline-block h-4 w-4 m-[2px] rounded-full bg-white" /></div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Public Profile Visibility</p>
-                      <p className="text-xs text-[#3e4a3d]">Show provider profiles on public search.</p>
-                    </div>
-                    <div className="inline-flex h-5 w-10 rounded-full bg-[#16a34a]"><span className="translate-x-5 inline-block h-4 w-4 m-[2px] rounded-full bg-white" /></div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

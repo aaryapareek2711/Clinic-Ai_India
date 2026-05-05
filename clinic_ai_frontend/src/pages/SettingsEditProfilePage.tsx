@@ -5,24 +5,9 @@ import {
   saveDoctorScheduleSettings,
 } from '../lib/doctorScheduleSettings'
 import { getStoredAuthProfile } from '../lib/authSession'
-import { doctorNameLabel } from '../lib/doctorDisplayName'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 import { fetchMyProfile, getApiErrorMessage, patchMyProfile } from '../services/profileApi'
-
-const authSeed = getStoredAuthProfile()
-
-const DEMO_PROFILE = {
-  email: authSeed.username ? `${authSeed.username}@medgenie.pro` : 'doctor@medgenie.pro',
-  username: authSeed.username || 'doctor',
-  full_name: doctorNameLabel(authSeed.fullName || authSeed.username || 'Doctor'),
-  phone: '+91 98234 56710',
-  role: authSeed.role || 'doctor',
-  job_title: authSeed.jobTitle || 'Clinical provider',
-  medical_license_number: 'MED-8923-GNE-2024',
-  avatar_url:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuDaAYeQ0A8oF3vIfyLdOprOJ5SFTNVVvmJSbHXZgI1_hK5qpkoXqwV_MO6PstghTFvZxhRr4w_9UWJvAuxv6BAaL2Ki9iaopyTFj53ErGUzDUt0DPmIeEPkQ8QLnp9zdKrG7mSUR7QCKypwjDYeVy0wWE4WvCPcfkiJCCHGOCDYuuQZDw9ZSoHuRR0Y5GdkcuGswFoLmCDphSSFTzmWLMexlxM302h34UI87UnGQ_WgZ6-lEVzJP2xIG0bNin24u6kGXLX5-NY36vdO',
-}
 
 function hasAuthToken(): boolean {
   if (typeof localStorage === 'undefined') return false
@@ -78,23 +63,31 @@ function SettingsEditProfilePage() {
   const [eveningEnd, setEveningEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningEnd)
   const [defaultSlotMinutes, setDefaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
 
+  const readPhone = (profile: ProviderProfile | (ProviderProfile & { phone_number?: string | null })) =>
+    String(profile.phone ?? profile.phone_number ?? '').trim()
+
+  const applyStoredFallbackProfile = useCallback(() => {
+    const cached = getStoredAuthProfile()
+    setFullName(cached.fullName || '')
+    setJobTitle(cached.jobTitle || '')
+    setEmailDisplay(cached.username?.includes('@') ? cached.username : '')
+    setPhone('')
+    setLicense('')
+    setAvatarUrl('')
+    setInitialProfile({
+      fullName: cached.fullName || '',
+      jobTitle: cached.jobTitle || '',
+      phone: '',
+      license: '',
+      avatarUrl: '',
+    })
+  }, [])
+
   const loadProfile = useCallback(async () => {
     setLoading(true)
     setBanner(null)
     if (!hasAuthToken()) {
-      setFullName(DEMO_PROFILE.full_name)
-      setJobTitle(DEMO_PROFILE.job_title ?? '')
-      setEmailDisplay(DEMO_PROFILE.email)
-      setPhone(DEMO_PROFILE.phone ?? '')
-      setLicense(DEMO_PROFILE.medical_license_number ?? '')
-      setAvatarUrl(DEMO_PROFILE.avatar_url ?? '')
-      setInitialProfile({
-        fullName: DEMO_PROFILE.full_name,
-        jobTitle: DEMO_PROFILE.job_title ?? '',
-        phone: DEMO_PROFILE.phone ?? '',
-        license: DEMO_PROFILE.medical_license_number ?? '',
-        avatarUrl: DEMO_PROFILE.avatar_url ?? '',
-      })
+      applyStoredFallbackProfile()
       setLoading(false)
       return
     }
@@ -103,35 +96,22 @@ function SettingsEditProfilePage() {
       setFullName(me.full_name ?? '')
       setJobTitle(me.job_title ?? '')
       setEmailDisplay(me.email ?? '')
-      setPhone(me.phone ?? '')
+      setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
       setInitialProfile({
         fullName: me.full_name ?? '',
         jobTitle: me.job_title ?? '',
-        phone: me.phone ?? '',
+        phone: readPhone(me),
         license: me.medical_license_number ?? '',
         avatarUrl: me.avatar_url ?? '',
       })
     } catch {
-      setFullName(DEMO_PROFILE.full_name)
-      setJobTitle(DEMO_PROFILE.job_title ?? '')
-      setEmailDisplay(DEMO_PROFILE.email)
-      setPhone(DEMO_PROFILE.phone ?? '')
-      setLicense(DEMO_PROFILE.medical_license_number ?? '')
-      setAvatarUrl(DEMO_PROFILE.avatar_url ?? '')
-      setInitialProfile({
-        fullName: DEMO_PROFILE.full_name,
-        jobTitle: DEMO_PROFILE.job_title ?? '',
-        phone: DEMO_PROFILE.phone ?? '',
-        license: DEMO_PROFILE.medical_license_number ?? '',
-        avatarUrl: DEMO_PROFILE.avatar_url ?? '',
-      })
-      setBanner({ type: 'err', text: 'Could not load profile from server. Showing demo values.' })
+      applyStoredFallbackProfile()
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [applyStoredFallbackProfile])
 
   useEffect(() => {
     loadProfile()
@@ -153,7 +133,7 @@ function SettingsEditProfilePage() {
     }
   }, [previewBlobUrl])
 
-  const avatarSrc = previewBlobUrl || avatarUrl.trim() || DEMO_PROFILE.avatar_url || ''
+  const avatarSrc = previewBlobUrl || avatarUrl.trim() || ''
 
   const strength = useMemo(
     () => profileStrengthPct({ full_name: fullName, job_title: jobTitle, phone, medical_license_number: license, avatar_url: avatarUrl }),
@@ -202,13 +182,13 @@ function SettingsEditProfilePage() {
       setFullName(updated.full_name ?? '')
       setJobTitle(updated.job_title ?? '')
       setEmailDisplay(updated.email ?? '')
-      setPhone(updated.phone ?? '')
+      setPhone(readPhone(updated))
       setLicense(updated.medical_license_number ?? '')
       setAvatarUrl(updated.avatar_url ?? '')
       setInitialProfile({
         fullName: updated.full_name ?? '',
         jobTitle: updated.job_title ?? '',
-        phone: updated.phone ?? '',
+        phone: readPhone(updated),
         license: updated.medical_license_number ?? '',
         avatarUrl: updated.avatar_url ?? '',
       })

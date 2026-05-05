@@ -195,22 +195,6 @@ function SettingsOrganizationPage() {
               </section>
             ) : null}
 
-            <section className="col-span-12 flex items-center justify-between rounded-xl border border-gray-100 bg-[#eff6ea] p-6">
-              <div className="flex items-center">
-                <div className="mr-4 flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#00873a]">
-                  <span className="material-symbols-outlined">shield</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Security &amp; Compliance</p>
-                  <p className="text-xs text-[#3e4a3d]">
-                    Your clinic data is encrypted and HIPAA/GDPR compliant by default.
-                  </p>
-                </div>
-              </div>
-              <button className="text-xs font-semibold text-[#2563eb] hover:underline" type="button">
-                Download Security Audit Log
-              </button>
-            </section>
           </div>
         </div>
       </main>

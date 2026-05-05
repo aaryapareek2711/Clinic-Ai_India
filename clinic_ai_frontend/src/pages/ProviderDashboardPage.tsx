@@ -11,7 +11,8 @@ import {
   type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
-const PAGE_SIZE = 10
+const INITIAL_UPCOMING_COUNT = 5
+const UPCOMING_LOAD_MORE_STEP = 10
 
 function isSameCalendarDay(iso: string | null | undefined, ref: Date): boolean {
   if (!iso) return false
@@ -41,15 +42,6 @@ function normalizeVisitStatus(raw: string | undefined): string {
   return (raw || '').toLowerCase()
 }
 
-/** True if visit is scheduled for later today (local calendar), with small clock slack. */
-function isFutureSlotToday(scheduledIso: string, ref: Date): boolean {
-  if (!scheduledIso) return false
-  if (!isSameCalendarDay(scheduledIso, ref)) return false
-  const t = new Date(scheduledIso).getTime()
-  if (Number.isNaN(t)) return false
-  return t >= ref.getTime() - 60_000
-}
-
 /** Not finished and not actively in consultation (still “waiting to be seen”). */
 function isNotVisitedYet(status: string | undefined): boolean {
   const s = normalizeVisitStatus(status)
@@ -74,6 +66,13 @@ function visitToUpcomingRow(v: ProviderVisitListItem): ProviderUpcomingAppointme
   }
 }
 
+function isTomorrowSlot(scheduledIso: string, ref: Date): boolean {
+  if (!scheduledIso) return false
+  const d = new Date(ref)
+  d.setDate(d.getDate() + 1)
+  return isSameCalendarDay(scheduledIso, d)
+}
+
 function ProviderDashboardPage() {
   const provider = useProviderIdentity()
   const navigate = useNavigate()
@@ -82,7 +81,8 @@ function ProviderDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
-  const [upcomingPage, setUpcomingPage] = useState(1)
+  const [upcomingDayFilter, setUpcomingDayFilter] = useState<'today' | 'tomorrow'>('today')
+  const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(INITIAL_UPCOMING_COUNT)
 
   useEffect(() => {
     let cancelled = false
@@ -127,46 +127,7 @@ function ProviderDashboardPage() {
     }
   }, [])
 
-  const stats = useMemo(() => {
-    const today = new Date()
-    /** Registration time from backend (patients.created_at); not inferred from visits. */
-    const registrationByPatient = new Map<string, string>()
-    for (const v of visits) {
-      const pid = (v.patient_id || '').trim()
-      if (!pid) continue
-      const reg = String(v.patient_created_at ?? '').trim()
-      if (!reg || registrationByPatient.has(pid)) continue
-      registrationByPatient.set(pid, reg)
-    }
-
-    const newRegisteredPatientsToday = new Set<string>()
-    for (const v of visits) {
-      const pid = (v.patient_id || '').trim()
-      if (!pid) continue
-      const registeredAt = registrationByPatient.get(pid)
-      if (!registeredAt || !isSameCalendarDay(registeredAt, today)) continue
-      if (!isSameCalendarDay(v.scheduled_start ?? v.created_at ?? null, today)) continue
-      newRegisteredPatientsToday.add(pid)
-    }
-
-    const visitsToday = visits.filter((v) => isSameCalendarDay(v.scheduled_start || v.created_at, today))
-    const pending = visitsToday.filter((v) => {
-      const s = (v.status || '').toLowerCase()
-      return s === 'scheduled' || s === 'queued' || s === 'in_queue'
-    }).length
-    const activeNow = visitsToday.filter((v) => (v.status || '').toLowerCase() === 'in_progress').length
-    const totalVisitsToday = visitsToday
-
-    return {
-      patientsToday: newRegisteredPatientsToday.size,
-      activeNow,
-      pending,
-      visitsTodayCount: totalVisitsToday.length,
-    }
-  }, [visits])
-
-  const upcomingList = useMemo(() => {
-    const now = new Date()
+  const mergedUpcoming = useMemo(() => {
     const visitById = new Map<string, ProviderVisitListItem>()
     for (const v of visits) {
       const id = String(v.visit_id || v.id || '').trim()
@@ -178,7 +139,6 @@ function ProviderDashboardPage() {
     for (const a of appointments) {
       const vid = String(a.visit_id || '').trim()
       if (!vid || !a.scheduled_start) continue
-      if (!isFutureSlotToday(a.scheduled_start, now)) continue
       const visit = visitById.get(vid)
       const effectiveStatus = visit?.status ?? a.status
       if (!isNotVisitedYet(effectiveStatus)) continue
@@ -188,7 +148,6 @@ function ProviderDashboardPage() {
     for (const v of visits) {
       const sched = v.scheduled_start
       if (!sched) continue
-      if (!isFutureSlotToday(sched, now)) continue
       const vid = String(v.visit_id || v.id || '').trim()
       if (!vid) continue
       if (!isNotVisitedYet(v.status)) continue
@@ -197,19 +156,49 @@ function ProviderDashboardPage() {
 
     return [...merged.values()].sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
   }, [appointments, visits])
-  const upcomingTotalPages = Math.max(1, Math.ceil(upcomingList.length / PAGE_SIZE))
-  const pagedUpcomingList = useMemo(() => {
-    const start = (upcomingPage - 1) * PAGE_SIZE
-    return upcomingList.slice(start, start + PAGE_SIZE)
-  }, [upcomingList, upcomingPage])
+
+  const stats = useMemo(() => {
+    const today = new Date()
+    const todaySlots = mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, today))
+    const patientsTodaySet = new Set<string>()
+    for (const a of todaySlots) {
+      const pid = (a.patient_id || '').trim()
+      if (pid) patientsTodaySet.add(pid)
+    }
+    const pending = todaySlots.filter((a) => {
+      const s = (a.status || '').toLowerCase()
+      return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
+    }).length
+    const activeNow = visits.filter(
+      (v) =>
+        isSameCalendarDay(v.scheduled_start || v.created_at, today) &&
+        (v.status || '').toLowerCase() === 'in_progress',
+    ).length
+
+    return {
+      patientsToday: patientsTodaySet.size,
+      activeNow,
+      pending,
+      visitsTodayCount: todaySlots.length,
+    }
+  }, [mergedUpcoming, visits])
+
+  const upcomingList = useMemo(() => {
+    const now = new Date()
+    if (upcomingDayFilter === 'today') {
+      return mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, now))
+    }
+    return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
+  }, [mergedUpcoming, upcomingDayFilter])
+
+  const visibleUpcoming = useMemo(
+    () => upcomingList.slice(0, upcomingVisibleCount),
+    [upcomingList, upcomingVisibleCount],
+  )
 
   useEffect(() => {
-    setUpcomingPage(1)
-  }, [upcomingList.length])
-
-  useEffect(() => {
-    if (upcomingPage > upcomingTotalPages) setUpcomingPage(upcomingTotalPages)
-  }, [upcomingPage, upcomingTotalPages])
+    setUpcomingVisibleCount(INITIAL_UPCOMING_COUNT)
+  }, [upcomingDayFilter, upcomingList.length])
 
   const subtitleComplaint = (name: string, complaint: string) =>
     complaint && complaint.trim() ? complaint.trim() : `Visit — ${name}`
@@ -240,26 +229,26 @@ function ProviderDashboardPage() {
           )}
           {loading && <p className="text-sm text-gray-500">Loading dashboard…</p>}
 
-          <section className="rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-7 py-7 text-white shadow-lg">
-            <div className="flex flex-wrap items-start justify-between gap-5">
+          <section className="rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-8 py-12 text-white shadow-lg">
+            <div className="flex items-center justify-between gap-5">
               <div>
                 <p className="text-2xl font-bold text-gray-300">Welcome back, {headerName}</p>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex items-center gap-3">
                 <button
-                  className="flex w-fit items-center gap-2 rounded-xl border border-white/60 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-base font-semibold text-white hover:opacity-90"
                   onClick={() => navigate('/new-appointment')}
                   type="button"
                 >
-                  <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                  <span className="material-symbols-outlined text-[20px]">calendar_add_on</span>
                   New visit
                 </button>
                 <button
-                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-base font-semibold text-white hover:opacity-90"
                   onClick={() => navigate('/new-visit')}
                   type="button"
                 >
-                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                  <span className="material-symbols-outlined text-[20px]">person_add</span>
                   New patient registration
                 </button>
               </div>
@@ -270,7 +259,7 @@ function ProviderDashboardPage() {
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
               <p className="text-[13px] uppercase text-gray-500">Patients Today</p>
               <h3 className="mt-1 text-3xl font-bold">{stats.patientsToday}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">New register patients with a slot today</p>
+              <p className="mt-2 text-xs text-[#575e70]">Patients with today slot</p>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
               <p className="text-[13px] uppercase text-gray-500">Active Now</p>
@@ -285,14 +274,37 @@ function ProviderDashboardPage() {
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
               <p className="text-[13px] uppercase text-gray-500">Visit Today</p>
               <h3 className="mt-1 text-3xl font-bold">{stats.visitsTodayCount}</h3>
+              <p className="mt-2 text-xs text-[#575e70]">Total patients with today slot</p>
             </div>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
             <div className="border-b border-gray-100 p-6">
-              <h2 className="text-[18px] font-semibold">Upcoming Schedule</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-[24px] font-bold leading-tight">Upcoming Schedule</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                      upcomingDayFilter === 'today' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 text-[#171d16]'
+                    }`}
+                    onClick={() => setUpcomingDayFilter('today')}
+                    type="button"
+                  >
+                    Today
+                  </button>
+                  <button
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                      upcomingDayFilter === 'tomorrow' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 text-[#171d16]'
+                    }`}
+                    onClick={() => setUpcomingDayFilter('tomorrow')}
+                    type="button"
+                  >
+                    Tomorrow
+                  </button>
+                </div>
+              </div>
               <p className="mt-1 text-xs text-gray-500">
-                {upcomingList.length} today · upcoming and not yet seen
+                {upcomingList.length} {upcomingDayFilter} · total slots
               </p>
             </div>
             <div className="divide-y divide-gray-100">
@@ -301,7 +313,7 @@ function ProviderDashboardPage() {
                   No remaining slots today: either none are scheduled, all are completed or in progress, or times are in the past. Use Calendar to book or check visits.
                 </div>
               )}
-              {pagedUpcomingList.map((a, idx) => (
+              {visibleUpcoming.map((a, idx) => (
                 <button
                   key={`${a.visit_id}-${a.scheduled_start}-${a.patient_id}-${idx}`}
                   className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-gray-50"
@@ -319,30 +331,21 @@ function ProviderDashboardPage() {
             {!loading && upcomingList.length > 0 && (
               <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
                 <p className="text-sm text-gray-600">
-                  Showing {(upcomingPage - 1) * PAGE_SIZE + 1}-
-                  {Math.min(upcomingPage * PAGE_SIZE, upcomingList.length)} of {upcomingList.length}
+                  Showing 1-{Math.min(upcomingVisibleCount, upcomingList.length)} of {upcomingList.length}
                 </p>
-                <div className="flex items-center gap-2">
+                {upcomingVisibleCount < upcomingList.length ? (
                   <button
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={upcomingPage === 1}
-                    onClick={() => setUpcomingPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-[#171d16] hover:bg-gray-50"
+                    onClick={() =>
+                      setUpcomingVisibleCount((n) => Math.min(n + UPCOMING_LOAD_MORE_STEP, upcomingList.length))
+                    }
                     type="button"
                   >
-                    Prev
+                    View more
                   </button>
-                  <span className="text-sm text-gray-600">
-                    {upcomingPage} / {upcomingTotalPages}
-                  </span>
-                  <button
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={upcomingPage === upcomingTotalPages}
-                    onClick={() => setUpcomingPage((p) => Math.min(upcomingTotalPages, p + 1))}
-                    type="button"
-                  >
-                    Next
-                  </button>
-                </div>
+                ) : (
+                  <span className="text-sm text-gray-500">All shown</span>
+                )}
               </div>
             )}
           </div>

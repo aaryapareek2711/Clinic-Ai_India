@@ -203,7 +203,7 @@ function CalendarPage() {
           <div className="flex flex-wrap gap-3">
             <div className="relative" ref={importCsvRef}>
               <button
-                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white ${isImportCsvOpen ? 'bg-[#1e293b]' : 'bg-[#111827] hover:bg-[#1e293b]'}`}
+                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white ${isImportCsvOpen ? 'bg-[#15803d]' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}
                 onClick={() => setIsImportCsvOpen((o) => !o)}
                 type="button"
               >
@@ -283,9 +283,9 @@ function CalendarPage() {
               </div>
             </div>
             {viewMode !== 'day' && (
-              <div className="grid grid-cols-7 border-b border-gray-100">
+              <div className="grid grid-cols-7 border-b border-gray-100 bg-white">
                 {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
-                  <div key={d} className="border-r border-gray-100 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
+                  <div key={d} className="border-r border-gray-100 px-3 py-3 text-left text-[13px] font-medium text-[#3e4a3d] last:border-r-0">
                     {d}
                   </div>
                 ))}
@@ -306,11 +306,11 @@ function CalendarPage() {
                   })()
 
                   return (
-                    <div key={i} className={`border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0`}>
+                    <div key={i} className={`border-b border-r border-gray-100 px-3 py-2 transition-colors hover:bg-[#eff6ea] [&:nth-child(7n)]:border-r-0`}>
                       {!isBlank && (
                         <>
                           <button
-                            className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}
+                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md text-sm font-medium ${isToday ? 'bg-[#16a34a] px-1.5 py-0.5 text-white' : ''}`}
                             onClick={() => setFocusDate(new Date(year, month, dayNum))}
                             type="button"
                           >
