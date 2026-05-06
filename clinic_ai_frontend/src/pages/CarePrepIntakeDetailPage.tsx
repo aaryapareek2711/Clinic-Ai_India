@@ -130,7 +130,9 @@ export default function CarePrepIntakeDetailPage() {
   useEffect(() => {
     let cancelled = false
     const pref = preferredLanguageCode.trim().toLowerCase()
-    if (languageMode !== 'english' || !pref || pref === 'en') {
+    const shouldTranslateToEnglish = languageMode === 'english' && !!pref && pref !== 'en'
+    const shouldTranslateToPreferred = languageMode === 'preferred' && !!pref && pref !== 'en'
+    if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedRecapRows(null)
       setTranslatedChiefLabel(null)
       setTranslatingDisplay(false)
@@ -146,7 +148,8 @@ export default function CarePrepIntakeDetailPage() {
     setTranslatingDisplay(true)
     void (async () => {
       try {
-        const translated = await translateDisplayPayload(payload, 'English')
+        const targetLanguage = shouldTranslateToEnglish ? 'English' : languageLabel(preferredLanguageCode)
+        const translated = await translateDisplayPayload(payload, targetLanguage)
         if (!cancelled) {
           setTranslatedChiefLabel(String(translated.chiefLabel || ''))
           setTranslatedRecapRows(
@@ -290,8 +293,12 @@ export default function CarePrepIntakeDetailPage() {
                   {(intake?.status || 'unknown').replace(/_/g, ' ')}
                 </span>
                 <p className="text-xs text-slate-500">Display language: {activeLanguageLabel}</p>
-                {translatingDisplay && languageMode === 'english' && preferredLanguageCode.toLowerCase() !== 'en' && (
-                  <p className="text-xs text-slate-500">Translating display content to English…</p>
+                {translatingDisplay && preferredLanguageCode.toLowerCase() !== 'en' && (
+                  <p className="text-xs text-slate-500">
+                    {languageMode === 'english'
+                      ? 'Translating display content to English…'
+                      : `Translating display content to ${languageLabel(preferredLanguageCode)}…`}
+                  </p>
                 )}
               </div>
             </div>

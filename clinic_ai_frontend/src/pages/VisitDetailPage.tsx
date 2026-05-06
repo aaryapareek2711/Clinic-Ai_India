@@ -898,7 +898,7 @@ export default function VisitDetailPage() {
 
       let normalizedStatus =
         rawStatus === 'pending' && rawMessage.includes('not started') && hadRecentTranscriptionActivity
-          ? { ...status, status: 'processing', message: 'Transcription in progress' }
+          ? { ...status, status: 'queued', message: 'Transcription queued' }
           : status
 
       // Do not freeze controls on stale backend processing unless this visit had an explicit upload attempt.
@@ -973,9 +973,8 @@ export default function VisitDetailPage() {
   const isTranscriptionQueued = hasAttempt && queuedStatuses.has(effectiveStateLower)
   const isTranscriptionCurrentlyProcessing = hasAttempt && processingStatuses.has(effectiveStateLower)
   const isTranscriptionBusy = transcriptionUploading || isTranscriptionQueued || isTranscriptionCurrentlyProcessing
-  // Freeze controls only while transcription is actually processing/uploading.
-  // When queued, doctor should still be able to discard/re-record or change audio.
-  const isTranscriptionControlLocked = transcriptionUploading || isTranscriptionCurrentlyProcessing
+  // Freeze controls from upload accepted until terminal status.
+  const isTranscriptionControlLocked = isTranscriptionBusy
 
   const transcriptionStateLower = effectiveStateLower
 
