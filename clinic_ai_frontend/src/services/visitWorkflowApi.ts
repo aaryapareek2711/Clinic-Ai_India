@@ -86,6 +86,9 @@ export type ProviderVisitListItem = {
   actual_end?: string | null
   duration_minutes?: number | null
   chief_complaint?: string | null
+  intake_status?: string | null
+  intake_question_count?: number | null
+  intake_last_updated_at?: string | null
   created_at?: string
   updated_at?: string
 }

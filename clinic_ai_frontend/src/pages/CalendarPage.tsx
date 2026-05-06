@@ -14,6 +14,7 @@ import NotificationsDrawer from './NotificationsDrawer'
 
 type CalendarViewMode = 'month' | 'week' | 'day'
 const AUTO_REFRESH_MS = 10000
+const CALENDAR_APPOINTMENTS_CACHE_KEY = 'calendar:appointments:default'
 
 function escapeCsvCell(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -150,6 +151,11 @@ function CalendarPage() {
       const appointmentsRes = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
       if (!isMountedRef.current) return
       setAppointments(appointmentsRes)
+      try {
+        sessionStorage.setItem(CALENDAR_APPOINTMENTS_CACHE_KEY, JSON.stringify(appointmentsRes))
+      } catch {
+        // non-blocking cache write
+      }
       setLoadError(null)
       setLoading(false)
     } catch (e) {
@@ -161,6 +167,18 @@ function CalendarPage() {
 
   useEffect(() => {
     let cancelled = false
+    try {
+      const raw = sessionStorage.getItem(CALENDAR_APPOINTMENTS_CACHE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as ProviderUpcomingAppointment[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAppointments(parsed)
+          setLoading(false)
+        }
+      }
+    } catch {
+      // ignore cache parse issues
+    }
     void (async () => {
       await loadCalendarData(true)
       if (cancelled) return
@@ -336,6 +354,21 @@ function CalendarPage() {
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-8">
+            {viewMode === 'day' && (
+              <div className="border-b border-gray-100 px-6 py-2">
+                <button
+                  aria-label="Back to calendar"
+                  className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100"
+                  onClick={() => {
+                    setViewMonth(cloneMonth(focusDate))
+                    setViewMode('month')
+                  }}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined">arrow_back</span>
+                </button>
+              </div>
+            )}
             <div className="flex items-center justify-between border-b border-gray-100 p-6">
               <div className="flex items-center gap-3">
                 <button aria-label="Previous month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={prevMonth} type="button">

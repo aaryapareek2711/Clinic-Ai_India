@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { DEFAULT_PROVIDER_ID, fetchIntakeSession, fetchProviderVisits } from '../services/visitWorkflowApi'
-import type { IntakeSessionResponse, ProviderVisitListItem } from '../services/visitWorkflowApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderVisits } from '../services/visitWorkflowApi'
+import type { ProviderVisitListItem } from '../services/visitWorkflowApi'
 
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -62,19 +62,19 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
-function mapVisitAndIntake(visit: ProviderVisitListItem, intake: IntakeSessionResponse | null): QueueRow {
+function mapVisitAndIntake(visit: ProviderVisitListItem): QueueRow {
   const visitId = visit.visit_id || visit.id
   const patientId = visit.patient_id || ''
   const name = toDisplayName(visit.patient_name)
-  const qaLen = intake?.question_answers?.length ?? 0
-  const st = (intake?.status ?? 'not_started').toLowerCase()
-  const touchedAt = intake?.updated_at || intake?.question_answers?.[qaLen - 1]?.answered_at || visit.created_at
+  const qaLen = Number(visit.intake_question_count ?? 0)
+  const st = String(visit.intake_status || 'not_started').toLowerCase()
+  const touchedAt = visit.intake_last_updated_at || visit.updated_at || visit.created_at
 
   let statusKind: 'complete' | 'progress' = 'progress'
   let progressPct = Math.min(95, 10 + qaLen * 12)
   let action: 'review' | 'waiting' = 'waiting'
 
-  if (!intake || st === 'not_started') {
+  if (st === 'not_started') {
     progressPct = 5
     action = 'waiting'
   } else if (st === 'stopped' && qaLen > 0) {
@@ -168,13 +168,7 @@ export default function CarePrepPage() {
           })
           .slice(0, 40)
 
-        const intakes = await Promise.all(
-          candidate.map((v) =>
-            fetchIntakeSession(v.visit_id || v.id).catch(() => null),
-          ),
-        )
-
-        const mapped = candidate.map((v, i) => mapVisitAndIntake(v, intakes[i]))
+        const mapped = candidate.map((v) => mapVisitAndIntake(v))
         if (!cancelled) setRows(mapped)
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e))
@@ -319,6 +313,13 @@ export default function CarePrepPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {loading && (
+                  <tr>
+                    <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={3}>
+                      Loading patients…
+                    </td>
+                  </tr>
+                )}
                 {!loading && visiblePatients.length === 0 && (
                   <tr>
                     <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={3}>
