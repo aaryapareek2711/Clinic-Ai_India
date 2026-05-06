@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
@@ -196,14 +197,14 @@ class IntakeChatService:
                     settings.whatsapp_intake_template_name,
                     self._mask_phone_number(normalized_to_number),
                 )
-                self.whatsapp.send_text(normalized_to_number, opening_message)
+                self._send_text_with_typing(normalized_to_number, opening_message)
                 logger.info(
                     "whatsapp_intake_opening_sent visit_id=%s channel=text to=%s reason=template_failure",
                     visit_id,
                     self._mask_phone_number(normalized_to_number),
                 )
         else:
-            self.whatsapp.send_text(normalized_to_number, opening_message)
+            self._send_text_with_typing(normalized_to_number, opening_message)
             logger.info(
                 "whatsapp_intake_opening_sent visit_id=%s channel=text to=%s reason=template_not_configured",
                 visit_id,
@@ -1407,13 +1408,18 @@ class IntakeChatService:
 
         If typing indicator call fails, message send must still proceed.
         """
+        typing_sent = False
         try:
             self.whatsapp.send_typing_indicator(to_number)
+            typing_sent = True
         except Exception:
             logger.exception(
                 "whatsapp_typing_indicator_failed to=%s",
                 self._mask_phone_number(str(to_number or "")),
             )
+        if typing_sent:
+            # Keep a short delay so the patient can see WhatsApp typing dots.
+            time.sleep(1.2)
         self.whatsapp.send_text(to_number, message)
 
     @staticmethod

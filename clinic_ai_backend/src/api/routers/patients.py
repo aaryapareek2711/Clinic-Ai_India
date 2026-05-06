@@ -179,6 +179,18 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
     )
     is_walk_in = _is_walk_in_visit_type(payload.visit_type)
     visit_type_stored = "walk_in" if is_walk_in else (str(payload.visit_type or "").strip() or "scheduled_visit")
+    pending_schedule_for_intake = scheduled_start is None
+
+    # Registration-only flow: until appointment is booked, do not create a visit.
+    if pending_schedule_for_intake:
+        return PatientRegisterResponse(
+            patient_id=encode_patient_id(internal_patient_id),
+            visit_id=None,
+            whatsapp_triggered=False,
+            existing_patient=existing_patient,
+            pending_schedule_for_intake=True,
+            workflow_skip_previsit=is_walk_in,
+        )
 
     reusable_visit = _find_reusable_active_visit(db, patient_id=internal_patient_id)
     if reusable_visit:
@@ -212,7 +224,6 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         )
     whatsapp_triggered = False
     phone_number = str(payload.phone_number or "").strip()
-    pending_schedule_for_intake = scheduled_start is None
     if scheduled_start and phone_number and not is_walk_in:
         try:
             IntakeChatService().start_intake(
