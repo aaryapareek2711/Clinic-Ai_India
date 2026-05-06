@@ -58,19 +58,6 @@ def _normalize_upload_content_type(raw: str) -> str:
     return s
 
 
-def _map_job_status_to_poll_payload(job_status: str, error_message: str | None = None) -> dict:
-    s = str(job_status or "").strip().lower()
-    if s in {"queued", "pending"}:
-        return {"status": "queued", "message": "Transcription queued"}
-    if s in {"processing", "in_progress", "running", "started"}:
-        return {"status": "processing", "message": "Transcription in progress"}
-    if s == "completed":
-        return {"status": "completed", "message": "Transcription completed successfully"}
-    if s == "failed":
-        return {"status": "failed", "message": f"Transcription failed: {error_message or 'Unknown error'}"}
-    return {"status": "pending", "message": f"Transcription status: {s or 'pending'}"}
-
-
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
 async def upload_transcription_audio(
     patient_id: str = Form(...),
@@ -215,37 +202,11 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
     internal_vid = unquote(visit_id)
     repo = VisitTranscriptionRepository()
     session = repo.get_session(patient_id=internal_pid, visit_id=internal_vid)
-    db = get_database()
-    latest_job = db.transcription_jobs.find_one(
-        {"patient_id": internal_pid, "visit_id": internal_vid},
-        sort=[("created_at", -1)],
-    )
     if not session:
-        if latest_job:
-            mapped = _map_job_status_to_poll_payload(
-                str(latest_job.get("status") or "pending"),
-                str(latest_job.get("error_message") or "").strip() or None,
-            )
-            return {
-                "status": mapped["status"],
-                "message": mapped["message"],
-                "enqueued_at": _iso_utc(latest_job.get("created_at")),
-                "started_at": _iso_utc(latest_job.get("started_at")),
-                "completed_at": _iso_utc(latest_job.get("completed_at")),
-                "error_message": latest_job.get("error_message"),
-            }
         return {"status": "pending", "message": "Transcription not started"}
 
     session.pop("_id", None)
     transcription_status = str(session.get("transcription_status") or "pending").lower()
-    if latest_job:
-        latest_job_status = str(latest_job.get("status") or "").strip().lower()
-        if transcription_status in {"pending", "queued"} and latest_job_status in {"processing", "in_progress", "running", "started"}:
-            transcription_status = "processing"
-        if transcription_status in {"pending", "queued"} and latest_job_status in {"queued", "pending"}:
-            # If there is a job but we only see "pending/queued" from the embedded snapshot,
-            # normalize to "queued" so the UI doesn't misclassify it.
-            transcription_status = "queued"
     now = datetime.now(timezone.utc)
 
     started_at = session.get("started_at")

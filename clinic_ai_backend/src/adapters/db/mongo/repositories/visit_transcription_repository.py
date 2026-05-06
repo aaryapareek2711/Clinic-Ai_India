@@ -140,8 +140,13 @@ class VisitTranscriptionRepository:
         session = dict(visit.get("transcription_session") or {})
         if not session:
             return None
-        if str(session.get("patient_id") or "") != str(patient_id):
-            return None
+        # Prefer visit-scoped transcription state as source of truth.
+        # Keep tolerant matching here because historical docs can carry mixed patient id formats.
+        session_patient_id = str(session.get("patient_id") or "")
+        if session_patient_id and session_patient_id != str(patient_id):
+            visit_patient_id = str(visit.get("patient_id") or "")
+            if visit_patient_id and visit_patient_id != str(patient_id):
+                return None
         return session
 
     def save_structured_dialogue(self, *, patient_id: str, visit_id: str, dialogue: list[dict[str, str]]) -> bool:
