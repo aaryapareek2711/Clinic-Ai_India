@@ -253,6 +253,7 @@ export default function VisitDetailPage() {
   const [vitalsMessage, setVitalsMessage] = useState<string | null>(null)
   const [vitalsSubmitting, setVitalsSubmitting] = useState(false)
   const [vitalsLocked, setVitalsLocked] = useState(false)
+  const [vitalsFormVisible, setVitalsFormVisible] = useState(false)
   const visitIdRef = useRef('')
   const patientIdRef = useRef('')
   const vitalsFormRef = useRef<VitalsFormResponse | null>(null)
@@ -402,6 +403,7 @@ export default function VisitDetailPage() {
     setVitalsMessage(null)
     setVitalsSubmitting(false)
     setVitalsLocked(false)
+    setVitalsFormVisible(false)
     setVitalsStaffName('Nurse')
     setTranscriptionStatus(null)
     setTranscriptionMessage(null)
@@ -610,6 +612,24 @@ export default function VisitDetailPage() {
     [vitalsSubmitting],
   )
 
+  const handleGenerateVitalsForm = useCallback(async () => {
+    if (!patientId || !visitId) return
+    try {
+      const form = await generateVitalsForm(patientId, visitId)
+      setVitalsForm(form)
+      const nextValues: Record<string, string> = {}
+      form.fields.forEach((f) => {
+        nextValues[f.key] = ''
+      })
+      setVitalsValues(nextValues)
+      setVitalsMessage(form.reason)
+      setVitalsLocked(false)
+      setVitalsFormVisible(true)
+    } catch (e) {
+      setVitalsMessage(getApiErrorMessage(e))
+    }
+  }, [patientId, visitId])
+
   useEffect(() => {
     if (loading) return
     if (!patientId || !visitId) return
@@ -620,6 +640,7 @@ export default function VisitDetailPage() {
       setVitalsForm(null)
       setVitalsValues({})
       setVitalsLocked(false)
+      setVitalsFormVisible(false)
       setVitalsMessage('Vitals are hidden while transcription is processing. They will be available after transcription completes.')
       return
     }
@@ -627,31 +648,30 @@ export default function VisitDetailPage() {
     let cancelled = false
     void (async () => {
       try {
-        const [form, latest, latestPostVisit] = await Promise.all([
-          vitalsForm ? Promise.resolve(vitalsForm) : generateVitalsForm(patientId, visitId),
+        const [latest, latestPostVisit] = await Promise.all([
           fetchLatestVitalsForVisit(patientId, visitId),
-          postVisitSummary ? Promise.resolve(postVisitSummary) : fetchLatestPostVisitSummary(patientId, visitId),
+          postVisitSummary
+            ? Promise.resolve(postVisitSummary)
+            : fetchLatestPostVisitSummary(patientId, visitId),
         ])
         if (cancelled) return
-        if (!vitalsForm) {
+        if (!vitalsForm && latest) {
+          const form = await generateVitalsForm(patientId, visitId)
+          if (cancelled) return
           setVitalsForm(form)
           const hydratedValues: Record<string, string> = {}
           form.fields.forEach((f) => {
-            const raw = latest?.values?.[f.key]
+            const raw = latest.values?.[f.key]
             hydratedValues[f.key] = raw == null ? '' : String(raw)
           })
           setVitalsValues(hydratedValues)
-          if (latest) {
-            setVitalsStaffName((latest.staff_name || '').trim() || 'Nurse')
-            const rawId = latest.vitals_id
-            const short = typeof rawId === 'string' && rawId.length >= 8 ? rawId.slice(-8) : rawId || 'saved'
-            const at = latest.submitted_at ? ` · ${new Date(latest.submitted_at).toLocaleTimeString()}` : ''
-            setVitalsMessage(`Vitals submitted (${short})${at}`)
-            setVitalsLocked(true)
-          } else {
-            setVitalsMessage(form.reason)
-            setVitalsLocked(false)
-          }
+          setVitalsStaffName((latest.staff_name || '').trim() || 'Nurse')
+          const rawId = latest.vitals_id
+          const short = typeof rawId === 'string' && rawId.length >= 8 ? rawId.slice(-8) : rawId || 'saved'
+          const at = latest.submitted_at ? ` · ${new Date(latest.submitted_at).toLocaleTimeString()}` : ''
+          setVitalsMessage(`Vitals submitted (${short})${at}`)
+          setVitalsLocked(true)
+          setVitalsFormVisible(true)
         }
         if (!postVisitSummary && latestPostVisit) {
           setPostVisitSummary(latestPostVisit)
@@ -1363,31 +1383,14 @@ export default function VisitDetailPage() {
                     <button
                       className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
                       disabled={isTranscriptionCurrentlyProcessing}
-                      onClick={() => {
-                        if (!patientId || !visitId) return
-                        void (async () => {
-                          try {
-                            const form = await generateVitalsForm(patientId, visitId)
-                            setVitalsForm(form)
-                            const nextValues: Record<string, string> = {}
-                            form.fields.forEach((f) => {
-                              nextValues[f.key] = ''
-                            })
-                            setVitalsValues(nextValues)
-                            setVitalsMessage(form.reason)
-                            setVitalsLocked(false)
-                          } catch (e) {
-                            setVitalsMessage(getApiErrorMessage(e))
-                          }
-                        })()
-                      }}
+                      onClick={() => void handleGenerateVitalsForm()}
                       type="button"
                     >
                       Generate Vitals Form
                     </button>
                   </div>
                   {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
-                  {!isTranscriptionCurrentlyProcessing && vitalsForm && (
+                  {!isTranscriptionCurrentlyProcessing && vitalsFormVisible && vitalsForm && (
                     <>
                       <label className="block text-xs font-semibold text-[#171d16]">
                         Staff Name
@@ -1401,7 +1404,7 @@ export default function VisitDetailPage() {
                       <div className="grid gap-3 md:grid-cols-2">
                         {vitalsForm.fields.map((field) => (
                           <label className="block text-xs font-semibold text-[#171d16]" key={field.key}>
-                            {isTemperatureCelsiusField(field.key, field.unit) ? 'Temperature (F)' : field.label} ({field.key})
+                            {isTemperatureCelsiusField(field.key, field.unit) ? 'Temperature (F)' : field.label}
                             <input
                               className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
                               disabled={vitalsLocked || vitalsSubmitting}
@@ -1645,16 +1648,6 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-2 border-t border-[#e9f0e5] pt-6">
-                    <button
-                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
-                      onClick={() => void refreshTranscriptionStatus()}
-                      disabled={!patientId || !visitId}
-                      type="button"
-                    >
-                      Check transcription status
-                    </button>
-                  </div>
                   {transcriptionMessage && !isTranscriptionControlLocked && (
                     <p className="text-xs text-[#575e70]" role="status">
                       {transcriptionMessage}
