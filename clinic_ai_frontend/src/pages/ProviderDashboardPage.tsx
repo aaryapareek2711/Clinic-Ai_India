@@ -190,11 +190,8 @@ function ProviderDashboardPage() {
       const s = (a.status || '').toLowerCase()
       return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
     }).length
-    const activeNow = selectedDayAllSlots.filter((a) => (a.status || '').toLowerCase() === 'in_progress').length
-
     return {
       patientsForDay: patientsForDaySet.size,
-      activeNow,
       pending,
       visitsForDayCount: selectedDayAllSlots.length,
     }
@@ -271,16 +268,11 @@ function ProviderDashboardPage() {
             </div>
           </section>
 
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Patients {dayLabel}</p>
+              <p className="text-[13px] uppercase text-gray-500">New patients {dayLabel}</p>
               <h3 className="mt-1 text-3xl font-bold">{stats.patientsForDay}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Patients with {upcomingDayFilter} slot</p>
-            </div>
-            <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Active {dayLabel}</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.activeNow}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Visits marked in progress</p>
+              <p className="mt-2 text-xs text-[#575e70]">Newly registered patients with today&apos;s slot</p>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
               <p className="text-[13px] uppercase text-gray-500">Pending {dayLabel}</p>

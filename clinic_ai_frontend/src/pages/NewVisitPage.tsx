@@ -434,6 +434,33 @@ function NewVisitPage() {
                   </div>
                 </div>
               </div>
+              <div className="rounded-xl border border-[#bdcaba] bg-[#e3eadf] p-6">
+                <h4 className="mb-4 text-sm font-semibold">Summary Preview</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#3e4a3d]">Patient</span>
+                    <span className="font-medium">{fullName.trim() || '—'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#3e4a3d]">Slot</span>
+                    <span className="font-medium">
+                      {selectedSlots.length > 0
+                        ? visitKind === 'walk_in'
+                          ? `${appointmentDate} ${formatChipTime(selectedSlot?.startIso || '')} (${schedule.defaultSlotMinutes || 15}m) · Walk-in`
+                          : `${selectedSlots.length} slot(s) selected on ${appointmentDate}`
+                        : visitKind === 'walk_in'
+                          ? 'Select walk-in time'
+                          : 'Open / TBD'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#3e4a3d]">Mobile (saved as)</span>
+                    <span className="max-w-[60%] text-right font-mono text-xs font-medium">
+                      {normalizeIndiaMobileForApi(mobile) ?? '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-6 lg:col-span-5">
@@ -579,33 +606,6 @@ function NewVisitPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#bdcaba] bg-[#e3eadf] p-6">
-                <h4 className="mb-4 text-sm font-semibold">Summary Preview</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#3e4a3d]">Patient</span>
-                    <span className="font-medium">{fullName.trim() || '—'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#3e4a3d]">Slot</span>
-                    <span className="font-medium">
-                      {selectedSlots.length > 0
-                        ? visitKind === 'walk_in'
-                          ? `${appointmentDate} ${formatChipTime(selectedSlot?.startIso || '')} (${schedule.defaultSlotMinutes || 15}m) · Walk-in`
-                          : `${selectedSlots.length} slot(s) selected on ${appointmentDate}`
-                        : visitKind === 'walk_in'
-                          ? 'Select walk-in time'
-                          : 'Open / TBD'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#3e4a3d]">Mobile (saved as)</span>
-                    <span className="max-w-[60%] text-right font-mono text-xs font-medium">
-                      {normalizeIndiaMobileForApi(mobile) ?? '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

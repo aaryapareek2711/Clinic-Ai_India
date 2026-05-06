@@ -53,10 +53,19 @@ function submittedLabelMinutes(mins: number): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
+function toDisplayName(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'Patient'
+  return raw
+    .split(/\s+/)
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ')
+}
+
 function mapVisitAndIntake(visit: ProviderVisitListItem, intake: IntakeSessionResponse | null): QueueRow {
   const visitId = visit.visit_id || visit.id
   const patientId = visit.patient_id || ''
-  const name = visit.patient_name?.trim() || 'Patient'
+  const name = toDisplayName(visit.patient_name)
   const qaLen = intake?.question_answers?.length ?? 0
   const st = (intake?.status ?? 'not_started').toLowerCase()
   const touchedAt = intake?.updated_at || intake?.question_answers?.[qaLen - 1]?.answered_at || visit.created_at

@@ -2,20 +2,44 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getStoredAuthProfile } from '../lib/authSession'
+import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { fetchMyProfile, getApiErrorMessage, type ProviderProfile } from '../services/profileApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderVisits, type ProviderVisitListItem } from '../services/visitWorkflowApi'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
-type AvailabilityRange = {
-  id: string
-  fromDay: string
-  toDay: string
-  morningStart: string
-  morningEnd: string
-  eveningStart: string
-  eveningEnd: string
+type DayAvailability = {
+  key: string
+  closed: boolean
+  startLabel: string
+  endLabel: string
 }
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function formatTimeLabel(hhmm: string): string {
+  const [hRaw, mRaw] = hhmm.split(':')
+  const h = Number(hRaw)
+  const m = Number(mRaw)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hr12 = h % 12 === 0 ? 12 : h % 12
+  return `${hr12}:${pad2(m)} ${period}`
+}
+
+function split24hToClockAndMeridiem(hhmm24: string): { clock: string; meridiem: 'AM' | 'PM' } | null {
+  const [hRaw, mRaw] = hhmm24.split(':')
+  const h = Number(hRaw)
+  const m = Number(mRaw)
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
+  const meridiem: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return { clock: `${pad2(h12)}:${pad2(m)}`, meridiem }
+}
+
+const DAY_AVAILABILITY_LOCAL_KEY = 'doctor_day_availability_settings'
 
 function SettingsPage() {
   const navigate = useNavigate()
@@ -142,28 +166,73 @@ function SettingsPage() {
     { key: 'sunday', label: 'Sunday' },
   ]
 
-  const [availabilityRanges, setAvailabilityRanges] = useState<AvailabilityRange[]>([
-    {
-      id: 'range-1',
-      fromDay: 'monday',
-      toDay: 'wednesday',
-      morningStart: '09:00',
-      morningEnd: '12:00',
-      eveningStart: '15:00',
-      eveningEnd: '18:00',
-    },
-    {
-      id: 'range-2',
-      fromDay: 'thursday',
-      toDay: 'saturday',
-      morningStart: '09:00',
-      morningEnd: '12:00',
-      eveningStart: '15:00',
-      eveningEnd: '18:00',
-    },
-  ])
-  const [closedDays, setClosedDays] = useState<string[]>(['wednesday', 'sunday'])
-  const [availabilitySaved, setAvailabilitySaved] = useState<string | null>(null)
+  const [dayAvailability, setDayAvailability] = useState<DayAvailability[]>(
+    DAY_OPTIONS.map((d) => ({
+      key: d.key,
+      closed: ['wednesday', 'sunday'].includes(d.key),
+      startLabel: formatTimeLabel('09:00'),
+      endLabel: formatTimeLabel('17:00'),
+    })),
+  )
+
+  useEffect(() => {
+    const schedule = getDoctorScheduleSettings()
+    const defaultStart = split24hToClockAndMeridiem(schedule.opdStart) ?? { clock: '09:00', meridiem: 'AM' as const }
+    const defaultEnd = split24hToClockAndMeridiem(schedule.opdEnd) ?? { clock: '05:00', meridiem: 'PM' as const }
+    const defaultStartLabel = `${defaultStart.clock} ${defaultStart.meridiem}`
+    const defaultEndLabel = `${defaultEnd.clock} ${defaultEnd.meridiem}`
+
+    try {
+      const raw = localStorage.getItem(DAY_AVAILABILITY_LOCAL_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown
+        if (Array.isArray(parsed)) {
+          const rows: DayAvailability[] = DAY_OPTIONS.map((d) => {
+            const item = parsed.find((x) => (x as { key?: string }).key === d.key) as
+              | {
+                  key?: string
+                  closed?: unknown
+                  startClock?: unknown
+                  startMeridiem?: unknown
+                  endClock?: unknown
+                  endMeridiem?: unknown
+                  start?: unknown
+                  end?: unknown
+                }
+              | undefined
+            const closed = typeof item?.closed === 'boolean' ? item.closed : ['wednesday', 'sunday'].includes(d.key)
+            let startLabel = defaultStartLabel
+            let endLabel = defaultEndLabel
+
+            if (typeof item?.startClock === 'string' && typeof item?.startMeridiem === 'string') {
+              startLabel = `${item.startClock} ${item.startMeridiem.toUpperCase()}`
+            } else if (typeof item?.start === 'string') {
+              startLabel = formatTimeLabel(item.start)
+            }
+            if (typeof item?.endClock === 'string' && typeof item?.endMeridiem === 'string') {
+              endLabel = `${item.endClock} ${item.endMeridiem.toUpperCase()}`
+            } else if (typeof item?.end === 'string') {
+              endLabel = formatTimeLabel(item.end)
+            }
+            return { key: d.key, closed, startLabel, endLabel }
+          })
+          setDayAvailability(rows)
+          return
+        }
+      }
+    } catch {
+      // ignore parse errors and fall back to OPD defaults
+    }
+
+    setDayAvailability(
+      DAY_OPTIONS.map((d) => ({
+        key: d.key,
+        closed: ['wednesday', 'sunday'].includes(d.key),
+        startLabel: defaultStartLabel,
+        endLabel: defaultEndLabel,
+      })),
+    )
+  }, [])
 
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-manrope">
@@ -316,158 +385,33 @@ function SettingsPage() {
               </div>
 
               <div className="bg-white border border-gray-200 rounded-xl p-8">
-                <h3 className="text-[18px] leading-[1.4] font-semibold text-[#171d16] mb-4">Availability</h3>
+                <h3 className="text-[18px] leading-[1.4] font-semibold text-[#171d16] mb-4 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#006b2c]">schedule</span>
+                  Availability Settings
+                </h3>
                 <div className="space-y-5">
-                  {availabilityRanges.map((range, idx) => (
-                    <div className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-3" key={range.id}>
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Range {idx + 1}</p>
-                        {availabilityRanges.length > 1 && (
-                          <button
-                            className="text-xs font-semibold text-[#ba1a1a] hover:underline"
-                            onClick={() => setAvailabilityRanges((prev) => prev.filter((r) => r.id !== range.id))}
-                            type="button"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 text-sm">
-                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[4.5rem_1fr_1fr]">
-                          <span className="text-gray-500">Days</span>
-                          <select
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, fromDay: e.target.value } : r)),
-                              )
-                            }
-                            value={range.fromDay}
-                          >
-                            {DAY_OPTIONS.map((d) => (
-                              <option key={`${range.id}-from-${d.key}`} value={d.key}>
-                                {d.label}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, toDay: e.target.value } : r)),
-                              )
-                            }
-                            value={range.toDay}
-                          >
-                            {DAY_OPTIONS.map((d) => (
-                              <option key={`${range.id}-to-${d.key}`} value={d.key}>
-                                {d.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[4.5rem_1fr_1fr]">
-                          <span className="text-gray-500">Morning</span>
-                          <input
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, morningStart: e.target.value } : r)),
-                              )
-                            }
-                            type="time"
-                            value={range.morningStart}
-                          />
-                          <input
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, morningEnd: e.target.value } : r)),
-                              )
-                            }
-                            type="time"
-                            value={range.morningEnd}
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[4.5rem_1fr_1fr]">
-                          <span className="text-gray-500">Evening</span>
-                          <input
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, eveningStart: e.target.value } : r)),
-                              )
-                            }
-                            type="time"
-                            value={range.eveningStart}
-                          />
-                          <input
-                            className="rounded-md border border-gray-200 px-2 py-1.5 text-[#171d16]"
-                            onChange={(e) =>
-                              setAvailabilityRanges((prev) =>
-                                prev.map((r) => (r.id === range.id ? { ...r, eveningEnd: e.target.value } : r)),
-                              )
-                            }
-                            type="time"
-                            value={range.eveningEnd}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
-                    onClick={() =>
-                      setAvailabilityRanges((prev) => [
-                        ...prev,
-                        {
-                          id: `range-${Date.now()}`,
-                          fromDay: 'monday',
-                          toDay: 'monday',
-                          morningStart: '09:00',
-                          morningEnd: '12:00',
-                          eveningStart: '15:00',
-                          eveningEnd: '18:00',
-                        },
-                      ])
-                    }
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-base">add</span>
-                    Add Range
-                  </button>
-                  <div className="rounded-lg border border-gray-100 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Closed Days (Overrides ranges)</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+                  <div className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-4">
+                    <div className="space-y-3">
                       {DAY_OPTIONS.map((d) => {
-                        const checked = closedDays.includes(d.key)
+                        const row = dayAvailability.find((x) => x.key === d.key)
+                        if (!row) return null
                         return (
-                          <label className="flex items-center gap-2" key={`closed-${d.key}`}>
-                            <input
-                              checked={checked}
-                              className="h-4 w-4 rounded border-gray-300 text-[#16a34a]"
-                              onChange={(e) =>
-                                setClosedDays((prev) =>
-                                  e.target.checked ? [...prev, d.key] : prev.filter((x) => x !== d.key),
-                                )
-                              }
-                              type="checkbox"
-                            />
-                            <span className={checked ? 'font-semibold text-[#ba1a1a]' : 'text-[#171d16]'}>{d.label}</span>
-                          </label>
+                          <div key={d.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-[120px]">
+                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">{d.label}</p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              {row.closed ? (
+                                <span className="text-sm font-semibold text-[#ba1a1a]">Closed</span>
+                              ) : (
+                                <span className="text-sm font-medium text-[#171d16]">{row.startLabel} to {row.endLabel}</span>
+                              )}
+                            </div>
+                          </div>
                         )
                       })}
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-2">
-                    {availabilitySaved ? <p className="text-xs text-[#15803d]">{availabilitySaved}</p> : <span />}
-                    <button
-                      className="rounded-lg bg-[#16a34a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#15803d]"
-                      onClick={() => setAvailabilitySaved('Availability updated')}
-                      type="button"
-                    >
-                      Save Availability
-                    </button>
                   </div>
                 </div>
               </div>
