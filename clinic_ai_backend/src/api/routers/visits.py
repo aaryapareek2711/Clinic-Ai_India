@@ -301,12 +301,26 @@ def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRe
 
 
 @router.get("/provider/{provider_id}/upcoming")
-def list_provider_upcoming_visits(provider_id: str) -> dict:
+def list_provider_upcoming_visits(
+    provider_id: str,
+    from_date: str | None = Query(default=None, description="Optional lower bound ISO (inclusive) for scheduled_start"),
+    to_date: str | None = Query(default=None, description="Optional upper bound ISO (inclusive) for scheduled_start"),
+) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
     db = get_database()
     # Keep this endpoint fast: don't return the full visit history.
     # Without a limit/projection, the backend can hang on Render and the frontend shows "Failed to load visits".
-    UPCOMING_LIMIT = 200
+    UPCOMING_LIMIT = 120
+    try:
+        db.visits.create_index([("provider_id", 1), ("scheduled_start", 1), ("status", 1)])
+    except Exception:
+        # Non-blocking optimization guard.
+        pass
+    scheduled_bounds: dict = {"$exists": True, "$ne": None, "$ne": ""}
+    if from_date and str(from_date).strip():
+        scheduled_bounds["$gte"] = str(from_date).strip()
+    if to_date and str(to_date).strip():
+        scheduled_bounds["$lte"] = str(to_date).strip()
     records = list(
         db.visits.find(
             {
@@ -318,7 +332,7 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                     {"provider_id": {"$exists": False}},
                 ],
                 # Queue/board UI only cares about items with an appointment time fixed.
-                "scheduled_start": {"$exists": True, "$ne": None, "$ne": ""},
+                "scheduled_start": scheduled_bounds,
             },
             {
                 "_id": 0,
