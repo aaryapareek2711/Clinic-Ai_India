@@ -405,7 +405,7 @@ function VisitsPage() {
               onClick={() => navigate('/start-visit')}
               type="button"
             >
-              Start Visit
+              New Visit
             </button>
           </div>
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">

@@ -85,12 +85,6 @@ function formatChipTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-function safeVisitId(value: unknown): string | null {
-  const s = String(value ?? '').trim()
-  if (!s || s === 'undefined' || s === 'null') return null
-  return s
-}
-
 function computeSlotsForDate(params: {
   dateStr: string
   appointmentDuration: number
@@ -315,44 +309,31 @@ function NewAppointmentPage() {
         setError('One or more selected slots are in the past. Choose future date/time only.')
         return
       }
-      if (selectedDateBooked.length + uniqueStarts.length > DAILY_SLOT_LIMIT) {
+      // Multiple selected blocks are treated as one longer appointment.
+      if (selectedDateBooked.length + 1 > DAILY_SLOT_LIMIT) {
         setError(`This date already has ${DAILY_SLOT_LIMIT} appointments. Please choose another date.`)
         return
       }
     }
     try {
       setSubmitting(true)
-      const created =
-        visitKind === 'walk_in'
-          ? [
-              await createVisitFromPatient(selectedId, {
-                provider_id: DEFAULT_PROVIDER_ID,
-                scheduled_start: null,
-                visit_type: 'walk_in',
-              }),
-            ]
-          : await Promise.all(
-              uniqueStarts.map(async (scheduled_start) => {
-                const res = await createVisitFromPatient(selectedId, {
-                  provider_id: DEFAULT_PROVIDER_ID,
-                  scheduled_start,
-                  visit_type: 'scheduled',
-                })
-                persistAppointmentDuration(scheduled_start, appointmentDuration)
-                return res
-              }),
-            )
-      if (created.length === 1) {
-        const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-        const vid = safeVisitId(created[0]?.visit_id)
-        if (!vid) {
-          navigate('/visits', { replace: true })
-        } else {
-          navigate(`/visits/detail?visitId=${encodeURIComponent(vid)}&tab=${targetTab}`, { replace: true })
-        }
+      if (visitKind === 'walk_in') {
+        await createVisitFromPatient(selectedId, {
+          provider_id: DEFAULT_PROVIDER_ID,
+          scheduled_start: null,
+          visit_type: 'walk_in',
+        })
       } else {
-        navigate('/visits', { replace: true })
+        const firstStart = uniqueStarts[0]
+        const totalDuration = uniqueStarts.length * appointmentDuration
+        await createVisitFromPatient(selectedId, {
+          provider_id: DEFAULT_PROVIDER_ID,
+          scheduled_start: firstStart,
+          visit_type: 'scheduled',
+        })
+        persistAppointmentDuration(firstStart, totalDuration)
       }
+      navigate('/dashboard', { replace: true })
     } catch (e) {
       setError(getApiErrorMessage(e))
     } finally {
@@ -367,7 +348,7 @@ function NewAppointmentPage() {
           <button className="rounded-full p-2 text-gray-500 transition-all hover:bg-gray-50" onClick={() => navigate('/calendar')} type="button">
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
-          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Start Visit</h2>
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">New Visit</h2>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex gap-4">

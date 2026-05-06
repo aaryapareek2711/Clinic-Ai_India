@@ -277,7 +277,7 @@ function CalendarPage() {
               onClick={() => navigate('/start-visit')}
               type="button"
             >
-              Start visit
+              New Visit
             </button>
           </div>
         </div>

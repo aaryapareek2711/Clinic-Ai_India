@@ -263,7 +263,7 @@ function ProviderDashboardPage() {
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[20px]">calendar_add_on</span>
-                  Start visit
+                  New Visit
                 </button>
                 <button
                   className="flex w-fit items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-base font-semibold text-white hover:bg-white/20"

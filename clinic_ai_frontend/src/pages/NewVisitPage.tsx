@@ -251,23 +251,15 @@ function NewVisitPage() {
           return
         }
 
-        const createdVisits = await Promise.all(
-          startsToCreate.map((scheduled_start) =>
-            createVisitFromPatient(registered.patient_id, {
-              provider_id: DEFAULT_PROVIDER_ID,
-              scheduled_start,
-              visit_type: visitKind,
-            }),
-          ),
-        )
-        startsToCreate.forEach((scheduled_start) => {
-          persistAppointmentDuration(scheduled_start, schedule.defaultSlotMinutes || 15)
+        const firstStart = startsToCreate[0]
+        const totalDuration = startsToCreate.length * (schedule.defaultSlotMinutes || 15)
+        const createdVisit = await createVisitFromPatient(registered.patient_id, {
+          provider_id: DEFAULT_PROVIDER_ID,
+          scheduled_start: firstStart,
+          visit_type: visitKind,
         })
-        if (createdVisits.length > 1) {
-          navigate('/dashboard', { replace: true })
-          return
-        }
-        const bookedId = safeVisitId(createdVisits[0]?.visit_id)
+        persistAppointmentDuration(firstStart, totalDuration)
+        const bookedId = safeVisitId(createdVisit?.visit_id)
         if (!bookedId) {
           navigate('/dashboard', { replace: true })
           return
@@ -326,7 +318,7 @@ function NewVisitPage() {
               </nav>
               <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Register New Patient</h2>
               <p className="mt-1 text-sm text-[#3e4a3d]">
-                Already registered? Use Start Visit to search and continue with an existing patient.
+                Already registered? Use New Visit to search and continue with an existing patient.
               </p>
             </div>
             <div className="flex gap-4">
