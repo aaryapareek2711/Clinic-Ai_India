@@ -367,7 +367,7 @@ function NewAppointmentPage() {
           <button className="rounded-full p-2 text-gray-500 transition-all hover:bg-gray-50" onClick={() => navigate('/calendar')} type="button">
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
-          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">New Visit</h2>
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Start Visit</h2>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex gap-4">
@@ -399,7 +399,7 @@ function NewAppointmentPage() {
         <section className="flex w-1/2 flex-col overflow-hidden border-r border-gray-200 bg-white p-8">
           <div className="mb-6">
             <h3 className="mb-2 text-[18px] leading-[1.4] font-semibold text-[#171d16]">Select Existing Patient</h3>
-            <p className="text-[#3e4a3d]">Showing registered patients</p>
+            <p className="text-[#3e4a3d]">Search and select patient. If not found, register new patient.</p>
           </div>
           <div className="mb-6 flex items-center gap-3">
             <div className="relative flex-1">
@@ -412,6 +412,13 @@ function NewAppointmentPage() {
                 value={query}
               />
             </div>
+            <button
+              className="shrink-0 rounded-lg border border-[#bdcaba] bg-white px-4 py-3 text-sm font-semibold text-[#171d16] hover:bg-slate-50"
+              onClick={() => navigate('/new-visit')}
+              type="button"
+            >
+              Register New Patient
+            </button>
           </div>
           {error && (
             <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>

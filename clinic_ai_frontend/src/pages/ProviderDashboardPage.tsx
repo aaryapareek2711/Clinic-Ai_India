@@ -259,19 +259,19 @@ function ProviderDashboardPage() {
               <div className="flex items-center gap-3">
                 <button
                   className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-base font-semibold text-white hover:opacity-90"
-                  onClick={() => navigate('/new-appointment')}
+                  onClick={() => navigate('/start-visit')}
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[20px]">calendar_add_on</span>
-                  New visit
+                  Start visit
                 </button>
                 <button
-                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-base font-semibold text-white hover:opacity-90"
+                  className="flex w-fit items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-base font-semibold text-white hover:bg-white/20"
                   onClick={() => navigate('/new-visit')}
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[20px]">person_add</span>
-                  New patient registration
+                  Register new patient
                 </button>
               </div>
             </div>

@@ -87,6 +87,7 @@ export type ProviderVisitListItem = {
   duration_minutes?: number | null
   chief_complaint?: string | null
   created_at?: string
+  updated_at?: string
 }
 
 export const DEFAULT_PROVIDER_ID =

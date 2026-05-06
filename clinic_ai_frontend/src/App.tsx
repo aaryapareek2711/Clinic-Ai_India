@@ -40,6 +40,7 @@ function App() {
         <Route path="/careprep/intake/:tokenKey" element={<CarePrepIntakeDetailPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/new-appointment" element={<NewAppointmentPage />} />
+        <Route path="/start-visit" element={<NewAppointmentPage />} />
         <Route path="/new-visit" element={<NewVisitPage />} />
         <Route path="/patients" element={<PatientsPage />} />
         <Route path="/patients/detail" element={<PatientDetailPage />} />

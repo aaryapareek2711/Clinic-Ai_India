@@ -322,11 +322,21 @@ function NewVisitPage() {
               <nav className="mb-2 flex items-center gap-2 text-sm text-[#3e4a3d]">
                 <span>Visits</span>
                 <span className="material-symbols-outlined text-sm">chevron_right</span>
-                <span className="font-medium text-[#006b2c]">New patient registration</span>
+                <span className="font-medium text-[#006b2c]">Register new patient</span>
               </nav>
-              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Create new patient registration</h2>
+              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Register New Patient</h2>
+              <p className="mt-1 text-sm text-[#3e4a3d]">
+                Already registered? Use Start Visit to search and continue with an existing patient.
+              </p>
             </div>
             <div className="flex gap-4">
+              <button
+                className="rounded-lg border border-gray-200 bg-white px-6 py-2 font-semibold text-[#111827] transition-colors hover:bg-gray-50"
+                onClick={() => navigate('/start-visit')}
+                type="button"
+              >
+                Start Visit
+              </button>
               <button
                 className="rounded-lg border border-gray-200 bg-white px-6 py-2 font-semibold text-[#111827] transition-colors hover:bg-gray-50"
                 onClick={() => navigate('/dashboard')}

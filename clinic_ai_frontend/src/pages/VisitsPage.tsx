@@ -206,6 +206,8 @@ function iconClasses(tone: string) {
 }
 
 function visitTimeForSort(v: ProviderVisitListItem): number {
+  const updated = new Date(v.updated_at || '').getTime()
+  if (!Number.isNaN(updated) && updated > 0) return updated
   const created = new Date(v.created_at || '').getTime()
   if (!Number.isNaN(created) && created > 0) return created
   const scheduled = new Date(v.scheduled_start || '').getTime()
@@ -400,10 +402,10 @@ function VisitsPage() {
             </div>
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
-              onClick={() => navigate('/new-appointment')}
+              onClick={() => navigate('/start-visit')}
               type="button"
             >
-              New Visit
+              Start Visit
             </button>
           </div>
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">

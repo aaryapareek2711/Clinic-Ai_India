@@ -13,7 +13,7 @@ function navState(pathname: string) {
   return {
     dashboard: pathname === '/dashboard',
     patients: pathname.startsWith('/patients'),
-    calendar: pathname === '/calendar' || pathname === '/new-appointment',
+    calendar: pathname === '/calendar' || pathname === '/new-appointment' || pathname === '/start-visit',
     careprep: pathname.startsWith('/careprep'),
     visits: pathname.startsWith('/visits') || pathname === '/new-visit',
     templates: pathname.startsWith('/templates'),

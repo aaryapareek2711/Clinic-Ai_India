@@ -243,10 +243,10 @@ function CalendarPage() {
             </div>
             <button
               className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-5 py-2.5 font-medium text-white"
-              onClick={() => navigate('/new-appointment')}
+              onClick={() => navigate('/start-visit')}
               type="button"
             >
-              New visit
+              Start visit
             </button>
           </div>
         </div>
