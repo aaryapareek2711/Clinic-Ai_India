@@ -181,12 +181,15 @@ function transcriptionStatusUiMessage(
 
   if (status === 'completed') return msg || 'Transcription completed.'
   if (status === 'failed') return msg || 'Transcription failed.'
-
-  const isProcessingLike = ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
-    status,
-  )
-  if (isProcessingLike) {
-    return 'Transcription in progress'
+  if (status === 'queued' || status === 'pending' || status === 'uploading') return msg || 'Transcription queued.'
+  if (
+    status === 'processing' ||
+    status === 'in_progress' ||
+    status === 'running' ||
+    status === 'started' ||
+    status === 'stale_processing'
+  ) {
+    return msg || 'Transcription in progress.'
   }
   return msg || status || 'Transcription status unavailable.'
 }
@@ -196,12 +199,15 @@ function transcriptionStatusUiLabel(
   _backendMessage: string | null | undefined,
 ): string {
   const status = (statusRaw || '').trim().toLowerCase()
-  const processingLike = ['pending', 'queued', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
-    status,
+  if (status === 'queued' || status === 'pending' || status === 'uploading') return 'Queued'
+  if (
+    status === 'processing' ||
+    status === 'in_progress' ||
+    status === 'running' ||
+    status === 'started' ||
+    status === 'stale_processing'
   )
-  if (processingLike) {
     return 'Processing'
-  }
   if (status === 'completed') return 'Completed'
   if (status === 'failed') return 'Failed'
   if (!status) return 'Unknown'
@@ -260,7 +266,7 @@ export default function VisitDetailPage() {
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
   const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
-  /** Guard freeze behavior until this visit has an explicit upload attempt from UI. */
+  /** Guard freeze behavior until this visit has an explicit upload attempt from UI (current open session). */
   const [hasTranscriptionUploadAttempt, setHasTranscriptionUploadAttempt] = useState(false)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
@@ -488,21 +494,6 @@ export default function VisitDetailPage() {
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
-  const transcriptionAttemptStorageKey = `visit-transcription-upload-attempt:${visitId}`
-
-  useEffect(() => {
-    if (!visitId) {
-      setHasTranscriptionUploadAttempt(false)
-      return
-    }
-    try {
-      const raw = window.sessionStorage.getItem(transcriptionAttemptStorageKey)
-      setHasTranscriptionUploadAttempt(raw === '1')
-    } catch {
-      setHasTranscriptionUploadAttempt(false)
-    }
-  }, [visitId, transcriptionAttemptStorageKey])
-
   useEffect(() => {
     let cancelled = false
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
@@ -817,11 +808,6 @@ export default function VisitDetailPage() {
       try {
         const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
         setHasTranscriptionUploadAttempt(true)
-        try {
-          window.sessionStorage.setItem(`visit-transcription-upload-attempt:${visitId}`, '1')
-        } catch {
-          // best-effort persistence only
-        }
         setLastSubmittedAudioFilename(file.name || 'recording')
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
         setTranscriptionStatus({ status: accepted.status ?? 'queued', message: accepted.message ?? null })
@@ -907,11 +893,8 @@ export default function VisitDetailPage() {
       const status = await fetchTranscriptionStatus(patientId, visitId)
       const rawStatus = (status.status || '').toLowerCase()
       const rawMessage = (status.message || '').toLowerCase()
-      const prevStatus = (transcriptionStatus?.status || '').toLowerCase()
       const hadRecentTranscriptionActivity =
-        transcriptionUploading ||
-        hasTranscriptionUploadAttempt ||
-        ['queued', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(prevStatus)
+        transcriptionUploading || hasTranscriptionUploadAttempt
 
       let normalizedStatus =
         rawStatus === 'pending' && rawMessage.includes('not started') && hadRecentTranscriptionActivity
@@ -951,11 +934,6 @@ export default function VisitDetailPage() {
       // reopening the page doesn't keep controls frozen from a prior session.
       if (st === 'completed' || st === 'failed') {
         setHasTranscriptionUploadAttempt(false)
-        try {
-          if (visitId) window.sessionStorage.removeItem(`visit-transcription-upload-attempt:${visitId}`)
-        } catch {
-          // best-effort only
-        }
       }
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
@@ -980,10 +958,10 @@ export default function VisitDetailPage() {
     () => flattenStructuredDialogue(displayStructuredDialogue),
     [displayStructuredDialogue],
   )
-  const transcriptionStateLowerRaw = (transcriptionStatus?.status || '').toLowerCase()
+  const transcriptionStateLowerRaw = (transcriptionStatus?.status || 'pending').toLowerCase()
   const hasAttempt = hasTranscriptionUploadAttempt || transcriptionUploading
   const queuedStatuses = new Set(['queued', 'pending', 'uploading'])
-  const processingStatuses = new Set(['processing', 'in_progress', 'running', 'started'])
+  const processingStatuses = new Set(['processing', 'in_progress', 'running', 'started', 'stale_processing'])
   const terminalStatuses = new Set(['completed', 'failed'])
 
   // If the doctor opens the transcription page without uploading anything in this session,
@@ -995,6 +973,9 @@ export default function VisitDetailPage() {
   const isTranscriptionQueued = hasAttempt && queuedStatuses.has(effectiveStateLower)
   const isTranscriptionCurrentlyProcessing = hasAttempt && processingStatuses.has(effectiveStateLower)
   const isTranscriptionBusy = transcriptionUploading || isTranscriptionQueued || isTranscriptionCurrentlyProcessing
+  // Freeze controls only while transcription is actually processing/uploading.
+  // When queued, doctor should still be able to discard/re-record or change audio.
+  const isTranscriptionControlLocked = transcriptionUploading || isTranscriptionCurrentlyProcessing
 
   const transcriptionStateLower = effectiveStateLower
 
@@ -1005,7 +986,7 @@ export default function VisitDetailPage() {
   })()
 
   const handleUploadRecordedPreview = useCallback(() => {
-    if (!recordedPreviewFile || !patientId || !visitId || isTranscriptionBusy) return
+    if (!recordedPreviewFile || !patientId || !visitId || isTranscriptionControlLocked) return
     void (async () => {
       const ok = await submitTranscriptionAudioFile(recordedPreviewFile)
       if (ok) {
@@ -1017,7 +998,7 @@ export default function VisitDetailPage() {
     recordedPreviewFile,
     patientId,
     visitId,
-    isTranscriptionBusy,
+    isTranscriptionControlLocked,
     submitTranscriptionAudioFile,
     clearRecordingPreview,
   ])
@@ -1483,7 +1464,7 @@ export default function VisitDetailPage() {
                           accept="audio/*"
                           aria-label="Select audio file to transcribe"
                           className="sr-only"
-                          disabled={!patientId || !visitId || isTranscriptionBusy}
+                          disabled={!patientId || !visitId || isTranscriptionControlLocked}
                           onChange={(e) => {
                             const file = e.target.files?.[0] ?? null
                             pendingTranscriptionAudioRef.current = file
@@ -1494,16 +1475,16 @@ export default function VisitDetailPage() {
                         />
                         <button
                           className={`inline-flex shrink-0 items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
-                            !patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionBusy
+                            !patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionControlLocked
                               ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                               : 'bg-sky-100 text-sky-900 hover:bg-sky-200'
                           }`}
-                          disabled={!patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionBusy}
+                          disabled={!patientId || !visitId || recordingPhase !== 'idle' || isTranscriptionControlLocked}
                           onClick={() => transcriptionFileInputRef.current?.click()}
                           title={
                             !patientId || !visitId
                               ? 'Visit is not loaded yet'
-                              : isTranscriptionBusy
+                              : isTranscriptionControlLocked
                                 ? isTranscriptionCurrentlyProcessing
                                   ? 'Please wait while transcription is processing'
                                   : 'Please wait while transcription is queued'
@@ -1527,7 +1508,7 @@ export default function VisitDetailPage() {
                           !patientId ||
                           !visitId ||
                           recordingPhase !== 'idle' ||
-                          isTranscriptionBusy
+                          isTranscriptionControlLocked
                         }
                         onClick={handleUploadPendingTranscription}
                         type="button"
@@ -1553,7 +1534,7 @@ export default function VisitDetailPage() {
                     {recordingPhase === 'idle' && (
                       <button
                         className="flex min-h-[6.5rem] w-full flex-col items-center justify-center rounded-xl border-2 border-gray-200 bg-white px-6 py-10 text-[#111827] transition-colors hover:border-[#006b2c]/35 hover:bg-[#f8fdf6] disabled:cursor-not-allowed disabled:opacity-45"
-                        disabled={!patientId || !visitId || isTranscriptionBusy}
+                        disabled={!patientId || !visitId || isTranscriptionControlLocked}
                         onClick={() => void handleStartRecording()}
                         type="button"
                       >
@@ -1614,7 +1595,7 @@ export default function VisitDetailPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             className="rounded-xl bg-[#16a34a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={isTranscriptionBusy || !patientId || !visitId}
+                            disabled={isTranscriptionControlLocked || !patientId || !visitId}
                             onClick={() => void handleUploadRecordedPreview()}
                             type="button"
                           >
@@ -1622,7 +1603,7 @@ export default function VisitDetailPage() {
                           </button>
                           <button
                             className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-[#171d16] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={transcriptionUploading || isTranscriptionBusy}
+                            disabled={transcriptionUploading || isTranscriptionControlLocked}
                             onClick={() => discardRecordedPreview()}
                             type="button"
                           >
@@ -1637,7 +1618,7 @@ export default function VisitDetailPage() {
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{recordingError}</div>
                   )}
 
-                  {lastSubmittedAudioFilename && isTranscriptionBusy && (
+                  {lastSubmittedAudioFilename && (transcriptionUploading || isTranscriptionCurrentlyProcessing || isTranscriptionQueued) && (
                     <div
                       className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"
                       role="status"
@@ -1665,7 +1646,7 @@ export default function VisitDetailPage() {
                       Check transcription status
                     </button>
                   </div>
-                  {transcriptionMessage && !isTranscriptionBusy && (
+                  {transcriptionMessage && !isTranscriptionControlLocked && (
                     <p className="text-xs text-[#575e70]" role="status">
                       {transcriptionMessage}
                     </p>
