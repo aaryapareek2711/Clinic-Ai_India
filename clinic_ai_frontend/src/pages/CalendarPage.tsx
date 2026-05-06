@@ -14,7 +14,7 @@ import NotificationsDrawer from './NotificationsDrawer'
 
 type CalendarViewMode = 'month' | 'week' | 'day'
 const AUTO_REFRESH_MS = 10000
-const CALENDAR_APPOINTMENTS_CACHE_KEY = 'calendar:appointments:default'
+const CALENDAR_APPOINTMENTS_CACHE_KEY_PREFIX = 'calendar:appointments'
 
 function escapeCsvCell(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -114,6 +114,17 @@ function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const isMountedRef = useRef(true)
+  const year = viewMonth.getFullYear()
+  const month = viewMonth.getMonth()
+  const activeRange = useMemo(() => {
+    const from = new Date(year, month, 1, 0, 0, 0, 0)
+    const to = new Date(year, month + 1, 0, 23, 59, 59, 999)
+    return {
+      fromDate: from.toISOString(),
+      toDate: to.toISOString(),
+      cacheKey: `${CALENDAR_APPOINTMENTS_CACHE_KEY_PREFIX}:${year}-${String(month + 1).padStart(2, '0')}`,
+    }
+  }, [month, year])
 
   const ensurePatientsLoaded = useCallback(async () => {
     if (patientsLoading || patients.length > 0) return
@@ -148,11 +159,14 @@ function CalendarPage() {
       setLoadError(null)
     }
     try {
-      const appointmentsRes = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+      const appointmentsRes = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+        fromDate: activeRange.fromDate,
+        toDate: activeRange.toDate,
+      })
       if (!isMountedRef.current) return
       setAppointments(appointmentsRes)
       try {
-        sessionStorage.setItem(CALENDAR_APPOINTMENTS_CACHE_KEY, JSON.stringify(appointmentsRes))
+        sessionStorage.setItem(activeRange.cacheKey, JSON.stringify(appointmentsRes))
       } catch {
         // non-blocking cache write
       }
@@ -163,12 +177,12 @@ function CalendarPage() {
       setLoadError(getApiErrorMessage(e))
       setLoading(false)
     }
-  }, [])
+  }, [activeRange.cacheKey, activeRange.fromDate, activeRange.toDate])
 
   useEffect(() => {
     let cancelled = false
     try {
-      const raw = sessionStorage.getItem(CALENDAR_APPOINTMENTS_CACHE_KEY)
+      const raw = sessionStorage.getItem(activeRange.cacheKey)
       if (raw) {
         const parsed = JSON.parse(raw) as ProviderUpcomingAppointment[]
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -198,10 +212,7 @@ function CalendarPage() {
       window.removeEventListener('focus', onVisible)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [loadCalendarData])
-
-  const year = viewMonth.getFullYear()
-  const month = viewMonth.getMonth()
+  }, [activeRange.cacheKey, loadCalendarData])
   const { blanks, daysInMonth } = useMemo(() => padMonthGrid(year, month), [year, month])
 
   const monthTitle = viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })

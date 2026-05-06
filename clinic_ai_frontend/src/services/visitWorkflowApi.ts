@@ -120,9 +120,16 @@ export type ProviderUpcomingResponse = {
   appointments: ProviderUpcomingAppointment[]
 }
 
-export async function fetchProviderUpcoming(providerId: string): Promise<ProviderUpcomingAppointment[]> {
+export async function fetchProviderUpcoming(
+  providerId: string,
+  opts?: { fromDate?: string; toDate?: string },
+): Promise<ProviderUpcomingAppointment[]> {
+  const params: Record<string, string> = {}
+  if (opts?.fromDate?.trim()) params.from_date = opts.fromDate.trim()
+  if (opts?.toDate?.trim()) params.to_date = opts.toDate.trim()
   const { data } = await apiClient.get<ProviderUpcomingResponse>(
     `/api/visits/provider/${encodeURIComponent(providerId)}/upcoming`,
+    { params },
   )
   return data.appointments ?? []
 }
