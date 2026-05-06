@@ -260,6 +260,8 @@ export default function VisitDetailPage() {
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
   const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
+  /** Guard freeze behavior until this visit has an explicit upload attempt from UI. */
+  const [hasTranscriptionUploadAttempt, setHasTranscriptionUploadAttempt] = useState(false)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -399,6 +401,7 @@ export default function VisitDetailPage() {
     setTranscriptionStructuredDialogue(null)
     setStructureDialogueLoading(false)
     setTranscriptionUploading(false)
+    setHasTranscriptionUploadAttempt(false)
     pendingTranscriptionAudioRef.current = null
     setPendingTranscriptionAudio(null)
     setRecordingError(null)
@@ -485,15 +488,32 @@ export default function VisitDetailPage() {
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
+  const transcriptionAttemptStorageKey = `visit-transcription-upload-attempt:${visitId}`
+
+  useEffect(() => {
+    if (!visitId) {
+      setHasTranscriptionUploadAttempt(false)
+      return
+    }
+    try {
+      const raw = window.sessionStorage.getItem(transcriptionAttemptStorageKey)
+      setHasTranscriptionUploadAttempt(raw === '1')
+    } catch {
+      setHasTranscriptionUploadAttempt(false)
+    }
+  }, [visitId, transcriptionAttemptStorageKey])
 
   useEffect(() => {
     let cancelled = false
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
-    if (languageMode !== 'english' || !pref || pref === 'en') {
+    const shouldTranslateToEnglish = languageMode === 'english' && !!pref && pref !== 'en'
+    const shouldTranslateToPreferred = languageMode === 'preferred' && !!pref && pref !== 'en'
+    if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedDisplayBundle(null)
       setTranslatingDisplay(false)
       return
     }
+    const targetLanguage = shouldTranslateToEnglish ? 'English' : languageLabel(pref)
     const payload = {
       intake,
       preVisit,
@@ -505,7 +525,7 @@ export default function VisitDetailPage() {
     setTranslatingDisplay(true)
     void (async () => {
       try {
-        const translated = await translateDisplayPayload(payload, 'English')
+        const translated = await translateDisplayPayload(payload, targetLanguage)
         if (!cancelled) {
           setTranslatedDisplayBundle({
             intake: (translated.intake as IntakeSessionResponse | null) ?? null,
@@ -795,6 +815,12 @@ export default function VisitDetailPage() {
       setTranscriptionUploading(true)
       try {
         const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
+        setHasTranscriptionUploadAttempt(true)
+        try {
+          window.sessionStorage.setItem(`visit-transcription-upload-attempt:${visitId}`, '1')
+        } catch {
+          // best-effort persistence only
+        }
         setLastSubmittedAudioFilename(file.name || 'recording')
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
         setTranscriptionStatus({ status: accepted.status ?? 'queued', message: accepted.message ?? null })
@@ -883,12 +909,23 @@ export default function VisitDetailPage() {
       const prevStatus = (transcriptionStatus?.status || '').toLowerCase()
       const hadRecentTranscriptionActivity =
         transcriptionUploading ||
-        ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(prevStatus)
+        hasTranscriptionUploadAttempt ||
+        ['queued', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(prevStatus)
 
-      const normalizedStatus =
+      let normalizedStatus =
         rawStatus === 'pending' && rawMessage.includes('not started') && hadRecentTranscriptionActivity
           ? { ...status, status: 'processing', message: 'Transcription in progress' }
           : status
+
+      // Do not freeze controls on stale backend processing unless this visit had an explicit upload attempt.
+      if (
+        !hadRecentTranscriptionActivity &&
+        ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
+          String(normalizedStatus.status || '').toLowerCase(),
+        )
+      ) {
+        normalizedStatus = { ...normalizedStatus, status: 'pending', message: 'Transcription not started' }
+      }
 
       setTranscriptionStatus(normalizedStatus)
       const baseMessage = transcriptionStatusUiMessage(normalizedStatus.status, normalizedStatus.message)
@@ -911,7 +948,7 @@ export default function VisitDetailPage() {
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
     }
-  }, [patientId, visitId, loadTranscriptBody, transcriptionStatus?.status, transcriptionUploading])
+  }, [patientId, visitId, loadTranscriptBody, transcriptionStatus?.status, transcriptionUploading, hasTranscriptionUploadAttempt])
 
   const handleStructureVisitDialogue = useCallback(async () => {
     if (!patientId || !visitId || structureDialogueLoading) return
@@ -1674,8 +1711,12 @@ export default function VisitDetailPage() {
                     <p className="mt-1 text-xs text-[#575e70]">
                       Choose the WhatsApp number for this send.
                     </p>
-                    {translatingDisplay && languageMode === 'english' && preferredLanguageCode.toLowerCase() !== 'en' && (
-                      <p className="mt-1 text-xs text-[#575e70]">Translating display content to English…</p>
+                    {translatingDisplay && preferredLanguageCode.toLowerCase() !== 'en' && (
+                      <p className="mt-1 text-xs text-[#575e70]">
+                        {languageMode === 'english'
+                          ? 'Translating display content to English…'
+                          : `Translating display content to ${languageLabel(preferredLanguageCode)}…`}
+                      </p>
                     )}
                   </div>
 
