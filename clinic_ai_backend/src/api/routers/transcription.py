@@ -242,6 +242,10 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
         latest_job_status = str(latest_job.get("status") or "").strip().lower()
         if transcription_status in {"pending", "queued"} and latest_job_status in {"processing", "in_progress", "running", "started"}:
             transcription_status = "processing"
+        if transcription_status in {"pending", "queued"} and latest_job_status in {"queued", "pending"}:
+            # If there is a job but we only see "pending/queued" from the embedded snapshot,
+            # normalize to "queued" so the UI doesn't misclassify it.
+            transcription_status = "queued"
     now = datetime.now(timezone.utc)
 
     started_at = session.get("started_at")

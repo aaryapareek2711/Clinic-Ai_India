@@ -181,6 +181,16 @@ class StoreVitalsUseCase:
         if not patient:
             raise ValueError("Patient not found")
 
+        # If a vitals form already exists on this visit, return it instead of generating a new one.
+        existing_visit = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+            {"_id": 0, "vitals_form": 1},
+        )
+        existing_form = dict((existing_visit or {}).get("vitals_form") or {})
+        if existing_form:
+            existing_form.pop("_id", None)
+            return existing_form
+
         visit_doc = self.db.visits.find_one(
             {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
             {"_id": 0, "intake_session": 1, "pre_visit_summary": 1},

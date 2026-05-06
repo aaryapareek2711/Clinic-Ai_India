@@ -50,6 +50,19 @@ def get_latest_pre_visit_summary(patient_id: str, visit_id: str) -> PreVisitSumm
     """Fetch latest pre-visit summary for a specific visit."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    # Prefer the embedded single-source-of-truth document on the visit.
+    visit = db.visits.find_one(
+        {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": internal_patient_id},
+        {"_id": 0, "pre_visit_summary": 1},
+    )
+    embedded = dict((visit or {}).get("pre_visit_summary") or {})
+    if embedded:
+        embedded["patient_id"] = encode_patient_id(
+            str(embedded.get("patient_id") or internal_patient_id),
+        )
+        return PreVisitSummaryResponse(**embedded)
+
+    # Fallback: legacy collection for older records that have not been backfilled.
     doc = db.pre_visit_summaries.find_one(
         {"patient_id": internal_patient_id, "visit_id": visit_id},
         sort=[("updated_at", -1)],
@@ -66,16 +79,28 @@ def get_doctor_appointment_view(patient_id: str, visit_id: str) -> DoctorAppoint
     """Provide doctor-ready appointment context with summary and vitals."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
-    summary_doc = db.pre_visit_summaries.find_one(
-        {"patient_id": internal_patient_id, "visit_id": visit_id},
-        sort=[("updated_at", -1)],
-    )
-
     summary_obj = None
-    if summary_doc:
-        summary_doc.pop("_id", None)
-        summary_doc["patient_id"] = encode_patient_id(str(summary_doc.get("patient_id") or internal_patient_id))
-        summary_obj = PreVisitSummaryResponse(**summary_doc)
+    # Prefer embedded summary on the visit first.
+    visit = db.visits.find_one(
+        {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": internal_patient_id},
+        {"_id": 0, "pre_visit_summary": 1},
+    )
+    embedded = dict((visit or {}).get("pre_visit_summary") or {})
+    if embedded:
+        embedded["patient_id"] = encode_patient_id(
+            str(embedded.get("patient_id") or internal_patient_id),
+        )
+        summary_obj = PreVisitSummaryResponse(**embedded)
+    else:
+        # Fallback to legacy collection.
+        summary_doc = db.pre_visit_summaries.find_one(
+            {"patient_id": internal_patient_id, "visit_id": visit_id},
+            sort=[("updated_at", -1)],
+        )
+        if summary_doc:
+            summary_doc.pop("_id", None)
+            summary_doc["patient_id"] = encode_patient_id(str(summary_doc.get("patient_id") or internal_patient_id))
+            summary_obj = PreVisitSummaryResponse(**summary_doc)
 
     vitals_use_case = StoreVitalsUseCase()
     form_doc = vitals_use_case.get_latest_vitals_form(internal_patient_id, visit_id)

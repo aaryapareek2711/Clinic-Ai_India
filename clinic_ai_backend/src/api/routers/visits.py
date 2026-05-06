@@ -111,14 +111,17 @@ def _public_visit_payload(visit: dict) -> dict:
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
     patient_id = str(visit.get("patient_id") or "")
     default_stage = _workflow_stage_triplet_for_status(visit.get("status") or "open")
+    prev_stage = visit.get("previous_workflow_stage")
+    curr_stage = visit.get("current_workflow_stage")
+    next_stage = visit.get("next_workflow_stage")
     return {
         "visit_id": resolved_visit_id,
         "id": resolved_visit_id,
         "patient_id": encode_patient_id(patient_id) if patient_id else "",
         "status": str(visit.get("status") or "open"),
-        "previous_workflow_stage": visit.get("previous_workflow_stage", default_stage["previous_workflow_stage"]),
-        "current_workflow_stage": visit.get("current_workflow_stage", default_stage["current_workflow_stage"]),
-        "next_workflow_stage": visit.get("next_workflow_stage", default_stage["next_workflow_stage"]),
+        "previous_workflow_stage": prev_stage if prev_stage is not None else default_stage["previous_workflow_stage"],
+        "current_workflow_stage": curr_stage if curr_stage is not None else default_stage["current_workflow_stage"],
+        "next_workflow_stage": next_stage if next_stage is not None else default_stage["next_workflow_stage"],
         "scheduled_start": visit.get("scheduled_start"),
         "actual_start": _serialize_datetime(visit.get("actual_start")),
         "actual_end": _serialize_datetime(visit.get("actual_end")),
@@ -564,6 +567,84 @@ def get_visit(visit_id: str) -> dict:
     last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
     age = patient.get("age")
     year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
+
+    # Best-effort backfill of workflow triplet fields from embedded single-document data.
+    # This fixes older records where `previous_workflow_stage` was stored as `null` or stages
+    # were not persisted consistently.
+    try:
+        def _is_walk_in_type(v: dict) -> bool:
+            t = str(v.get("visit_type") or "").strip().lower()
+            return t in {"walk_in", "walkin"} or "walk_in" in t or "walkin" in t
+
+        is_walk_in = _is_walk_in_type(visit)
+        now = datetime.now(timezone.utc)
+        intake_session = dict(visit.get("intake_session") or {})
+        pre_visit_summary = dict(visit.get("pre_visit_summary") or {})
+        vitals_form = dict(visit.get("vitals_form") or {})
+        vitals = dict(visit.get("vitals") or {})
+        transcription_session = dict(visit.get("transcription_session") or {})
+        post_visit_summary = dict(visit.get("post_visit_summary") or {})
+
+        has_completed_post = bool(post_visit_summary) or str(visit.get("status") or "").lower() in {"completed", "complete", "closed", "ended"}
+        has_pre_visit = bool(pre_visit_summary.get("sections"))
+        has_vitals = bool(vitals_form) or bool(vitals)
+        has_transcription = bool(transcription_session.get("transcription_status")) and str(transcription_session.get("transcription_status") or "").lower() in {
+            "queued",
+            "processing",
+            "in_progress",
+            "running",
+            "started",
+            "completed",
+            "failed",
+        }
+        has_intake = bool(intake_session)
+
+        desired_prev = None
+        desired_curr = "patient_registered"
+        desired_next = "vitals" if is_walk_in else "intake"
+        desired_status = "scheduled"
+
+        if has_completed_post:
+            desired_prev = "post_visit"
+            desired_curr = "completed"
+            desired_next = None
+            desired_status = "completed"
+        elif has_transcription or has_vitals:
+            desired_prev = "pre_visit" if has_pre_visit else "patient_registered"
+            desired_curr = "vitals"
+            desired_next = "post_visit" if has_completed_post else "transcription"
+            desired_status = "in_progress"
+        elif has_pre_visit:
+            desired_prev = "intake"
+            desired_curr = "pre_visit"
+            desired_next = "vitals"
+            desired_status = "in_queue"
+        elif has_intake:
+            desired_prev = "patient_registered"
+            desired_curr = "intake"
+            desired_next = "vitals" if is_walk_in else "pre_visit"
+            desired_status = "scheduled"
+
+        updates: dict = {}
+        for k, v in {
+            "previous_workflow_stage": desired_prev,
+            "current_workflow_stage": desired_curr,
+            "next_workflow_stage": desired_next,
+            "status": desired_status,
+        }.items():
+            if visit.get(k) != v:
+                updates[k] = v
+
+        if updates:
+            db.visits.update_one(
+                {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
+                {"$set": {**updates, "updated_at": now}},
+            )
+            # Reload so response matches persisted data.
+            visit = _find_visit(db, resolved_visit_id) or visit
+    except Exception:
+        # Backfill is best-effort only; never block visit detail.
+        pass
 
     resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
     return {
