@@ -265,6 +265,9 @@ class IntakeChatService:
                 message_id,
             )
             return
+        if message_id:
+            # Keep latest inbound context in-memory for this turn so outbound typing can reference it.
+            session["last_inbound_message_id"] = message_id
         try:
             status = session.get("status")
             cleaned = (message_text or "").strip()
@@ -309,7 +312,11 @@ class IntakeChatService:
                     reason="patient_opted_out",
                 )
                 end_msg = self._opt_out_ack_message(session.get("language", "en"))
-                self._send_text_with_typing(session["to_number"], end_msg)
+                self._send_text_with_typing(
+                    session["to_number"],
+                    end_msg,
+                    reply_to_message_id=message_id,
+                )
                 self._auto_generate_pre_visit_summary(session)
                 return
 
@@ -714,7 +721,11 @@ class IntakeChatService:
                 }
             },
         )
-        self._send_text_with_typing(session["to_number"], planner_fallback_question)
+        self._send_text_with_typing(
+            session["to_number"],
+            planner_fallback_question,
+            reply_to_message_id=str(session.get("last_inbound_message_id") or "") or None,
+        )
         self._log_intake_turn(
             session=session,
             question_number=int(session.get("question_number", 1) or 1),
@@ -768,7 +779,11 @@ class IntakeChatService:
         refreshed_session = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
         if refreshed_session:
             self._sync_visit_intake_projection(refreshed_session)
-        self._send_text_with_typing(session["to_number"], message)
+        self._send_text_with_typing(
+            session["to_number"],
+            message,
+            reply_to_message_id=str(session.get("last_inbound_message_id") or "") or None,
+        )
         logger.info(
             "intake_next_question_sent visit_id=%s patient_id=%s to=%s",
             str(session.get("visit_id") or ""),
@@ -834,7 +849,11 @@ class IntakeChatService:
             keep_session_id=session.get("_id"),
             reason="session_completed",
         )
-        self._send_text_with_typing(session["to_number"], message)
+        self._send_text_with_typing(
+            session["to_number"],
+            message,
+            reply_to_message_id=str(session.get("last_inbound_message_id") or "") or None,
+        )
         self._auto_generate_pre_visit_summary(session)
 
     def _bootstrap_session_for_number(self, normalized_from: str) -> dict | None:
@@ -1402,7 +1421,13 @@ class IntakeChatService:
         lang = normalize_intake_language(language)
         return OPENING_MESSAGES.get(lang, OPENING_MESSAGES["en"])
 
-    def _send_text_with_typing(self, to_number: str, message: str) -> None:
+    def _send_text_with_typing(
+        self,
+        to_number: str,
+        message: str,
+        *,
+        reply_to_message_id: str | None = None,
+    ) -> None:
         """
         Best-effort typing indicator before sending message.
 
@@ -1410,7 +1435,7 @@ class IntakeChatService:
         """
         typing_sent = False
         try:
-            self.whatsapp.send_typing_indicator(to_number)
+            self.whatsapp.send_typing_indicator(to_number, reply_to_message_id=reply_to_message_id)
             typing_sent = True
         except Exception:
             logger.exception(

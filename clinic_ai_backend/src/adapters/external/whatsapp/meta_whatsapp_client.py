@@ -11,16 +11,30 @@ from src.core.config import get_settings
 class MetaWhatsAppClient:
     """Client for sending WhatsApp text messages."""
 
-    def send_typing_indicator(self, to_number: str) -> None:
-        """Show WhatsApp typing indicator for a recipient."""
-        payload = {
+    def send_typing_indicator(self, to_number: str, reply_to_message_id: str | None = None) -> None:
+        """Show WhatsApp typing indicator for a recipient (best effort)."""
+        payload: dict = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_number,
             "type": "typing_indicator",
             "typing_indicator": {"type": "text"},
         }
-        self._post_message(payload)
+        if reply_to_message_id:
+            payload["context"] = {"message_id": reply_to_message_id}
+        try:
+            self._post_message(payload)
+        except Exception:
+            # Fallback for API variants that reject `type: typing_indicator`.
+            fallback_payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to_number,
+                "typing_indicator": {"type": "text"},
+            }
+            if reply_to_message_id:
+                fallback_payload["context"] = {"message_id": reply_to_message_id}
+            self._post_message(fallback_payload)
 
     def send_text(self, to_number: str, message: str) -> None:
         """Send a text message via Meta WhatsApp Cloud API."""

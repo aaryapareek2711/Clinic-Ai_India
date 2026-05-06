@@ -336,13 +336,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
     )
 
     patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
-    visit_ids = sorted(
-        {
-            str(visit.get("visit_id") or visit.get("id") or "").strip()
-            for visit in records
-            if str(visit.get("visit_id") or visit.get("id") or "").strip()
-        }
-    )
     patient_map: dict[str, dict] = {}
     if patient_ids:
         for patient in db.patients.find(
@@ -352,21 +345,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
-    previsit_reason_by_visit: dict[str, str] = {}
-    if visit_ids:
-        for item in db.pre_visit_summaries.find(
-            {"visit_id": {"$in": visit_ids}},
-            {"_id": 0, "visit_id": 1, "sections.chief_complaint.reason_for_visit": 1, "updated_at": 1},
-        ).sort("updated_at", -1):
-            vid = str(item.get("visit_id") or "").strip()
-            if not vid or vid in previsit_reason_by_visit:
-                continue
-            sections = item.get("sections") or {}
-            chief = (sections.get("chief_complaint") or {}).get("reason_for_visit")
-            if chief:
-                previsit_reason_by_visit[vid] = str(chief)
-    intake_reason_by_visit: dict[str, str] = {}
-
     appointments: list[dict] = []
     for visit in records:
         patient_id = str(visit.get("patient_id") or "")
@@ -378,7 +356,7 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
         scheduled_start = visit.get("scheduled_start")
         chief_complaint = (
             visit.get("chief_complaint")
-            or previsit_reason_by_visit.get(resolved_visit_id)
+            or "Visit"
         )
         appointments.append(
             {
