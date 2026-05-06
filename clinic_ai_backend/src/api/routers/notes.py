@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -37,6 +38,26 @@ class TranslateDisplayRequest(BaseModel):
 
 class TranslateDisplayResponse(BaseModel):
     payload: dict[str, Any]
+
+
+def _parse_llm_json_object(raw: str) -> dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        raise ValueError("empty_translation_response")
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    # Fallback for wrapped markdown or surrounding prose.
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        raise ValueError("translation_json_not_found")
+    parsed = json.loads(match.group(0))
+    if not isinstance(parsed, dict):
+        raise ValueError("translation_json_not_object")
+    return parsed
 
 
 def _encode_note_patient_id(doc: dict[str, Any]) -> dict[str, Any]:
@@ -91,9 +112,7 @@ def translate_display_payload(body: TranslateDisplayRequest) -> TranslateDisplay
             prompt=prompt,
             system_role="You are a medical translation engine. Return strict JSON only.",
         )
-        translated = json.loads(content)
-        if not isinstance(translated, dict):
-            raise ValueError("translation_json_not_object")
+        translated = _parse_llm_json_object(content)
         return TranslateDisplayResponse(payload=translated)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"DISPLAY_TRANSLATION_FAILED: {exc}") from exc
