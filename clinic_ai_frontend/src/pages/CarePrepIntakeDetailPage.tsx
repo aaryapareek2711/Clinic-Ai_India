@@ -215,7 +215,7 @@ export default function CarePrepIntakeDetailPage() {
         </div>
       </header>
 
-      <main className="flex-1 p-8 pt-24">
+      <main className="relative flex-1 p-8 pt-24">
         {loading && <p className="text-sm text-slate-600">Loading intake…</p>}
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -228,6 +228,18 @@ export default function CarePrepIntakeDetailPage() {
 
         {!loading && !error && (
           <>
+            {translatingDisplay && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+                <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm">
+                  <p className="text-sm font-semibold text-[#171d16]">
+                    {languageMode === 'english'
+                      ? 'Translating to English…'
+                      : `Translating to ${languageLabel(preferredLanguageCode)}…`}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">Please wait.</p>
+                </div>
+              </div>
+            )}
             <div className="mb-8 flex flex-col items-start justify-between gap-6 rounded-xl border border-slate-200 bg-white p-6 md:flex-row md:items-center">
               <div className="flex items-center gap-5">
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#d9dff5] shadow-sm">
