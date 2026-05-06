@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -12,6 +12,7 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 
 type CalendarViewMode = 'month' | 'week' | 'day'
+const AUTO_REFRESH_MS = 10000
 
 function escapeCsvCell(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -78,6 +79,12 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
+function isUpcomingSidebarStatus(raw: string | undefined): boolean {
+  const status = (raw || '').trim().toLowerCase()
+  if (!status) return true
+  return status === 'scheduled' || status === 'queued' || status === 'in_queue' || status === 'open'
+}
+
 function CalendarPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -91,6 +98,7 @@ function CalendarPage() {
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const isMountedRef = useRef(true)
 
   useEffect(() => {
     if (!isImportCsvOpen) return
@@ -103,35 +111,52 @@ function CalendarPage() {
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [isImportCsvOpen])
 
+  const loadCalendarData = useCallback(async (showSpinner: boolean) => {
+    if (!isMountedRef.current) return
+    if (showSpinner) {
+      setLoading(true)
+      setLoadError(null)
+    }
+    const [appointmentsRes, patientsRes] = await Promise.allSettled([
+      fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+      fetchPatients(),
+    ])
+    if (!isMountedRef.current) return
+    if (appointmentsRes.status === 'fulfilled') {
+      setAppointments(appointmentsRes.value)
+    }
+    if (patientsRes.status === 'fulfilled') {
+      setPatients(patientsRes.value)
+    }
+    const errs: string[] = []
+    if (appointmentsRes.status === 'rejected') errs.push(getApiErrorMessage(appointmentsRes.reason))
+    if (patientsRes.status === 'rejected') errs.push(`Patient list failed: ${getApiErrorMessage(patientsRes.reason)}`)
+    setLoadError(errs.length ? errs.join(' · ') : null)
+    setLoading(false)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      if (!cancelled) {
-        setLoading(true)
-        setLoadError(null)
-      }
-      const [appointmentsRes, patientsRes] = await Promise.allSettled([
-        fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-        fetchPatients(),
-      ])
-      if (!cancelled && appointmentsRes.status === 'fulfilled') {
-        setAppointments(appointmentsRes.value)
-      }
-      if (!cancelled && patientsRes.status === 'fulfilled') {
-        setPatients(patientsRes.value)
-      }
-      if (!cancelled) {
-        const errs: string[] = []
-        if (appointmentsRes.status === 'rejected') errs.push(getApiErrorMessage(appointmentsRes.reason))
-        if (patientsRes.status === 'rejected') errs.push(`Patient list failed: ${getApiErrorMessage(patientsRes.reason)}`)
-        setLoadError(errs.length ? errs.join(' · ') : null)
-        setLoading(false)
-      }
+      await loadCalendarData(true)
+      if (cancelled) return
     })()
+    const intervalId = window.setInterval(() => {
+      if (!cancelled) void loadCalendarData(false)
+    }, AUTO_REFRESH_MS)
+    const onVisible = () => {
+      if (!cancelled && document.visibilityState === 'visible') void loadCalendarData(false)
+    }
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       cancelled = true
+      isMountedRef.current = false
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [])
+  }, [loadCalendarData])
 
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
@@ -157,8 +182,14 @@ function CalendarPage() {
   const totalCells = Math.ceil((blanks + daysInMonth) / 7) * 7
 
   const sidebarItems = useMemo(() => {
+    const nowMs = Date.now()
     return [...appointments]
-      .filter((a) => a.scheduled_start)
+      .filter((a) => {
+        if (!a.scheduled_start) return false
+        const slotMs = new Date(a.scheduled_start).getTime()
+        if (Number.isNaN(slotMs) || slotMs < nowMs) return false
+        return isUpcomingSidebarStatus(a.status)
+      })
       .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
       .slice(0, 12)
   }, [appointments])
