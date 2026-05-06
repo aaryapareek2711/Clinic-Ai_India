@@ -7,6 +7,7 @@ import {
   fetchIntakeSession,
   fetchPreVisitSummary,
   fetchVisitDetail,
+  translateDisplayPayload,
   type VisitDetailResponse,
 } from '../services/visitWorkflowApi'
 import type { IntakeSessionResponse, PreVisitSummaryResponse } from '../services/visitWorkflowApi'
@@ -22,6 +23,16 @@ function shouldHideQuestionLabel(raw: string | null | undefined): boolean {
   return !q || q.startsWith('unmapped_')
 }
 
+function resolvePreferredLanguageCode(
+  intakeLanguage: string | null | undefined,
+  preVisitLanguage: string | null | undefined,
+): string {
+  const preferred = [intakeLanguage, preVisitLanguage]
+    .map((v) => (v || '').trim())
+    .find((v) => v.length > 0 && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'none')
+  return preferred || 'en'
+}
+
 export default function CarePrepIntakeDetailPage() {
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
@@ -35,7 +46,10 @@ export default function CarePrepIntakeDetailPage() {
   const [visit, setVisit] = useState<VisitDetailResponse | null>(null)
   const [intake, setIntake] = useState<IntakeSessionResponse | null>(null)
   const [preVisit, setPreVisit] = useState<PreVisitSummaryResponse | null>(null)
-  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('preferred')
+  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('english')
+  const [translatedRecapRows, setTranslatedRecapRows] = useState<Array<{ question: string; answer: string }> | null>(null)
+  const [translatedChiefLabel, setTranslatedChiefLabel] = useState<string | null>(null)
+  const [translatingDisplay, setTranslatingDisplay] = useState(false)
 
   useEffect(() => {
     if (!visitId) return
@@ -94,7 +108,8 @@ export default function CarePrepIntakeDetailPage() {
     'INTAKE REVIEW'
   ).toUpperCase()
 
-  const preferredLanguage = languageLabel((intake?.language || 'en').trim() || 'en')
+  const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
+  const preferredLanguage = languageLabel(preferredLanguageCode)
   const activeLanguageLabel = languageMode === 'english' ? 'English' : preferredLanguage
 
   const intakeDateLine = useMemo(() => {
@@ -111,6 +126,51 @@ export default function CarePrepIntakeDetailPage() {
       return answer.length > 0 && !shouldHideQuestionLabel(item.question)
     })
   }, [intake?.question_answers])
+
+  useEffect(() => {
+    let cancelled = false
+    const pref = preferredLanguageCode.trim().toLowerCase()
+    if (languageMode !== 'english' || !pref || pref === 'en') {
+      setTranslatedRecapRows(null)
+      setTranslatedChiefLabel(null)
+      setTranslatingDisplay(false)
+      return
+    }
+    const payload = {
+      chiefLabel,
+      recapRows: recapRows.map((item) => ({
+        question: String(item.question || ''),
+        answer: String(item.answer || ''),
+      })),
+    }
+    setTranslatingDisplay(true)
+    void (async () => {
+      try {
+        const translated = await translateDisplayPayload(payload, 'English')
+        if (!cancelled) {
+          setTranslatedChiefLabel(String(translated.chiefLabel || ''))
+          setTranslatedRecapRows(
+            Array.isArray(translated.recapRows)
+              ? (translated.recapRows as Array<{ question: string; answer: string }>)
+              : null,
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setTranslatedChiefLabel(null)
+          setTranslatedRecapRows(null)
+        }
+      } finally {
+        if (!cancelled) setTranslatingDisplay(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [languageMode, preferredLanguageCode, chiefLabel, recapRows])
+
+  const displayChiefLabel = translatedChiefLabel || chiefLabel
+  const displayRecapRows = translatedRecapRows || recapRows
 
   if (!visitId) {
     return (
@@ -184,7 +244,7 @@ export default function CarePrepIntakeDetailPage() {
                     ))}
                     <span className="flex items-center gap-1.5 rounded-full bg-[#ffd9de] px-2.5 py-0.5 text-xs font-bold text-[#8a143c]">
                       <span className="material-symbols-outlined text-[14px]">warning</span>
-                      {chiefLabel}
+                      {displayChiefLabel}
                     </span>
                   </div>
                 </div>
@@ -218,6 +278,9 @@ export default function CarePrepIntakeDetailPage() {
                   {(intake?.status || 'unknown').replace(/_/g, ' ')}
                 </span>
                 <p className="text-xs text-slate-500">Display language: {activeLanguageLabel}</p>
+                {translatingDisplay && languageMode === 'english' && preferredLanguageCode.toLowerCase() !== 'en' && (
+                  <p className="text-xs text-slate-500">Translating display content to English…</p>
+                )}
               </div>
             </div>
 
@@ -231,10 +294,10 @@ export default function CarePrepIntakeDetailPage() {
                     </h3>
                   </div>
                   <div className="space-y-8 p-6 select-none">
-                    {recapRows.length === 0 && (
+                    {displayRecapRows.length === 0 && (
                       <p className="text-sm text-[#575e70]">No intake answers stored for this visit yet.</p>
                     )}
-                    {recapRows.map((item, idx) => (
+                    {displayRecapRows.map((item, idx) => (
                       <div key={`${visitId}-qa-${idx}`} className="group">
                         <p className="mb-2 text-base font-bold text-slate-900">{item.question || 'Question'}</p>
                         <div className="ml-4 border-l-2 border-slate-100 pl-4 transition-colors group-hover:border-[#006b2c]">

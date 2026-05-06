@@ -12,6 +12,7 @@ import {
   fetchTranscriptionStatus,
   fetchVisitDetail,
   fetchVisitTranscriptionDialogue,
+  translateDisplayPayload,
   structureVisitDialogue,
   generatePostVisitSummary,
   generateVitalsForm,
@@ -257,11 +258,16 @@ export default function VisitDetailPage() {
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
+  /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
+  const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
-  const [recordingPhase, setRecordingPhase] = useState<'idle' | 'recording' | 'paused'>('idle')
+  const [recordingPhase, setRecordingPhase] = useState<'idle' | 'recording' | 'paused' | 'preview'>('idle')
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null)
+  const [recordedPreviewFile, setRecordedPreviewFile] = useState<File | null>(null)
+  const [previewDurationLabel, setPreviewDurationLabel] = useState('')
   const [recordingError, setRecordingError] = useState<string | null>(null)
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -271,6 +277,15 @@ export default function VisitDetailPage() {
   const recordingStartedAtRef = useRef<number | null>(null)
   const accumulatedRecordingMsRef = useRef(0)
   const [postVisitSummary, setPostVisitSummary] = useState<PostVisitSummaryResponse | null>(null)
+  const [translatedDisplayBundle, setTranslatedDisplayBundle] = useState<{
+    intake: IntakeSessionResponse | null
+    preVisit: PreVisitSummaryResponse | null
+    transcriptionText: string | null
+    transcriptionStructuredDialogue: Array<Record<string, unknown>> | null
+    clinicalNote: ClinicalNoteLatest | null
+    postVisitSummary: PostVisitSummaryResponse | null
+  } | null>(null)
+  const [translatingDisplay, setTranslatingDisplay] = useState(false)
   const [postVisitMessage, setPostVisitMessage] = useState<string | null>(null)
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
@@ -281,7 +296,7 @@ export default function VisitDetailPage() {
     phoneDisplay: string
     languageDisplay: string
   } | null>(null)
-  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('preferred')
+  const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('english')
   const [labModalOpen, setLabModalOpen] = useState(false)
   const [labReportName, setLabReportName] = useState('')
   const [labCategory, setLabCategory] = useState('')
@@ -404,7 +419,7 @@ export default function VisitDetailPage() {
     setLabUploading(false)
     setLabModalError(null)
     setLabUploadFeedback(null)
-    setLanguageMode('preferred')
+    setLanguageMode('english')
   }, [visitId])
 
   useEffect(() => {
@@ -461,13 +476,74 @@ export default function VisitDetailPage() {
   const breadcrumbTitle = chief.length > 42 ? `${chief.slice(0, 40)}…` : chief
   const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
   const langBadge = languageLabel(preferredLanguageCode)
-  const postVisitLanguage = toPostVisitPatientLanguage(preferredLanguageCode)
+  const postVisitLanguage = toPostVisitPatientLanguage(
+    languageMode === 'english' ? 'en' : preferredLanguageCode,
+  )
   const activeLanguageLabel = languageMode === 'english' ? 'English' : langBadge
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
+
+  useEffect(() => {
+    let cancelled = false
+    const pref = (preferredLanguageCode || '').trim().toLowerCase()
+    if (languageMode !== 'english' || !pref || pref === 'en') {
+      setTranslatedDisplayBundle(null)
+      setTranslatingDisplay(false)
+      return
+    }
+    const payload = {
+      intake,
+      preVisit,
+      transcriptionText,
+      transcriptionStructuredDialogue,
+      clinicalNote,
+      postVisitSummary,
+    }
+    setTranslatingDisplay(true)
+    void (async () => {
+      try {
+        const translated = await translateDisplayPayload(payload, 'English')
+        if (!cancelled) {
+          setTranslatedDisplayBundle({
+            intake: (translated.intake as IntakeSessionResponse | null) ?? null,
+            preVisit: (translated.preVisit as PreVisitSummaryResponse | null) ?? null,
+            transcriptionText: (translated.transcriptionText as string | null) ?? null,
+            transcriptionStructuredDialogue:
+              (translated.transcriptionStructuredDialogue as Array<Record<string, unknown>> | null) ?? null,
+            clinicalNote: (translated.clinicalNote as ClinicalNoteLatest | null) ?? null,
+            postVisitSummary: (translated.postVisitSummary as PostVisitSummaryResponse | null) ?? null,
+          })
+        }
+      } catch {
+        if (!cancelled) setTranslatedDisplayBundle(null)
+      } finally {
+        if (!cancelled) setTranslatingDisplay(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    languageMode,
+    preferredLanguageCode,
+    intake,
+    preVisit,
+    transcriptionText,
+    transcriptionStructuredDialogue,
+    clinicalNote,
+    postVisitSummary,
+  ])
+
+  const displayIntake = translatedDisplayBundle?.intake ?? intake
+  const displayPreVisit = translatedDisplayBundle?.preVisit ?? preVisit
+  const displayTranscriptionText = translatedDisplayBundle?.transcriptionText ?? transcriptionText
+  const displayStructuredDialogue =
+    translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
+  const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
+  const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -524,6 +600,15 @@ export default function VisitDetailPage() {
   useEffect(() => {
     if (loading) return
     if (!patientId || !visitId) return
+    const tState = (transcriptionStatus?.status || '').toLowerCase()
+    const transcriptionBusy = tState === 'queued' || tState === 'pending' || tState === 'in_progress' || tState === 'processing'
+    if (transcriptionBusy) {
+      setVitalsForm(null)
+      setVitalsValues({})
+      setVitalsLocked(false)
+      setVitalsMessage('Vitals are hidden while transcription is processing. They will be available after transcription completes.')
+      return
+    }
     if (vitalsForm && postVisitSummary) return
     let cancelled = false
     void (async () => {
@@ -565,7 +650,7 @@ export default function VisitDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [loading, patientId, postVisitSummary, visitId, vitalsForm])
+  }, [loading, patientId, postVisitSummary, transcriptionStatus?.status, visitId, vitalsForm])
 
   const resetLabForm = useCallback(() => {
     setLabReportName('')
@@ -710,12 +795,14 @@ export default function VisitDetailPage() {
       setTranscriptionUploading(true)
       try {
         const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
+        setLastSubmittedAudioFilename(file.name || 'recording')
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
         setTranscriptionStatus({ status: accepted.status ?? 'queued', message: accepted.message ?? null })
         setTranscriptionText(null)
         setTranscriptionStructuredDialogue(null)
         return true
       } catch (err) {
+        setLastSubmittedAudioFilename(null)
         setTranscriptionMessage(getApiErrorMessage(err))
         return false
       } finally {
@@ -731,6 +818,20 @@ export default function VisitDetailPage() {
     const el = transcriptionFileInputRef.current
     if (el) el.value = ''
   }, [])
+
+  const clearRecordingPreview = useCallback(() => {
+    setRecordedPreviewFile(null)
+    setPreviewDurationLabel('')
+    setPreviewAudioUrl(null)
+  }, [])
+
+  const discardRecordedPreview = useCallback(() => {
+    clearRecordingPreview()
+    accumulatedRecordingMsRef.current = 0
+    setRecordingElapsedMs(0)
+    setRecordingPhase('idle')
+    setRecordingError(null)
+  }, [clearRecordingPreview])
 
   const handleUploadPendingTranscription = useCallback(() => {
     if (recordingPhase !== 'idle' || !patientId || !visitId) return
@@ -827,8 +928,8 @@ export default function VisitDetailPage() {
   }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
 
   const dialogueTurns = useMemo(
-    () => flattenStructuredDialogue(transcriptionStructuredDialogue),
-    [transcriptionStructuredDialogue],
+    () => flattenStructuredDialogue(displayStructuredDialogue),
+    [displayStructuredDialogue],
   )
   const transcriptionStateLower = (transcriptionStatus?.status || '').toLowerCase()
   const isTranscriptionProcessing =
@@ -836,6 +937,30 @@ export default function VisitDetailPage() {
     ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
       transcriptionStateLower,
     )
+
+  const handleUploadRecordedPreview = useCallback(() => {
+    if (!recordedPreviewFile || !patientId || !visitId || isTranscriptionProcessing) return
+    void (async () => {
+      const ok = await submitTranscriptionAudioFile(recordedPreviewFile)
+      if (ok) {
+        clearRecordingPreview()
+        setRecordingPhase('idle')
+      }
+    })()
+  }, [
+    recordedPreviewFile,
+    patientId,
+    visitId,
+    isTranscriptionProcessing,
+    submitTranscriptionAudioFile,
+    clearRecordingPreview,
+  ])
+
+  useEffect(() => {
+    return () => {
+      if (previewAudioUrl) URL.revokeObjectURL(previewAudioUrl)
+    }
+  }, [previewAudioUrl])
 
   useEffect(() => {
     if (recordingPhase !== 'recording') return
@@ -853,8 +978,17 @@ export default function VisitDetailPage() {
 
   useEffect(() => {
     if (tab !== 'transcription' || !patientId || !visitId) return
-    void loadTranscriptBody({ silent: true })
-  }, [tab, patientId, visitId, loadTranscriptBody])
+    void refreshTranscriptionStatus()
+  }, [tab, patientId, visitId, refreshTranscriptionStatus])
+
+  useEffect(() => {
+    if (tab !== 'transcription' || !patientId || !visitId) return
+    if (!isTranscriptionProcessing) return
+    const timer = window.setInterval(() => {
+      void refreshTranscriptionStatus()
+    }, 8000)
+    return () => window.clearInterval(timer)
+  }, [tab, patientId, visitId, isTranscriptionProcessing, refreshTranscriptionStatus])
 
   useEffect(() => {
     return () => {
@@ -876,6 +1010,8 @@ export default function VisitDetailPage() {
     }
     if (recordingPhase !== 'idle') return
     clearPendingTranscriptionFile()
+    clearRecordingPreview()
+    setLastSubmittedAudioFilename(null)
     setRecordingError(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -898,14 +1034,21 @@ export default function VisitDetailPage() {
         stopMediaTracks()
         mediaRecorderRef.current = null
         recordingStartedAtRef.current = null
+        const finalMs = accumulatedRecordingMsRef.current
         accumulatedRecordingMsRef.current = 0
         setRecordingElapsedMs(0)
-        setRecordingPhase('idle')
-        if (!chunks.length) return
+        if (!chunks.length) {
+          setRecordingPhase('idle')
+          setRecordingError('No audio was captured. Please try again.')
+          return
+        }
         const blob = new Blob(chunks, { type: m })
         const ext = m.includes('mp4') || m.includes('m4a') ? 'm4a' : 'webm'
         const file = new File([blob], `visit-recording-${visitId}-${Date.now()}.${ext}`, { type: blob.type })
-        void submitTranscriptionAudioFile(file)
+        setPreviewDurationLabel(formatRecordingElapsed(finalMs))
+        setPreviewAudioUrl(URL.createObjectURL(blob))
+        setRecordedPreviewFile(file)
+        setRecordingPhase('preview')
       }
       mr.start(250)
       setRecordingPhase('recording')
@@ -915,7 +1058,7 @@ export default function VisitDetailPage() {
       setRecordingPhase('idle')
       setRecordingError(getApiErrorMessage(e))
     }
-  }, [clearPendingTranscriptionFile, patientId, visitId, recordingPhase, submitTranscriptionAudioFile, stopMediaTracks])
+  }, [clearPendingTranscriptionFile, clearRecordingPreview, patientId, visitId, recordingPhase, stopMediaTracks])
 
   const handlePauseRecording = useCallback(() => {
     const mr = mediaRecorderRef.current
@@ -1087,10 +1230,10 @@ export default function VisitDetailPage() {
 
             <div className="mt-8 overflow-x-auto border-b border-[#bdcaba] px-8">
               <div className="mb-3 flex items-center justify-end gap-3">
-                <p className="text-xs text-[#575e70]">Display language: {activeLanguageLabel}</p>
+                <p className="text-sm font-medium text-[#575e70]">Display language: {activeLanguageLabel}</p>
                 <div className="inline-flex items-center rounded-lg border border-[#bdcaba] bg-white p-1">
                   <button
-                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                    className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
                       languageMode === 'english' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
                     }`}
                     onClick={() => setLanguageMode('english')}
@@ -1099,7 +1242,7 @@ export default function VisitDetailPage() {
                     English
                   </button>
                   <button
-                    className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                    className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
                       languageMode === 'preferred' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
                     }`}
                     onClick={() => setLanguageMode('preferred')}
@@ -1138,11 +1281,11 @@ export default function VisitDetailPage() {
 
               {!loading && tab === 'pre-visit' && (
                 <VisitIntakeCanvas
-                  clinicalNote={clinicalNote}
-                  intake={intake}
+                  clinicalNote={displayClinicalNote}
+                  intake={displayIntake}
                   onPreVisitUpdated={setPreVisit}
                   patientName={patientName}
-                  preVisit={preVisit}
+                  preVisit={displayPreVisit}
                   visit={visit}
                   visitId={visitId}
                 />
@@ -1150,9 +1293,16 @@ export default function VisitDetailPage() {
 
               {!loading && tab === 'vitals' && (
                 <div className="space-y-4 rounded-xl border border-[#bdcaba] bg-white p-8 text-sm text-[#3e4a3d] shadow-sm">
+                  {isTranscriptionProcessing ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      Transcription is processing. Vitals are temporarily hidden and will be available after transcription
+                      completes.
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
+                      disabled={isTranscriptionProcessing}
                       onClick={() => {
                         if (!patientId || !visitId) return
                         void (async () => {
@@ -1177,7 +1327,7 @@ export default function VisitDetailPage() {
                     </button>
                   </div>
                   {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
-                  {vitalsForm && (
+                  {!isTranscriptionProcessing && vitalsForm && (
                     <>
                       <label className="block text-xs font-semibold text-[#171d16]">
                         Staff Name
@@ -1314,7 +1464,7 @@ export default function VisitDetailPage() {
 
                   <section className="space-y-3">
                     <h4 className="text-sm font-bold tracking-tight text-[#111827]">Record audio</h4>
-                    {recordingPhase === 'idle' ? (
+                    {recordingPhase === 'idle' && (
                       <button
                         className="flex min-h-[6.5rem] w-full flex-col items-center justify-center rounded-xl border-2 border-gray-200 bg-white px-6 py-10 text-[#111827] transition-colors hover:border-[#006b2c]/35 hover:bg-[#f8fdf6] disabled:cursor-not-allowed disabled:opacity-45"
                         disabled={!patientId || !visitId || isTranscriptionProcessing}
@@ -1326,10 +1476,12 @@ export default function VisitDetailPage() {
                         </span>
                         <span className="text-[17px] font-semibold tracking-tight">Start recording</span>
                         <span className="mt-1 max-w-md text-xs font-normal text-[#575e70]">
-                          Browser capture — pause or stop when the consultation ends; audio is transcribed automatically.
+                          Browser capture — pause or stop when finished. You can listen back, then upload or discard before
+                          transcription.
                         </span>
                       </button>
-                    ) : (
+                    )}
+                    {(recordingPhase === 'recording' || recordingPhase === 'paused') && (
                       <div className="space-y-3 rounded-xl border-2 border-[#006b2c]/25 bg-[#f8fdf6] p-6">
                         <div className="flex flex-wrap items-center gap-2">
                           <button
@@ -1338,7 +1490,7 @@ export default function VisitDetailPage() {
                             type="button"
                           >
                             <span className="material-symbols-outlined mr-1 align-middle text-[18px]">stop_circle</span>
-                            Stop and send for transcription
+                            Stop recording
                           </button>
                           <button
                             className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-[#171d16]"
@@ -1355,18 +1507,60 @@ export default function VisitDetailPage() {
                         </div>
                         <p className="text-xs font-medium text-[#006b2c]">
                           {recordingPhase === 'recording'
-                            ? 'Recording… Speak clearly; waveform is not saved until you stop.'
-                            : 'Paused — resume when ready, then stop to upload for transcription.'}
+                            ? 'Recording… Speak clearly; you can preview and upload after you stop.'
+                            : 'Paused — resume when ready, then stop to review and upload.'}
                         </p>
                         <p className="text-xs font-semibold text-[#111827]">
                           Duration: {formatRecordingElapsed(recordingElapsedMs)}
                         </p>
                       </div>
                     )}
+                    {recordingPhase === 'preview' && previewAudioUrl && recordedPreviewFile && (
+                      <div className="space-y-4 rounded-xl border-2 border-sky-200 bg-sky-50/60 p-6">
+                        <div>
+                          <p className="text-sm font-semibold text-[#111827]">Review recording</p>
+                          <p className="mt-1 text-xs text-[#575e70]">
+                            Duration {previewDurationLabel || '—'} · {recordedPreviewFile.name}. Play to verify, then
+                            upload or discard.
+                          </p>
+                        </div>
+                        <audio className="h-10 w-full max-w-xl" controls preload="metadata" src={previewAudioUrl} />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="rounded-xl bg-[#16a34a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#15803d] disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={transcriptionUploading || isTranscriptionProcessing || !patientId || !visitId}
+                            onClick={() => void handleUploadRecordedPreview()}
+                            type="button"
+                          >
+                            {transcriptionUploading ? 'Uploading…' : 'Upload for transcription'}
+                          </button>
+                          <button
+                            className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-[#171d16] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={transcriptionUploading}
+                            onClick={() => discardRecordedPreview()}
+                            type="button"
+                          >
+                            Discard and re-record
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </section>
 
                   {recordingError && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{recordingError}</div>
+                  )}
+
+                  {lastSubmittedAudioFilename && (transcriptionUploading || isTranscriptionProcessing) && (
+                    <div
+                      className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"
+                      role="status"
+                    >
+                      <p className="font-semibold">{transcriptionUploading ? 'Uploading audio…' : 'Audio received — transcription in progress'}</p>
+                      <p className="mt-1 truncate text-xs text-emerald-900/90" title={lastSubmittedAudioFilename}>
+                        File: {lastSubmittedAudioFilename}
+                      </p>
+                    </div>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2 border-t border-[#e9f0e5] pt-6">
@@ -1424,7 +1618,7 @@ export default function VisitDetailPage() {
                         ))}
                       </div>
                     ) : transcriptionStateLower === 'completed' &&
-                      (transcriptionText?.length ?? 0) > 0 ? (
+                      (displayTranscriptionText?.length ?? 0) > 0 ? (
                       <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-[#3e4a3d]">
                         <p className="mb-3">
                           Raw speech-to-text is ready, but speaker-labeled dialogue is not on file yet. Generate Doctor/Patient
@@ -1458,7 +1652,7 @@ export default function VisitDetailPage() {
 
               {!loading && tab === 'clinical-note' && (
                 <VisitClinicalNotePanel
-                  clinicalNote={clinicalNote}
+                  clinicalNote={displayClinicalNote}
                   onNoteUpdated={setClinicalNote}
                   onApproveNext={({ followUpDate, followUpTime }) => {
                     setRecapFollowUpDateDraft(followUpDate)
@@ -1480,6 +1674,9 @@ export default function VisitDetailPage() {
                     <p className="mt-1 text-xs text-[#575e70]">
                       Choose the WhatsApp number for this send.
                     </p>
+                    {translatingDisplay && languageMode === 'english' && preferredLanguageCode.toLowerCase() !== 'en' && (
+                      <p className="mt-1 text-xs text-[#575e70]">Translating display content to English…</p>
+                    )}
                   </div>
 
                   <fieldset className="space-y-3">
@@ -1541,11 +1738,11 @@ export default function VisitDetailPage() {
                     </label>
                   </div>
 
-                  {postVisitSummary?.whatsapp_payload?.trim() && (
+                  {displayPostVisitSummary?.whatsapp_payload?.trim() && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
                       <p className="mb-2 text-xs font-semibold text-[#006b2c]">Preview</p>
                       <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-[#171d16]">
-                        {postVisitSummary.whatsapp_payload.trim()}
+                        {displayPostVisitSummary.whatsapp_payload.trim()}
                       </pre>
                       <p className="mt-2 text-xs text-[#575e70]">Approved WhatsApp template · post-visit recap</p>
                     </div>
@@ -1647,40 +1844,42 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  {postVisitSummary?.payload && (
+                  {displayPostVisitSummary?.payload && (
                     <div className="space-y-2 rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
                       <p>
-                        <strong>Visit reason:</strong> {postVisitSummary.payload.visit_reason || '—'}
+                        <strong>Visit reason:</strong> {displayPostVisitSummary.payload.visit_reason || '—'}
                       </p>
                       <p>
-                        <strong>Findings:</strong> {postVisitSummary.payload.what_doctor_found || '—'}
+                        <strong>Findings:</strong> {displayPostVisitSummary.payload.what_doctor_found || '—'}
                       </p>
                       <p>
-                        <strong>Follow-up:</strong> {postVisitSummary.payload.follow_up || '—'}
+                        <strong>Follow-up:</strong> {displayPostVisitSummary.payload.follow_up || '—'}
                       </p>
                       <p>
-                        <strong>Next visit date:</strong> {postVisitSummary.payload.next_visit_date || '—'}
+                        <strong>Next visit date:</strong> {displayPostVisitSummary.payload.next_visit_date || '—'}
                       </p>
                       <p>
                         <strong>Medicines to take:</strong>{' '}
-                        {postVisitSummary.payload.medicines_to_take?.length
-                          ? postVisitSummary.payload.medicines_to_take.join(', ')
+                        {displayPostVisitSummary.payload.medicines_to_take?.length
+                          ? displayPostVisitSummary.payload.medicines_to_take.join(', ')
                           : '—'}
                       </p>
                       <p>
                         <strong>Tests recommended:</strong>{' '}
-                        {postVisitSummary.payload.tests_recommended?.length
-                          ? postVisitSummary.payload.tests_recommended.join(', ')
+                        {displayPostVisitSummary.payload.tests_recommended?.length
+                          ? displayPostVisitSummary.payload.tests_recommended.join(', ')
                           : '—'}
                       </p>
                       <p>
                         <strong>Self-care:</strong>{' '}
-                        {postVisitSummary.payload.self_care?.length ? postVisitSummary.payload.self_care.join(', ') : '—'}
+                        {displayPostVisitSummary.payload.self_care?.length
+                          ? displayPostVisitSummary.payload.self_care.join(', ')
+                          : '—'}
                       </p>
                       <p>
                         <strong>Warning signs:</strong>{' '}
-                        {postVisitSummary.payload.warning_signs?.length
-                          ? postVisitSummary.payload.warning_signs.join(', ')
+                        {displayPostVisitSummary.payload.warning_signs?.length
+                          ? displayPostVisitSummary.payload.warning_signs.join(', ')
                           : '—'}
                       </p>
                     </div>

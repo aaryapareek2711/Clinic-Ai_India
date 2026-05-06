@@ -449,6 +449,17 @@ export async function fetchVisitTranscriptionDialogue(
   }
 }
 
+export async function translateDisplayPayload<T extends Record<string, unknown>>(
+  payload: T,
+  targetLanguage = 'English',
+): Promise<T> {
+  const { data } = await apiClient.post<{ payload: T }>('/api/notes/translate-display', {
+    payload,
+    target_language: targetLanguage,
+  })
+  return data.payload
+}
+
 export type PostVisitPatientLanguage = 'hi' | 'en' | 'hi-eng'
 
 export async function generatePostVisitSummary(
