@@ -206,10 +206,10 @@ function iconClasses(tone: string) {
 }
 
 function visitTimeForSort(v: ProviderVisitListItem): number {
-  const scheduled = new Date(v.scheduled_start || '').getTime()
-  if (!Number.isNaN(scheduled) && scheduled > 0) return scheduled
   const created = new Date(v.created_at || '').getTime()
-  return Number.isNaN(created) ? 0 : created
+  if (!Number.isNaN(created) && created > 0) return created
+  const scheduled = new Date(v.scheduled_start || '').getTime()
+  return Number.isNaN(scheduled) ? 0 : scheduled
 }
 
 function VisitsPage() {

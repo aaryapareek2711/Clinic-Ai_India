@@ -34,13 +34,6 @@ function labelForGender(gender: string | null | undefined): string {
   return 'person'
 }
 
-function formatVisitDate(value: string | null | undefined): string {
-  if (!value) return '—'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
 function toDisplayName(value: string | null | undefined): string {
   const raw = (value || '').trim()
   if (!raw) return 'Patient'
@@ -106,17 +99,7 @@ function PatientsPage() {
 
   return (
     <div className="text-[#171d16] min-h-screen font-manrope">
-      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8">
-        <div className="flex items-center gap-6 w-1/2">
-          <div className="relative w-full max-w-md group">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-teal-600 transition-colors">search</span>
-            <input
-              className="w-full bg-slate-50 border border-gray-200 rounded-full pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all outline-none"
-              placeholder="Search patients, files, or records..."
-              type="text"
-            />
-          </div>
-        </div>
+      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-end px-8">
         <div className="flex items-center gap-4">
           <div className="h-6 w-px bg-gray-200 mx-2" />
           <button className="hover:bg-slate-100 rounded-full p-2 transition-all relative" onClick={() => setIsNotificationsOpen(true)} type="button">
@@ -193,7 +176,6 @@ function PatientsPage() {
                 <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Patient ID</th>
                 <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Gender / Age</th>
                 <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Mobile Number</th>
-                <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase">Last Visit Date</th>
                 <th className="px-6 py-4 text-[13px] tracking-[0.05em] font-bold text-[#3e4a3d] uppercase text-right">Actions</th>
               </tr>
             </thead>
@@ -231,12 +213,6 @@ function PatientsPage() {
                   <td className="px-6 py-4">
                     <span className="text-sm text-slate-600">{patient.phone_number || '—'}</span>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-slate-700">{formatVisitDate(patient.latest_visit_scheduled_start)}</span>
-                      <span className="text-[11px] text-slate-400">{patient.latest_visit_id ? 'Latest visit linked' : 'No visit yet'}</span>
-                    </div>
-                  </td>
                   <td className="px-6 py-4 text-right">
                     <button
                       className="text-slate-400 hover:text-teal-600 transition-colors"
@@ -253,7 +229,7 @@ function PatientsPage() {
               ))}
               {!loading && filteredPatients.length === 0 && (
                 <tr>
-                  <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={6}>
+                  <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={5}>
                     No patients found in backend.
                   </td>
                 </tr>
