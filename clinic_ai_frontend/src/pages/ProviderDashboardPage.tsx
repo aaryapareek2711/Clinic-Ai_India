@@ -195,7 +195,7 @@ function ProviderDashboardPage() {
       const pid = (a.patient_id || '').trim()
       if (pid) patientsForDaySet.add(pid)
     }
-    const pending = selectedDayAllSlots.filter((a) => {
+    const pending = selectedDayUpcomingSlots.filter((a) => {
       const s = (a.status || '').toLowerCase()
       return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
     }).length
@@ -204,7 +204,7 @@ function ProviderDashboardPage() {
       pending,
       visitsForDayCount: selectedDayAllSlots.length,
     }
-  }, [selectedDayAllSlots])
+  }, [selectedDayAllSlots, selectedDayUpcomingSlots])
 
   const upcomingList = useMemo(() => {
     return selectedDayUpcomingSlots

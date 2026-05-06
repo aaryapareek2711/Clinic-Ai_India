@@ -331,20 +331,6 @@ function NewVisitPage() {
             </div>
             <div className="flex gap-4">
               <button
-                className="rounded-lg border border-gray-200 bg-white px-6 py-2 font-semibold text-[#111827] transition-colors hover:bg-gray-50"
-                onClick={() => navigate('/start-visit')}
-                type="button"
-              >
-                Start Visit
-              </button>
-              <button
-                className="rounded-lg border border-gray-200 bg-white px-6 py-2 font-semibold text-[#111827] transition-colors hover:bg-gray-50"
-                onClick={() => navigate('/dashboard')}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
                 className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-6 py-2 font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
                 disabled={submitting}
                 onClick={() => void handleConfirm()}
