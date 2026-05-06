@@ -1329,15 +1329,26 @@ export default function VisitDetailPage() {
               )}
 
               {!loading && tab === 'pre-visit' && (
-                <VisitIntakeCanvas
-                  clinicalNote={displayClinicalNote}
-                  intake={displayIntake}
-                  onPreVisitUpdated={setPreVisit}
-                  patientName={patientName}
-                  preVisit={displayPreVisit}
-                  visit={visit}
-                  visitId={visitId}
-                />
+                <div className="space-y-4">
+                  <VisitIntakeCanvas
+                    clinicalNote={displayClinicalNote}
+                    intake={displayIntake}
+                    onPreVisitUpdated={setPreVisit}
+                    patientName={patientName}
+                    preVisit={displayPreVisit}
+                    visit={visit}
+                    visitId={visitId}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => syncTabToUrl('vitals')}
+                      type="button"
+                    >
+                      Next: Vitals
+                    </button>
+                  </div>
+                </div>
               )}
 
               {!loading && tab === 'vitals' && (
@@ -1424,6 +1435,15 @@ export default function VisitDetailPage() {
                       </div>
                     </>
                   )}
+                  <div className="flex justify-end border-t border-[#e9f0e5] pt-4">
+                    <button
+                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => syncTabToUrl('transcription')}
+                      type="button"
+                    >
+                      Next: Transcription
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1709,24 +1729,44 @@ export default function VisitDetailPage() {
                       </div>
                     )}
                   </div>
+                  <div className="flex justify-end border-t border-[#e9f0e5] pt-4">
+                    <button
+                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => syncTabToUrl('clinical-note')}
+                      type="button"
+                    >
+                      Next: Clinical Note
+                    </button>
+                  </div>
                 </div>
               )}
 
               {!loading && tab === 'clinical-note' && (
-                <VisitClinicalNotePanel
-                  clinicalNote={displayClinicalNote}
-                  onNoteUpdated={setClinicalNote}
-                  onApproveNext={({ followUpDate, followUpTime }) => {
-                    setRecapFollowUpDateDraft(followUpDate)
-                    setRecapFollowUpTimeDraft(followUpTime)
-                    syncTabToUrl('post-visit')
-                  }}
-                  patientId={patientId}
-                  transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
-                  transcriptionStatusKnown={transcriptionStatus != null}
-                  visitId={visitId}
-                  visitTitle={chief}
-                />
+                <div className="space-y-4">
+                  <VisitClinicalNotePanel
+                    clinicalNote={displayClinicalNote}
+                    onNoteUpdated={setClinicalNote}
+                    onApproveNext={({ followUpDate, followUpTime }) => {
+                      setRecapFollowUpDateDraft(followUpDate)
+                      setRecapFollowUpTimeDraft(followUpTime)
+                      syncTabToUrl('post-visit')
+                    }}
+                    patientId={patientId}
+                    transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
+                    transcriptionStatusKnown={transcriptionStatus != null}
+                    visitId={visitId}
+                    visitTitle={chief}
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => syncTabToUrl('post-visit')}
+                      type="button"
+                    >
+                      Next: Post-Visit
+                    </button>
+                  </div>
+                </div>
               )}
 
               {!loading && tab === 'post-visit' && (

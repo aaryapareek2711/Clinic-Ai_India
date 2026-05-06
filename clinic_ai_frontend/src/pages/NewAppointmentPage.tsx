@@ -85,6 +85,12 @@ function formatChipTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
+function safeVisitId(value: unknown): string | null {
+  const s = String(value ?? '').trim()
+  if (!s || s === 'undefined' || s === 'null') return null
+  return s
+}
+
 function computeSlotsForDate(params: {
   dateStr: string
   appointmentDuration: number
@@ -338,9 +344,14 @@ function NewAppointmentPage() {
             )
       if (created.length === 1) {
         const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-        navigate(`/visits/detail?visitId=${encodeURIComponent(created[0].visit_id)}&tab=${targetTab}`)
+        const vid = safeVisitId(created[0]?.visit_id)
+        if (!vid) {
+          navigate('/visits', { replace: true })
+        } else {
+          navigate(`/visits/detail?visitId=${encodeURIComponent(vid)}&tab=${targetTab}`, { replace: true })
+        }
       } else {
-        navigate('/visits')
+        navigate('/visits', { replace: true })
       }
     } catch (e) {
       setError(getApiErrorMessage(e))

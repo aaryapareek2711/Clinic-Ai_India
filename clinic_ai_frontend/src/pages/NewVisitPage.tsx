@@ -67,6 +67,12 @@ function formatChipTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
+function safeVisitId(value: unknown): string | null {
+  const s = String(value ?? '').trim()
+  if (!s || s === 'undefined' || s === 'null') return null
+  return s
+}
+
 type SlotBlock = {
   startIso: string
   booked: boolean
@@ -203,12 +209,9 @@ function NewVisitPage() {
       setFormError('Consent is required to register.')
       return
     }
-    if (visitKind === 'walk_in' && !selectedSlot) {
+    const hasAppointmentDate = appointmentDate.trim().length > 0
+    if (hasAppointmentDate && visitKind === 'walk_in' && !selectedSlot) {
       setFormError('Select an appointment slot for Walk-in visit type.')
-      return
-    }
-    if (visitKind === 'scheduled' && selectedSlots.length === 0) {
-      setFormError('Select at least one appointment slot.')
       return
     }
     try {
@@ -223,7 +226,7 @@ function NewVisitPage() {
         consent: true,
         visit_type: visitKind,
       })
-      if (appointmentDate.trim()) {
+      if (hasAppointmentDate) {
         const startsToCreate =
           visitKind === 'walk_in'
             ? selectedSlot
@@ -233,8 +236,18 @@ function NewVisitPage() {
                 .map((s) => s.startIso)
                 .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
 
-        if (startsToCreate.length === 0) {
+        if (visitKind === 'walk_in' && startsToCreate.length === 0) {
           setFormError('Select appointment slot(s).')
+          return
+        }
+
+        if (startsToCreate.length === 0) {
+          const registeredVisitId = safeVisitId(registered.visit_id)
+          if (!registeredVisitId) {
+            navigate('/dashboard', { replace: true })
+            return
+          }
+          navigate('/dashboard', { replace: true })
           return
         }
 
@@ -251,14 +264,23 @@ function NewVisitPage() {
           persistAppointmentDuration(scheduled_start, schedule.defaultSlotMinutes || 15)
         })
         if (createdVisits.length > 1) {
-          navigate('/visits')
+          navigate('/dashboard', { replace: true })
           return
         }
-        const targetTab = visitKind === 'walk_in' ? 'vitals' : 'pre-visit'
-        navigate(`/visits/detail?visitId=${encodeURIComponent(createdVisits[0].visit_id)}&tab=${targetTab}`)
+        const bookedId = safeVisitId(createdVisits[0]?.visit_id)
+        if (!bookedId) {
+          navigate('/dashboard', { replace: true })
+          return
+        }
+        navigate('/dashboard', { replace: true })
         return
       }
-      navigate('/dashboard')
+      const registeredVisitId = safeVisitId(registered.visit_id)
+      if (!registeredVisitId) {
+        navigate('/dashboard', { replace: true })
+        return
+      }
+      navigate('/dashboard', { replace: true })
     } catch (e) {
       setFormError(getApiErrorMessage(e))
     } finally {
