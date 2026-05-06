@@ -40,9 +40,15 @@ def _serialize_datetime(value):
 
 def _workflow_stage_triplet_for_status(status: str) -> dict:
     s = str(status or "").strip().lower()
-    if s in {"open", "scheduled", "queued"}:
+    if s in {"patient_registered"}:
         return {
             "previous_workflow_stage": None,
+            "current_workflow_stage": "patient_registered",
+            "next_workflow_stage": "intake",
+        }
+    if s in {"open", "scheduled", "queued"}:
+        return {
+            "previous_workflow_stage": "patient_registered",
             "current_workflow_stage": "intake",
             "next_workflow_stage": "pre_visit",
         }
