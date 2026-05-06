@@ -129,6 +129,19 @@ export async function fetchVisitDetail(visitId: string): Promise<VisitDetailResp
   return data
 }
 
+export async function scheduleVisitIntake(
+  visitId: string,
+  payload: { appointment_date: string; appointment_time: string },
+): Promise<{ visit_id: string; patient_id: string; scheduled_start: string; whatsapp_triggered: boolean }> {
+  const { data } = await apiClient.post<{
+    visit_id: string
+    patient_id: string
+    scheduled_start: string
+    whatsapp_triggered: boolean
+  }>(`/api/visits/${encodeURIComponent(visitId)}/schedule-intake`, payload)
+  return data
+}
+
 export async function fetchIntakeSession(visitId: string): Promise<IntakeSessionResponse> {
   const { data } = await apiClient.get<IntakeSessionResponse>(
     `/api/visits/${encodeURIComponent(visitId)}/intake-session`,

@@ -17,6 +17,7 @@ import {
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
+  scheduleVisitIntake,
   type PostVisitPatientLanguage,
   submitVitals,
   createLabRecordText,
@@ -67,6 +68,13 @@ function ageFromDob(dob: string | undefined): string {
   const y = new Date(dob).getFullYear()
   if (Number.isNaN(y) || y < 1900) return '—'
   return `${new Date().getFullYear() - y}`
+}
+
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
@@ -296,6 +304,7 @@ export default function VisitDetailPage() {
     clinicalNote: ClinicalNoteLatest | null
     postVisitSummary: PostVisitSummaryResponse | null
   } | null>(null)
+  const [chiefEnglish, setChiefEnglish] = useState('')
   const [translatingDisplay, setTranslatingDisplay] = useState(false)
   const [postVisitMessage, setPostVisitMessage] = useState<string | null>(null)
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
@@ -308,6 +317,11 @@ export default function VisitDetailPage() {
     languageDisplay: string
   } | null>(null)
   const [languageMode, setLanguageMode] = useState<'english' | 'preferred'>('english')
+  const [rescheduleOpen, setRescheduleOpen] = useState(false)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
   const [labModalOpen, setLabModalOpen] = useState(false)
   const [labReportName, setLabReportName] = useState('')
   const [labCategory, setLabCategory] = useState('')
@@ -486,9 +500,17 @@ export default function VisitDetailPage() {
     intake?.illness?.trim() ||
     'Consultation'
 
-  const breadcrumbTitle = chief.length > 42 ? `${chief.slice(0, 40)}…` : chief
+  const headerChief = (chiefEnglish || chief || 'Consultation').trim()
+  const breadcrumbTitle = headerChief.length > 42 ? `${headerChief.slice(0, 40)}…` : headerChief
   const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
   const langBadge = languageLabel(preferredLanguageCode)
+  const scheduledVisitDisplay = useMemo(() => {
+    const raw = (visit?.scheduled_start || '').trim()
+    if (!raw) return 'Not booked'
+    const dt = new Date(raw)
+    if (Number.isNaN(dt.getTime())) return raw
+    return dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  }, [visit?.scheduled_start])
   const postVisitLanguage = toPostVisitPatientLanguage(
     languageMode === 'english' ? 'en' : preferredLanguageCode,
   )
@@ -498,6 +520,30 @@ export default function VisitDetailPage() {
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
+  useEffect(() => {
+    let cancelled = false
+    const pref = (preferredLanguageCode || '').trim().toLowerCase()
+    if (!chief.trim()) {
+      setChiefEnglish('Consultation')
+      return
+    }
+    if (!pref || pref === 'en') {
+      setChiefEnglish(chief)
+      return
+    }
+    void (async () => {
+      try {
+        const translated = await translateDisplayPayload({ chief }, 'English')
+        if (!cancelled) setChiefEnglish(String(translated.chief || chief))
+      } catch {
+        if (!cancelled) setChiefEnglish(chief)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [chief, preferredLanguageCode])
+
   useEffect(() => {
     let cancelled = false
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
@@ -1259,11 +1305,12 @@ export default function VisitDetailPage() {
                       )}
                     </div>
                     <p className="font-normal text-gray-400">
-                      {ageFromDob(visit?.patient?.date_of_birth)} Years • {genderLabel} • {chief}
+                      {ageFromDob(visit?.patient?.date_of_birth)} Years • {genderLabel} • {headerChief}
                     </p>
                   </div>
                 </div>
                 <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
+                  <p className="text-xs text-white/80">Appointment: {scheduledVisitDisplay}</p>
                   {labUploadFeedback && (
                     <p className="text-xs text-emerald-300 md:text-right" role="status">
                       {labUploadFeedback}
@@ -1989,6 +2036,70 @@ export default function VisitDetailPage() {
           </>
         )}
       </main>
+
+      {rescheduleOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">
+          <button aria-label="Close reschedule dialog" className="absolute inset-0" onClick={() => setRescheduleOpen(false)} type="button" />
+          <div className="relative z-[111] w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-[#171d16]">Edit Appointment</h3>
+            <p className="mt-1 text-sm text-[#3e4a3d]">{patientName}</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Date
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  min={localDateInputMin()}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  type="date"
+                  value={rescheduleDate}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Time
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  type="time"
+                  value={rescheduleTime}
+                />
+              </label>
+            </div>
+            {rescheduleError && <p className="mt-3 text-xs text-red-700">{rescheduleError}</p>}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-slate-50"
+                onClick={() => setRescheduleOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime || !visitId}
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      setRescheduleSubmitting(true)
+                      setRescheduleError(null)
+                      await scheduleVisitIntake(visitId, { appointment_date: rescheduleDate, appointment_time: rescheduleTime })
+                      const refreshed = await fetchVisitDetail(visitId)
+                      setVisit(refreshed)
+                      setRescheduleOpen(false)
+                    } catch (e) {
+                      setRescheduleError(getApiErrorMessage(e))
+                    } finally {
+                      setRescheduleSubmitting(false)
+                    }
+                  })()
+                }}
+                type="button"
+              >
+                {rescheduleSubmitting ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {labModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">

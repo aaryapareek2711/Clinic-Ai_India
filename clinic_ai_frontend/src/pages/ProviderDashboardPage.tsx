@@ -277,6 +277,27 @@ function ProviderDashboardPage() {
             </div>
           </section>
 
+          <div className="flex items-center justify-end gap-2">
+            <button
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                upcomingDayFilter === 'today' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 bg-white text-[#171d16]'
+              }`}
+              onClick={() => setUpcomingDayFilter('today')}
+              type="button"
+            >
+              Today
+            </button>
+            <button
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                upcomingDayFilter === 'tomorrow' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 bg-white text-[#171d16]'
+              }`}
+              onClick={() => setUpcomingDayFilter('tomorrow')}
+              type="button"
+            >
+              Tomorrow
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
               <div className="flex items-start justify-between gap-3">
@@ -314,26 +335,6 @@ function ProviderDashboardPage() {
             <div className="border-b border-gray-100 p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[24px] font-bold leading-tight">Upcoming Schedule</h2>
-                <div className="flex items-center gap-2">
-                  <button
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
-                      upcomingDayFilter === 'today' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 text-[#171d16]'
-                    }`}
-                    onClick={() => setUpcomingDayFilter('today')}
-                    type="button"
-                  >
-                    Today
-                  </button>
-                  <button
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
-                      upcomingDayFilter === 'tomorrow' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 text-[#171d16]'
-                    }`}
-                    onClick={() => setUpcomingDayFilter('tomorrow')}
-                    type="button"
-                  >
-                    Tomorrow
-                  </button>
-                </div>
               </div>
               <p className="mt-1 text-xs text-gray-500">
                 {upcomingList.length} {upcomingDayFilter} · total slots

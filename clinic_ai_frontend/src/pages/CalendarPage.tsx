@@ -7,6 +7,7 @@ import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
+  scheduleVisitIntake,
   type ProviderUpcomingAppointment,
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -79,6 +80,13 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function isUpcomingSidebarStatus(raw: string | undefined): boolean {
   const status = (raw || '').trim().toLowerCase()
   if (!status) return true
@@ -96,12 +104,33 @@ function CalendarPage() {
   const [focusDate, setFocusDate] = useState(() => new Date())
   const [patients, setPatients] = useState<PatientSummary[]>([])
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
+  const [patientsLoading, setPatientsLoading] = useState(false)
+  const [rescheduleTarget, setRescheduleTarget] = useState<ProviderUpcomingAppointment | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const isMountedRef = useRef(true)
 
+  const ensurePatientsLoaded = useCallback(async () => {
+    if (patientsLoading || patients.length > 0) return
+    setPatientsLoading(true)
+    try {
+      const list = await fetchPatients()
+      if (!isMountedRef.current) return
+      setPatients(list)
+    } catch {
+      // Patients are used only for CSV template convenience.
+    } finally {
+      if (isMountedRef.current) setPatientsLoading(false)
+    }
+  }, [patients.length, patientsLoading])
+
   useEffect(() => {
     if (!isImportCsvOpen) return
+    void ensurePatientsLoaded()
     function handlePointerDown(ev: MouseEvent) {
       if (importCsvRef.current && !importCsvRef.current.contains(ev.target as Node)) {
         setIsImportCsvOpen(false)
@@ -109,7 +138,7 @@ function CalendarPage() {
     }
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [isImportCsvOpen])
+  }, [ensurePatientsLoaded, isImportCsvOpen])
 
   const loadCalendarData = useCallback(async (showSpinner: boolean) => {
     if (!isMountedRef.current) return
@@ -117,22 +146,17 @@ function CalendarPage() {
       setLoading(true)
       setLoadError(null)
     }
-    const [appointmentsRes, patientsRes] = await Promise.allSettled([
-      fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-      fetchPatients(),
-    ])
-    if (!isMountedRef.current) return
-    if (appointmentsRes.status === 'fulfilled') {
-      setAppointments(appointmentsRes.value)
+    try {
+      const appointmentsRes = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+      if (!isMountedRef.current) return
+      setAppointments(appointmentsRes)
+      setLoadError(null)
+      setLoading(false)
+    } catch (e) {
+      if (!isMountedRef.current) return
+      setLoadError(getApiErrorMessage(e))
+      setLoading(false)
     }
-    if (patientsRes.status === 'fulfilled') {
-      setPatients(patientsRes.value)
-    }
-    const errs: string[] = []
-    if (appointmentsRes.status === 'rejected') errs.push(getApiErrorMessage(appointmentsRes.reason))
-    if (patientsRes.status === 'rejected') errs.push(`Patient list failed: ${getApiErrorMessage(patientsRes.reason)}`)
-    setLoadError(errs.length ? errs.join(' · ') : null)
-    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -218,6 +242,29 @@ function CalendarPage() {
     setFocusDate((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1))
   }
 
+  function openDayAppointments(date: Date): void {
+    setFocusDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()))
+    setViewMode('day')
+  }
+
+  function openRescheduleModal(appt: ProviderUpcomingAppointment): void {
+    setRescheduleTarget(appt)
+    const dt = new Date(appt.scheduled_start)
+    if (!Number.isNaN(dt.getTime())) {
+      const y = dt.getFullYear()
+      const m = String(dt.getMonth() + 1).padStart(2, '0')
+      const d = String(dt.getDate()).padStart(2, '0')
+      const hh = String(dt.getHours()).padStart(2, '0')
+      const mm = String(dt.getMinutes()).padStart(2, '0')
+      setRescheduleDate(`${y}-${m}-${d}`)
+      setRescheduleTime(`${hh}:${mm}`)
+    } else {
+      setRescheduleDate('')
+      setRescheduleTime('')
+    }
+    setRescheduleError(null)
+  }
+
   return (
     <div className="min-h-screen font-inter text-[#171d16]">
       <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
@@ -259,15 +306,16 @@ function CalendarPage() {
                 >
                   <p className="mb-2 text-sm text-[#3e4a3d]">CSV columns: patient_name, age, mobile_number, gender, appointment_date, appointment_time</p>
                   <button
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b]"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b] disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => {
                       downloadAppointmentsTemplateCsv(patients)
                       setIsImportCsvOpen(false)
                     }}
+                    disabled={patientsLoading}
                     type="button"
                   >
                     <span className="material-symbols-outlined text-[1.125rem]">download</span>
-                    Download CSV template
+                    {patientsLoading ? 'Preparing template…' : 'Download CSV template'}
                   </button>
                 </div>
               ) : null}
@@ -349,12 +397,31 @@ function CalendarPage() {
                   })()
 
                   return (
-                    <div key={i} className={`border-b border-r border-gray-100 px-3 py-2 transition-colors hover:bg-[#eff6ea] [&:nth-child(7n)]:border-r-0`}>
+                    <div
+                      key={i}
+                      className={`border-b border-r border-gray-100 px-3 py-2 transition-colors hover:bg-[#eff6ea] [&:nth-child(7n)]:border-r-0 ${!isBlank ? 'cursor-pointer' : ''}`}
+                      onClick={() => {
+                        if (isBlank) return
+                        openDayAppointments(new Date(year, month, dayNum))
+                      }}
+                      role={!isBlank ? 'button' : undefined}
+                      tabIndex={!isBlank ? 0 : undefined}
+                      onKeyDown={(e) => {
+                        if (isBlank) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          openDayAppointments(new Date(year, month, dayNum))
+                        }
+                      }}
+                    >
                       {!isBlank && (
                         <>
                           <button
                             className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md text-sm font-medium ${isToday ? 'bg-[#16a34a] px-1.5 py-0.5 text-white' : ''}`}
-                            onClick={() => setFocusDate(new Date(year, month, dayNum))}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDayAppointments(new Date(year, month, dayNum))
+                            }}
                             type="button"
                           >
                             {dayNum}
@@ -364,7 +431,10 @@ function CalendarPage() {
                               <button
                                 key={a.visit_id}
                                 className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-left text-[10px] text-blue-700"
-                                onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
+                                }}
                                 title={a.chief_complaint}
                                 type="button"
                               >
@@ -393,7 +463,7 @@ function CalendarPage() {
                     <div key={d.toISOString()} className="border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0">
                       <button
                         className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}
-                        onClick={() => setFocusDate(new Date(d))}
+                        onClick={() => openDayAppointments(new Date(d))}
                         type="button"
                       >
                         {d.getDate()}
@@ -424,18 +494,28 @@ function CalendarPage() {
                   <p className="px-6 py-10 text-sm text-[#575e70]">No appointments for this day.</p>
                 ) : (
                   appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).map((a) => (
-                    <button
-                      key={a.visit_id}
-                      className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]"
-                      onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
-                      type="button"
-                    >
+                    <div key={a.visit_id} className="flex items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]">
                       <div>
-                        <p className="font-semibold">{toDisplayName(a.patient_name)}</p>
+                        <button
+                          className="block text-left font-semibold hover:underline"
+                          onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                          type="button"
+                        >
+                          {toDisplayName(a.patient_name)}
+                        </button>
                         <p className="text-sm text-[#3e4a3d]">{a.chief_complaint || a.appointment_type || 'Visit'}</p>
                       </div>
-                      <p className="rounded-md bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{formatShortTime(a.scheduled_start)}</p>
-                    </button>
+                      <div className="flex items-center gap-2">
+                        <p className="rounded-md bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{formatShortTime(a.scheduled_start)}</p>
+                        <button
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
+                          onClick={() => openRescheduleModal(a)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
@@ -460,12 +540,7 @@ function CalendarPage() {
                   const mon = Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { month: 'short' })
                   const day = Number.isNaN(dt.getTime()) ? '—' : String(dt.getDate())
                   return (
-                    <button
-                      key={a.visit_id}
-                      className="w-full p-5 text-left transition-colors hover:bg-[#eff6ea]"
-                      onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
-                      type="button"
-                    >
+                    <div key={a.visit_id} className="w-full p-5 text-left transition-colors hover:bg-[#eff6ea]">
                       <div className="flex items-center gap-4">
                         <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-blue-50 font-bold text-blue-600">
                           <span className="text-[10px] uppercase">{mon}</span>
@@ -478,8 +553,15 @@ function CalendarPage() {
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
                           {(a.status || '').replace(/_/g, ' ') || 'Scheduled'}
                         </span>
+                        <button
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
+                          onClick={() => openRescheduleModal(a)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -487,6 +569,72 @@ function CalendarPage() {
           </div>
         </div>
       </main>
+
+      {rescheduleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-[#171d16]">Edit Appointment</h3>
+            <p className="mt-1 text-sm text-[#3e4a3d]">{toDisplayName(rescheduleTarget.patient_name)}</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Date
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  min={localDateInputMin()}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  type="date"
+                  value={rescheduleDate}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Time
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  type="time"
+                  value={rescheduleTime}
+                />
+              </label>
+            </div>
+            {rescheduleError && <p className="mt-3 text-xs text-red-700">{rescheduleError}</p>}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-slate-50"
+                onClick={() => setRescheduleTarget(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime}
+                onClick={() => {
+                  void (async () => {
+                    if (!rescheduleTarget) return
+                    try {
+                      setRescheduleSubmitting(true)
+                      setRescheduleError(null)
+                      await scheduleVisitIntake(rescheduleTarget.visit_id, {
+                        appointment_date: rescheduleDate,
+                        appointment_time: rescheduleTime,
+                      })
+                      await loadCalendarData(false)
+                      setRescheduleTarget(null)
+                    } catch (e) {
+                      setRescheduleError(getApiErrorMessage(e))
+                    } finally {
+                      setRescheduleSubmitting(false)
+                    }
+                  })()
+                }}
+                type="button"
+              >
+                {rescheduleSubmitting ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>

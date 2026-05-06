@@ -106,7 +106,7 @@ export default function VisitClinicalNotePanel({
   const [generating, setGenerating] = useState(false)
   const [approvingNext, setApprovingNext] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
+  const [activeEditSection, setActiveEditSection] = useState<'chief' | 'narrative' | 'assessment' | 'plan' | null>(null)
   const [draftAssessment, setDraftAssessment] = useState('')
   const [draftPlan, setDraftPlan] = useState('')
   const [draftDoctorNotes, setDraftDoctorNotes] = useState('')
@@ -116,6 +116,7 @@ export default function VisitClinicalNotePanel({
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
+  const editing = activeEditSection !== null
 
   useEffect(() => {
     if (!editing || !payload) return
@@ -158,7 +159,7 @@ export default function VisitClinicalNotePanel({
       })
       onNoteUpdated(res)
       setMessage('Clinical note generated and saved on the server.')
-      setEditing(false)
+      setActiveEditSection(null)
     } catch (e) {
       setMessage(getApiErrorMessage(e))
     } finally {
@@ -180,7 +181,7 @@ export default function VisitClinicalNotePanel({
         template_id: selectedTemplate?.id,
       })
       onNoteUpdated(res)
-      setEditing(false)
+      setActiveEditSection(null)
       setMessage('Clinical note approved. Moving to post-visit.')
       onApproveNext?.({ followUpDate: fuDate, followUpTime: fuTime })
     } catch (e) {
@@ -190,18 +191,18 @@ export default function VisitClinicalNotePanel({
     }
   }, [patientId, visitId, approvingNext, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated, onApproveNext])
 
-  const startEdit = () => {
+  const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
     setDraftAssessment(payload.assessment ?? '')
     setDraftPlan(payload.plan ?? '')
     setDraftDoctorNotes(payload.doctor_notes ?? '')
     setDraftChief(payload.chief_complaint ?? '')
-    setEditing(true)
+    setActiveEditSection(section)
     setMessage(null)
   }
 
   const cancelEdit = () => {
-    setEditing(false)
+    setActiveEditSection(null)
     setMessage(null)
   }
 
@@ -223,16 +224,6 @@ export default function VisitClinicalNotePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {clinicalNote && payload && (
-            <button
-              className="rounded-lg border border-[#006b2c]/40 bg-[#f0fdf4] px-3 py-2 text-sm font-semibold text-[#006b2c] hover:bg-[#dcfce7] disabled:opacity-50"
-              disabled={generating}
-              onClick={() => (editing ? cancelEdit() : startEdit())}
-              type="button"
-            >
-              {editing ? 'Cancel edit' : 'Edit locally'}
-            </button>
-          )}
           <button
             className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!patientId || !visitId || generating || approvingNext}
@@ -350,68 +341,82 @@ export default function VisitClinicalNotePanel({
 
           {editing ? (
             <div className="space-y-4">
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Chief complaint</span>
-                <textarea
-                  className="min-h-[72px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                  onChange={(e) => setDraftChief(e.target.value)}
-                  value={draftChief}
-                />
-              </label>
-              {soapParts && (
+              {activeEditSection === 'chief' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Chief complaint</span>
+                  <textarea
+                    className="min-h-[72px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                    onChange={(e) => setDraftChief(e.target.value)}
+                    value={draftChief}
+                  />
+                </label>
+              )}
+              {activeEditSection === 'narrative' && (
                 <>
-                  <p className="text-xs text-[#575e70]">
-                    Subjective / objective are stored inside clinical narrative. Edit the block below to adjust both.
-                  </p>
+                  {soapParts && (
+                    <p className="text-xs text-[#575e70]">
+                      Subjective / objective are stored inside clinical narrative. Edit the block below to adjust both.
+                    </p>
+                  )}
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                      Clinical narrative (SOAP source)
+                      Clinical narrative / doctor notes
                     </span>
                     <textarea
-                      className="min-h-[120px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 font-mono text-xs text-[#171d16]"
+                      className="min-h-[120px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
                       onChange={(e) => setDraftDoctorNotes(e.target.value)}
                       value={draftDoctorNotes}
                     />
                   </label>
                 </>
               )}
-              {!soapParts && (
+              {activeEditSection === 'assessment' && (
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                    Clinical narrative / doctor notes
-                  </span>
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Assessment</span>
                   <textarea
-                    className="min-h-[100px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                    onChange={(e) => setDraftDoctorNotes(e.target.value)}
-                    value={draftDoctorNotes}
+                    className="min-h-[80px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                    onChange={(e) => setDraftAssessment(e.target.value)}
+                    value={draftAssessment}
                   />
                 </label>
               )}
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Assessment</span>
-                <textarea
-                  className="min-h-[80px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                  onChange={(e) => setDraftAssessment(e.target.value)}
-                  value={draftAssessment}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Plan</span>
-                <textarea
-                  className="min-h-[80px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                  onChange={(e) => setDraftPlan(e.target.value)}
-                  value={draftPlan}
-                />
-              </label>
+              {activeEditSection === 'plan' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-[#575e70]">Plan</span>
+                  <textarea
+                    className="min-h-[80px] w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                    onChange={(e) => setDraftPlan(e.target.value)}
+                    value={draftPlan}
+                  />
+                </label>
+              )}
               <p className="text-xs text-[#575e70]">
                 Edits are local only. Regenerate replaces the server copy from AI.
               </p>
+              <div className="flex justify-end">
+                <button
+                  className="rounded-lg border border-[#bdcaba] bg-white px-3 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
+                  onClick={cancelEdit}
+                  type="button"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           ) : (
             <>
               {(displayPayload.chief_complaint?.trim() || visitTitle) && (
                 <section>
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#575e70]">Chief complaint</h4>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Chief complaint</h4>
+                    <button
+                      className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                      onClick={() => startEdit('chief')}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                  </div>
                   <p className="text-sm leading-relaxed text-[#171d16]">
                     {displayPayload.chief_complaint?.trim() || visitTitle}
                   </p>
@@ -421,7 +426,16 @@ export default function VisitClinicalNotePanel({
               {soapParts ? (
                 <div className="grid gap-6 sm:grid-cols-2">
                   <section className="rounded-lg border border-[#e9f0e5] bg-[#fafdfb] p-4">
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#006b2c]">Subjective</h4>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[#006b2c]">Subjective</h4>
+                      <button
+                        className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                        onClick={() => startEdit('narrative')}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                    </div>
                     <p className="text-sm leading-relaxed text-[#3e4a3d] whitespace-pre-wrap">{soapParts.subjective || '—'}</p>
                   </section>
                   <section className="rounded-lg border border-[#e9f0e5] bg-[#fafdfb] p-4">
@@ -432,19 +446,46 @@ export default function VisitClinicalNotePanel({
               ) : (
                 displayPayload.doctor_notes?.trim() && (
                   <section>
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#575e70]">Clinical narrative</h4>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Clinical narrative</h4>
+                      <button
+                        className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                        onClick={() => startEdit('narrative')}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                    </div>
                     <p className="text-sm leading-relaxed text-[#3e4a3d] whitespace-pre-wrap">{displayPayload.doctor_notes}</p>
                   </section>
                 )
               )}
 
               <section className="rounded-lg border border-[#c8e6c9]/60 bg-[#f1f8f4] p-4">
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#006b2c]">Assessment</h4>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-[#006b2c]">Assessment</h4>
+                  <button
+                    className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                    onClick={() => startEdit('assessment')}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                </div>
                 <p className="text-sm leading-relaxed text-[#171d16]">{displayPayload.assessment || '—'}</p>
               </section>
 
               <section className="rounded-lg border border-[#b3e5fc]/50 bg-[#f5fbfe] p-4">
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0277bd]">Plan</h4>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-[#0277bd]">Plan</h4>
+                  <button
+                    className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                    onClick={() => startEdit('plan')}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                </div>
                 <p className="text-sm leading-relaxed text-[#171d16]">{displayPayload.plan || '—'}</p>
               </section>
 

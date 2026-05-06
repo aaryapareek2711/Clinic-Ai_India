@@ -242,12 +242,7 @@ function NewVisitPage() {
         }
 
         if (startsToCreate.length === 0) {
-          const registeredVisitId = safeVisitId(registered.visit_id)
-          if (!registeredVisitId) {
-            navigate('/dashboard', { replace: true })
-            return
-          }
-          navigate('/dashboard', { replace: true })
+          setFormError('Select appointment slot(s).')
           return
         }
 
@@ -267,11 +262,7 @@ function NewVisitPage() {
         navigate('/dashboard', { replace: true })
         return
       }
-      const registeredVisitId = safeVisitId(registered.visit_id)
-      if (!registeredVisitId) {
-        navigate('/dashboard', { replace: true })
-        return
-      }
+      // Registration-only mode: patient is created, visit is created later on booking.
       navigate('/dashboard', { replace: true })
     } catch (e) {
       setFormError(getApiErrorMessage(e))
