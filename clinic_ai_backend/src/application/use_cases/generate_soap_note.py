@@ -41,22 +41,42 @@ class GenerateSoapNoteUseCase:
                 query,
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
+            if not job and visit_id:
+                visit = self.db.visits.find_one(
+                    {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+                    {"_id": 0, "transcription_session": 1},
+                ) or {}
+                session = dict(visit.get("transcription_session") or {})
+                if session and str(session.get("transcription_status") or "").lower() == "completed":
+                    sid = str(session.get("job_id") or "").strip() or f"visit-session:{visit_id}"
+                    job = {
+                        "job_id": sid,
+                        "patient_id": patient_id,
+                        "visit_id": visit_id,
+                        "status": "completed",
+                        "_session_transcript": str(session.get("transcript") or ""),
+                    }
         if not job:
             raise ValueError("No completed transcription job found for SOAP generation")
         if visit_id and str(job.get("visit_id") or "") != str(visit_id):
             raise ValueError("Transcription job does not belong to this visit")
         transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
+        if not transcript and str(job.get("_session_transcript") or "").strip():
+            transcript = {"full_transcript_text": str(job.get("_session_transcript") or "")}
         effective_visit = visit_id or job.get("visit_id")
         if effective_visit:
-            previsit = (
-                self.db.pre_visit_summaries.find_one(
-                    {"patient_id": patient_id, "visit_id": effective_visit},
-                    sort=[("updated_at", -1)],
-                )
-                or {}
-            )
+            visit = self.db.visits.find_one(
+                {"$or": [{"visit_id": effective_visit}, {"id": effective_visit}], "patient_id": patient_id},
+                {"_id": 0, "pre_visit_summary": 1},
+            ) or {}
+            previsit = dict(visit.get("pre_visit_summary") or {})
         else:
-            previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
+            visit = self.db.visits.find_one(
+                {"patient_id": patient_id},
+                {"_id": 0, "pre_visit_summary": 1},
+                sort=[("updated_at", -1)],
+            ) or {}
+            previsit = dict(visit.get("pre_visit_summary") or {})
         chief = ((previsit.get("sections") or {}).get("chief_complaint") or {}).get("reason_for_visit")
         soap_payload = self.service.generate(
             transcript_text=str(transcript.get("full_transcript_text", "") or ""),

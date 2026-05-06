@@ -21,6 +21,7 @@ from src.application.use_cases.generate_soap_note import GenerateSoapNoteUseCase
 from src.application.use_cases.send_post_visit_summary_whatsapp_to_patient import (
     send_latest_post_visit_summary_whatsapp_to_patient,
 )
+from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
@@ -32,6 +33,30 @@ def _encode_note_patient_id(doc: dict[str, Any]) -> dict[str, Any]:
     if raw:
         out["patient_id"] = encode_patient_id(raw)
     return out
+
+
+def _sync_note_into_visit(*, note_type: str, doc: dict[str, Any]) -> None:
+    visit_id = str(doc.get("visit_id") or "").strip()
+    if not visit_id:
+        return
+    payload = doc.get("payload")
+    if isinstance(payload, dict):
+        visit_note = payload
+    elif payload is not None:
+        visit_note = {"payload": payload}
+    else:
+        visit_note = {}
+    field_map = {
+        "soap": "soap_note",
+        "post_visit_summary": "post_visit_summary",
+        "india_clinical": "clinical_note",
+    }
+    visit_field = field_map.get(note_type, "clinical_note")
+    db = get_database()
+    db.visits.update_one(
+        {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+        {"$set": {visit_field: visit_note, "updated_at": doc.get("updated_at") or doc.get("created_at")}},
+    )
 
 
 def _build_clinical_note_template(*, doctor_type: str, language_style: str, region: str, optional_preferences: str | None) -> dict[str, Any]:
@@ -126,6 +151,7 @@ def generate_india_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
         follow_up_time=request.follow_up_time,
         template_id=request.template_id,
     )
+    _sync_note_into_visit(note_type="india_clinical", doc=doc)
     return NoteGenerateResponse(**_encode_note_patient_id(doc))
 
 
@@ -139,6 +165,7 @@ def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _sync_note_into_visit(note_type="soap", doc=doc)
     return NoteGenerateResponse(**_encode_note_patient_id(doc))
 
 
@@ -158,6 +185,7 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
         detail = str(exc)
         status_code = 422 if "preferred_language" in detail else 404
         raise HTTPException(status_code=status_code, detail=detail) from exc
+    _sync_note_into_visit(note_type="post_visit_summary", doc=doc)
     return NoteGenerateResponse(**_encode_note_patient_id(doc))
 
 

@@ -155,10 +155,11 @@ class GenerateIndiaClinicalNoteUseCase:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
             if not job:
-                session = self.db.visit_transcription_sessions.find_one(
-                    {"patient_id": patient_id, "visit_id": visit_id},
-                    sort=[("updated_at", -1)],
-                )
+                visit = self.db.visits.find_one(
+                    {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+                    {"_id": 0, "transcription_session": 1},
+                ) or {}
+                session = dict(visit.get("transcription_session") or {})
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
                     session_job_id = str(session.get("job_id") or "").strip()
                     if session_job_id:
@@ -178,10 +179,11 @@ class GenerateIndiaClinicalNoteUseCase:
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
             if not job:
-                session = self.db.visit_transcription_sessions.find_one(
-                    {"patient_id": patient_id, "visit_id": visit_id},
-                    sort=[("updated_at", -1)],
-                )
+                visit = self.db.visits.find_one(
+                    {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+                    {"_id": 0, "transcription_session": 1},
+                ) or {}
+                session = dict(visit.get("transcription_session") or {})
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
                     session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
                     if session_job_id:
@@ -208,31 +210,22 @@ class GenerateIndiaClinicalNoteUseCase:
             transcript = {"full_transcript_text": str(job.get("_session_transcript") or "")}
         effective_visit = visit_id or job.get("visit_id")
         if effective_visit:
-            previsit = (
-                self.db.pre_visit_summaries.find_one(
-                    {"patient_id": patient_id, "visit_id": effective_visit},
-                    sort=[("updated_at", -1)],
-                )
-                or {}
-            )
-            intake = (
-                self.db.intake_sessions.find_one(
-                    {"patient_id": patient_id, "visit_id": effective_visit},
-                    sort=[("updated_at", -1)],
-                )
-                or {}
-            )
-            vitals = (
-                self.db.patient_vitals.find_one(
-                    {"patient_id": patient_id, "visit_id": effective_visit},
-                    sort=[("submitted_at", -1)],
-                )
-                or {}
-            )
+            visit = self.db.visits.find_one(
+                {"$or": [{"visit_id": effective_visit}, {"id": effective_visit}], "patient_id": patient_id},
+                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1},
+            ) or {}
+            previsit = dict(visit.get("pre_visit_summary") or {})
+            intake = dict(visit.get("intake_session") or {})
+            vitals = dict(visit.get("vitals") or {})
         else:
-            previsit = self.db.pre_visit_summaries.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
-            intake = self.db.intake_sessions.find_one({"patient_id": patient_id}, sort=[("updated_at", -1)]) or {}
-            vitals = self.db.patient_vitals.find_one({"patient_id": patient_id}, sort=[("submitted_at", -1)]) or {}
+            visit = self.db.visits.find_one(
+                {"patient_id": patient_id},
+                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1},
+                sort=[("updated_at", -1)],
+            ) or {}
+            previsit = dict(visit.get("pre_visit_summary") or {})
+            intake = dict(visit.get("intake_session") or {})
+            vitals = dict(visit.get("vitals") or {})
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
 
         medication_images = self._extract_medication_images(intake)

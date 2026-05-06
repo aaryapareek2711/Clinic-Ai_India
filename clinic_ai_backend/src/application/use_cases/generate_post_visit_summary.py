@@ -116,10 +116,11 @@ class GeneratePostVisitSummaryUseCase:
         if transcription_job_id:
             job = self.audio_repo.get_job(transcription_job_id)
             if not job:
-                session = self.db.visit_transcription_sessions.find_one(
-                    {"patient_id": patient_id, "visit_id": visit_id},
-                    sort=[("updated_at", -1)],
-                )
+                visit = self.db.visits.find_one(
+                    {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+                    {"_id": 0, "transcription_session": 1},
+                ) or {}
+                session = dict(visit.get("transcription_session") or {})
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
                     session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
                     transcript_text = str(session.get("transcript") or "").strip()
@@ -140,10 +141,11 @@ class GeneratePostVisitSummaryUseCase:
                 sort=[("completed_at", -1), ("updated_at", -1)],
             )
             if not job:
-                session = self.db.visit_transcription_sessions.find_one(
-                    {"patient_id": patient_id, "visit_id": visit_id},
-                    sort=[("updated_at", -1)],
-                )
+                visit = self.db.visits.find_one(
+                    {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+                    {"_id": 0, "transcription_session": 1},
+                ) or {}
+                session = dict(visit.get("transcription_session") or {})
                 if session and str(session.get("transcription_status") or "").lower() == "completed":
                     session_job_id = str(session.get("job_id") or "").strip() or str(session.get("transcription_id") or "").strip()
                     transcript_text = str(session.get("transcript") or "").strip()

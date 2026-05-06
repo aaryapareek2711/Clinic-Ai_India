@@ -181,20 +181,12 @@ class StoreVitalsUseCase:
         if not patient:
             raise ValueError("Patient not found")
 
-        intake = (
-            self.db.intake_sessions.find_one(
-                {"patient_id": patient_id, "visit_id": visit_id},
-                sort=[("updated_at", -1)],
-            )
-            or {}
-        )
-        pre_visit = (
-            self.db.pre_visit_summaries.find_one(
-                {"patient_id": patient_id, "visit_id": visit_id},
-                sort=[("updated_at", -1)],
-            )
-            or {}
-        )
+        visit_doc = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"_id": 0, "intake_session": 1, "pre_visit_summary": 1},
+        ) or {}
+        intake = dict(visit_doc.get("intake_session") or {})
+        pre_visit = dict(visit_doc.get("pre_visit_summary") or {})
 
         chief_line = _one_line_chief_complaint(intake, pre_visit)
         payload = {
@@ -258,7 +250,15 @@ class StoreVitalsUseCase:
             "fields": list(result.get("fields", [])),
             "generated_at": datetime.now(timezone.utc),
         }
-        self.db.vitals_forms.insert_one(form_doc)
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {
+                "$set": {
+                    "vitals_form": form_doc,
+                    "updated_at": form_doc["generated_at"],
+                }
+            },
+        )
         form_doc.pop("_id", None)
         return form_doc
 
@@ -277,14 +277,18 @@ class StoreVitalsUseCase:
 
         values_out = dict(values)
         if form_id:
-            form = self.db.vitals_forms.find_one(
-                {"form_id": form_id, "patient_id": patient_id, "visit_id": visit_id}
-            )
+            visit_doc = self.db.visits.find_one(
+                {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+                {"_id": 0, "vitals_form": 1},
+            ) or {}
+            form = dict(visit_doc.get("vitals_form") or {})
             if not form:
                 raise ValueError(
                     "Vitals form not found for this patient and visit; call POST /vitals/generate-form first "
                     "or pass the correct form_id."
                 )
+            if str(form.get("form_id") or "") != str(form_id):
+                raise ValueError("Submitted form_id does not match latest vitals form for this visit.")
             fields = self._sanitize_vitals_fields(form.get("fields"))
             if form.get("needs_vitals") and not fields:
                 raise ValueError("Stored vitals form has no valid fields; generate a new form.")
@@ -316,30 +320,33 @@ class StoreVitalsUseCase:
             "submitted_at": datetime.now(timezone.utc),
             "values": values_out,
         }
-        self.db.patient_vitals.insert_one(doc)
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"$set": {"vitals": doc, "updated_at": doc["submitted_at"]}},
+        )
         doc.pop("_id", None)
         return doc
 
     def get_latest_vitals(self, patient_id: str, visit_id: str) -> dict | None:
         """Return latest submitted vitals."""
-        doc = self.db.patient_vitals.find_one(
-            {"patient_id": patient_id, "visit_id": visit_id},
-            sort=[("submitted_at", -1)],
-        )
+        visit = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"_id": 0, "vitals": 1},
+        ) or {}
+        doc = dict(visit.get("vitals") or {})
         if not doc:
             return None
-        doc.pop("_id", None)
         return doc
 
     def get_latest_vitals_form(self, patient_id: str, visit_id: str) -> dict | None:
         """Return latest generated vitals form decision."""
-        doc = self.db.vitals_forms.find_one(
-            {"patient_id": patient_id, "visit_id": visit_id},
-            sort=[("generated_at", -1)],
-        )
+        visit = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"_id": 0, "vitals_form": 1},
+        ) or {}
+        doc = dict(visit.get("vitals_form") or {})
         if not doc:
             return None
-        doc.pop("_id", None)
         return doc
 
     def build_submit_template(self, patient_id: str, visit_id: str) -> dict:

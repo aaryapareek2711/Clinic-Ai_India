@@ -159,6 +159,8 @@ class IntakeChatService:
             },
         )
         current_session = self.db.intake_sessions.find_one({"visit_id": visit_id}) or {}
+        if current_session:
+            self._sync_visit_intake_projection(current_session)
         if normalized_to_number:
             self._supersede_other_active_sessions_for_number(
                 to_number=normalized_to_number,
@@ -762,6 +764,9 @@ class IntakeChatService:
                 }
             },
         )
+        refreshed_session = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
+        if refreshed_session:
+            self._sync_visit_intake_projection(refreshed_session)
         self.whatsapp.send_text(session["to_number"], message)
         logger.info(
             "intake_next_question_sent visit_id=%s patient_id=%s to=%s",
@@ -807,6 +812,9 @@ class IntakeChatService:
                 }
             },
         )
+        refreshed_session = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
+        if refreshed_session:
+            self._sync_visit_intake_projection(refreshed_session)
         visit_id = str(session.get("visit_id") or "").strip()
         if visit_id:
             self.db.visits.update_one(
@@ -1328,6 +1336,31 @@ class IntakeChatService:
         if len(value) <= 4:
             return "*" * len(value)
         return f"{'*' * (len(value) - 4)}{value[-4:]}"
+
+    def _sync_visit_intake_projection(self, session: dict) -> None:
+        visit_id = str(session.get("visit_id") or "").strip()
+        if not visit_id:
+            return
+        snapshot = {
+            "patient_id": str(session.get("patient_id") or "").strip(),
+            "visit_id": visit_id,
+            "to_number": str(session.get("to_number") or "").strip(),
+            "language": str(session.get("language") or "en"),
+            "patient_name": str(session.get("patient_name") or "").strip(),
+            "status": str(session.get("status") or "in_progress"),
+            "illness": session.get("illness"),
+            "answers": list(session.get("answers") or []),
+            "pending_question": session.get("pending_question"),
+            "pending_topic": session.get("pending_topic"),
+            "question_number": int(session.get("question_number", 1) or 1),
+            "max_questions": int(session.get("max_questions", 10) or 10),
+            "last_outbound_at": session.get("last_outbound_at"),
+            "updated_at": session.get("updated_at") or datetime.now(timezone.utc),
+        }
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"$set": {"intake_session": snapshot, "updated_at": snapshot["updated_at"]}},
+        )
 
     def _send_chief_complaint_and_persist_pending(self, session: dict) -> None:
         """Send the scripted chief complaint ask and persist outbound metadata."""

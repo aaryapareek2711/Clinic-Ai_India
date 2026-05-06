@@ -103,6 +103,19 @@ def _public_visit_payload(visit: dict) -> dict:
 
 
 def _extract_chief_complaint(db, patient_id: str, visit_id: str) -> str | None:
+    visit_doc = _find_visit(db, visit_id) or {}
+    embedded_previsit = ((visit_doc.get("pre_visit_summary") or {}).get("sections") or {}).get("chief_complaint") or {}
+    embedded_reason = embedded_previsit.get("reason_for_visit")
+    if embedded_reason:
+        return str(embedded_reason)
+    embedded_intake = visit_doc.get("intake_session") or {}
+    embedded_illness = embedded_intake.get("illness")
+    if embedded_illness:
+        return str(embedded_illness)
+    for answer in embedded_intake.get("answers", []):
+        if str(answer.get("question", "")).lower() == "illness" and answer.get("answer"):
+            return str(answer.get("answer"))
+
     previsit = db.pre_visit_summaries.find_one(
         {"patient_id": patient_id, "visit_id": visit_id},
         sort=[("updated_at", -1)],
@@ -137,7 +150,8 @@ def _appointment_time_valid(value: str) -> bool:
 
 def _intake_send_allowed(db, visit_id: str) -> tuple[bool, bool]:
     """Return (allow_whatsapp_intake, skipped_due_to_existing_session)."""
-    session = db.intake_sessions.find_one({"visit_id": visit_id}, sort=[("updated_at", -1)])
+    visit = _find_visit(db, visit_id) or {}
+    session = visit.get("intake_session") or {}
     if not session:
         return True, False
     status = str(session.get("status") or "")
@@ -287,6 +301,8 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                 "scheduled_start": 1,
                 "visit_type": 1,
                 "status": 1,
+                "pre_visit_summary": 1,
+                "intake_session": 1,
                 "chief_complaint": 1,
             },
         )
@@ -322,22 +338,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
             if chief:
                 previsit_reason_by_visit[vid] = str(chief)
     intake_reason_by_visit: dict[str, str] = {}
-    if visit_ids:
-        for item in db.intake_sessions.find(
-            {"visit_id": {"$in": visit_ids}},
-            {"_id": 0, "visit_id": 1, "illness": 1, "answers": 1, "updated_at": 1},
-        ).sort("updated_at", -1):
-            vid = str(item.get("visit_id") or "").strip()
-            if not vid or vid in intake_reason_by_visit:
-                continue
-            illness = item.get("illness")
-            if illness:
-                intake_reason_by_visit[vid] = str(illness)
-                continue
-            for answer in item.get("answers", []):
-                if str(answer.get("question", "")).lower() == "illness" and answer.get("answer"):
-                    intake_reason_by_visit[vid] = str(answer.get("answer"))
-                    break
 
     appointments: list[dict] = []
     for visit in records:
@@ -350,8 +350,9 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
         scheduled_start = visit.get("scheduled_start")
         chief_complaint = (
             visit.get("chief_complaint")
+            or ((visit.get("pre_visit_summary") or {}).get("sections") or {}).get("chief_complaint", {}).get("reason_for_visit")
+            or (visit.get("intake_session") or {}).get("illness")
             or previsit_reason_by_visit.get(resolved_visit_id)
-            or intake_reason_by_visit.get(resolved_visit_id)
         )
         appointments.append(
             {
@@ -580,10 +581,7 @@ def get_visit_intake_session(visit_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Visit not found")
 
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
-    intake = db.intake_sessions.find_one(
-        {"visit_id": resolved_visit_id},
-        sort=[("updated_at", -1)],
-    )
+    intake = visit.get("intake_session")
     if not intake:
         return {
             "visit_id": resolved_visit_id,

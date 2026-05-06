@@ -203,10 +203,14 @@ class TranscriptionWorker:
     def _has_previsit(self, job: dict) -> bool:
         patient_id = str(job.get("patient_id"))
         visit_id = self._visit_id(job)
-        query: dict[str, object] = {"patient_id": patient_id}
         if visit_id:
-            query["visit_id"] = visit_id
-        return self.db.pre_visit_summaries.find_one(query, sort=[("updated_at", -1)]) is not None
+            visit = self.db.visits.find_one(
+                {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+                {"_id": 0, "patient_id": 1, "pre_visit_summary": 1},
+            ) or {}
+            if str(visit.get("patient_id") or "") == patient_id and bool(visit.get("pre_visit_summary")):
+                return True
+        return False
 
     def _requires_previsit(self, job: dict) -> bool:
         visit_id = self._visit_id(job)

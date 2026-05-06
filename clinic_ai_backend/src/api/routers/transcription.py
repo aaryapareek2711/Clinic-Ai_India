@@ -48,6 +48,16 @@ def _is_walk_in_visit_type(value: object) -> bool:
     return s in {"walk_in", "walkin"} or "walk_in" in s or "walkin" in s
 
 
+def _normalize_upload_content_type(raw: str) -> str:
+    """Browsers often send `audio/webm;codecs=opus`; whitelist is stored without parameters."""
+    s = str(raw or "").strip().lower()
+    if not s:
+        return ""
+    if ";" in s:
+        s = s.split(";", maxsplit=1)[0].strip()
+    return s
+
+
 def _map_job_status_to_poll_payload(job_status: str, error_message: str | None = None) -> dict:
     s = str(job_status or "").strip().lower()
     if s in {"queued", "pending"}:
@@ -75,17 +85,17 @@ async def upload_transcription_audio(
     visit_doc = db.visits.find_one({"visit_id": visit_id}, {"visit_type": 1})
     is_walk_in = _is_walk_in_visit_type((visit_doc or {}).get("visit_type"))
     if not is_walk_in:
-        previsit = db.pre_visit_summaries.find_one(
-            {"patient_id": internal_patient_id, "visit_id": visit_id},
-            sort=[("updated_at", -1)],
-        )
-        if not previsit:
+        visit_with_previsit = db.visits.find_one(
+            {"visit_id": visit_id, "patient_id": internal_patient_id},
+            {"_id": 0, "pre_visit_summary": 1},
+        ) or {}
+        if not visit_with_previsit.get("pre_visit_summary"):
             raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
 
     settings = get_settings()
     if not settings.azure_speech_key:
         raise HTTPException(status_code=503, detail="AZURE_SPEECH_KEY is not configured")
-    content_type = str(audio_file.content_type or "").strip().lower()
+    content_type = _normalize_upload_content_type(str(audio_file.content_type or ""))
     if content_type not in settings.allowed_audio_mime_types:
         raise HTTPException(status_code=400, detail="Unsupported audio MIME type")
 

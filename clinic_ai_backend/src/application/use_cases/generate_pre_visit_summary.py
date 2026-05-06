@@ -17,10 +17,11 @@ class GeneratePreVisitSummaryUseCase:
 
     def execute(self, patient_id: str, visit_id: str) -> dict[str, Any]:
         """Create pre-visit summary from the intake session for this visit."""
-        session = self.db.intake_sessions.find_one(
-            {"patient_id": patient_id, "visit_id": visit_id},
-            sort=[("updated_at", -1)],
-        )
+        visit = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+            {"_id": 0, "intake_session": 1},
+        ) or {}
+        session = dict(visit.get("intake_session") or {})
         if not session:
             raise ValueError("No intake session found for patient and visit")
 
@@ -41,16 +42,15 @@ class GeneratePreVisitSummaryUseCase:
         doc = {
             "patient_id": patient_id,
             "visit_id": visit_id,
-            "intake_session_id": str(session.get("_id")),
+            "intake_session_id": str(session.get("visit_id") or visit_id),
             "language": language,
             "status": session.get("status", "in_progress"),
             "sections": summary,
             "updated_at": now,
         }
-        self.db.pre_visit_summaries.update_one(
-            {"patient_id": patient_id, "visit_id": visit_id, "intake_session_id": str(session.get("_id"))},
-            {"$set": doc, "$setOnInsert": {"created_at": now}},
-            upsert=True,
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"$set": {"pre_visit_summary": doc, "updated_at": now}},
         )
         return doc
 
