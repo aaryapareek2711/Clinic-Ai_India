@@ -218,8 +218,6 @@ function VisitsPage() {
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterField, setFilterField] = useState<'name' | 'mobile' | 'visit_id' | null>(null)
-  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
   const [currentPage, setCurrentPage] = useState(1)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
@@ -270,12 +268,15 @@ function VisitsPage() {
     const q = searchQuery.trim().toLowerCase()
     return visits.filter((v) => {
       if (!matchesVisitTab(v, activeTab)) return false
-      if (!q || !filterField) return true
-      if (filterField === 'name') return (v.patient_name || '').toLowerCase().includes(q)
-      if (filterField === 'mobile') return String(v.mobile_number || '').toLowerCase().includes(q)
-      return String(v.visit_id || v.id || '').toLowerCase().includes(q)
+      if (!q) return true
+      return (
+        String(v.patient_name || '').toLowerCase().includes(q) ||
+        String(v.mobile_number || '').toLowerCase().includes(q) ||
+        String(v.patient_id || '').toLowerCase().includes(q) ||
+        String(v.visit_id || v.id || '').toLowerCase().includes(q)
+      )
     })
-  }, [visits, activeTab, searchQuery, filterField])
+  }, [visits, activeTab, searchQuery])
   const sortedVisits = useMemo(() => {
     const copy = [...filteredVisits]
     copy.sort((a, b) => {
@@ -297,7 +298,7 @@ function VisitsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeTab, searchQuery, filterField, sortBy])
+  }, [activeTab, searchQuery, sortBy])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -406,39 +407,15 @@ function VisitsPage() {
             </button>
           </div>
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
-            {filterField ? (
-              <div className="relative flex-1">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
-                <input
-                  className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={`Search by ${filterField === 'visit_id' ? 'visit ID' : filterField}`}
-                  type="text"
-                  value={searchQuery}
-                />
-              </div>
-            ) : (
-              <div className="flex-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm text-slate-300">
-                Select filter first, then search bar will open.
-              </div>
-            )}
-            <div className="relative">
-              <button
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] hover:bg-gray-50"
-                onClick={() => setIsFilterOpen((v) => !v)}
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                Filter
-              </button>
-              {isFilterOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('name'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Patient name</button>
-                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('mobile'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Mobile number</button>
-                  <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => { setFilterField('visit_id'); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Visit ID</button>
-                  <button className="mt-1 block w-full rounded px-3 py-2 text-left text-xs text-gray-500 hover:bg-gray-50" onClick={() => { setFilterField(null); setSearchQuery(''); setIsFilterOpen(false) }} type="button">Clear filter</button>
-                </div>
-              )}
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+              <input
+                className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by patient name, patient ID, mobile, or visit ID"
+                type="text"
+                value={searchQuery}
+              />
             </div>
             <div className="relative min-w-[220px]">
               <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
