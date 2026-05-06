@@ -56,8 +56,6 @@ function PatientsPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [patientSort, setPatientSort] = useState<PatientSort>('visit_latest')
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterField, setFilterField] = useState<'name' | 'mobile'>('name')
-  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [patients, setPatients] = useState<PatientSummary[]>([])
   const [loading, setLoading] = useState<boolean>(true)
@@ -89,10 +87,9 @@ function PatientsPage() {
     const q = searchQuery.trim().toLowerCase()
     return sortedPatients.filter((p) => {
       if (!q) return true
-      if (filterField === 'name') return (p.full_name || '').toLowerCase().includes(q)
-      return (p.phone_number || '').toLowerCase().includes(q)
+      return (p.full_name || '').toLowerCase().includes(q)
     })
-  }, [sortedPatients, searchQuery, filterField])
+  }, [sortedPatients, searchQuery])
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / PAGE_SIZE))
   const pagedPatients = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
@@ -101,7 +98,7 @@ function PatientsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [patientSort, searchQuery, filterField])
+  }, [patientSort, searchQuery])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -139,35 +136,10 @@ function PatientsPage() {
       <main className="p-8 min-h-[calc(100vh-4rem)]">
         <div className="mb-8 flex justify-between items-end">
           <div>
-            <nav className="flex items-center gap-2 text-xs font-medium text-slate-400 mb-2">
-              <span>Clinical Portal</span>
-              <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-              <span className="text-teal-600">Patient Directory</span>
-            </nav>
             <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">Patient Directory</h2>
             <p className="text-slate-500 mt-1">Manage and monitor registered medical profiles.</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative min-w-[240px]">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
-                sort
-              </span>
-              <select
-                aria-label="Sort patients"
-                className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-                value={patientSort}
-                onChange={(e) => setPatientSort(e.target.value as PatientSort)}
-              >
-                <option value="visit_latest">Last visit: newest first</option>
-                <option value="visit_oldest">Last visit: oldest first</option>
-                <option value="name_az">Name: A → Z</option>
-                <option value="name_za">Name: Z → A</option>
-                <option value="id_az">Patient ID: A → Z</option>
-              </select>
-              <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
-                expand_more
-              </span>
-            </div>
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
               onClick={() => navigate('/new-visit')}
@@ -183,26 +155,30 @@ function PatientsPage() {
             <input
               className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-[#171d16] placeholder:text-slate-400 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search by ${filterField === 'name' ? 'patient name' : 'mobile number'}`}
+              placeholder="Search by patient name"
               type="text"
               value={searchQuery}
             />
           </div>
-          <div className="relative">
-            <button
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50"
-              onClick={() => setIsFilterOpen((v) => !v)}
-              type="button"
+          <div className="relative min-w-[240px] md:w-[280px]">
+            <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
+              sort
+            </span>
+            <select
+              aria-label="Sort patients"
+              className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              value={patientSort}
+              onChange={(e) => setPatientSort(e.target.value as PatientSort)}
             >
-              <span className="material-symbols-outlined text-[18px]">filter_list</span>
-              Filter
-            </button>
-            {isFilterOpen && (
-              <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setFilterField('name'); setIsFilterOpen(false) }} type="button">Patient name</button>
-                <button className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { setFilterField('mobile'); setIsFilterOpen(false) }} type="button">Mobile number</button>
-              </div>
-            )}
+              <option value="visit_latest">Last visit: newest first</option>
+              <option value="visit_oldest">Last visit: oldest first</option>
+              <option value="name_az">Name: A → Z</option>
+              <option value="name_za">Name: Z → A</option>
+              <option value="id_az">Patient ID: A → Z</option>
+            </select>
+            <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+              expand_more
+            </span>
           </div>
         </div>
 

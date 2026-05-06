@@ -62,6 +62,59 @@ const QUICK_ADD_SECTIONS = [
   'Obstetric history',
 ] as const
 
+function parseTagsInput(value: string): string[] {
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+function buildBodyContent(content: TemplateContentPayload, redFlagsText: string, dataGapsText: string): TemplateContentPayload {
+  const rf = redFlagsText
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const dg = dataGapsText
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const rx = content.rx.filter(
+    (m) =>
+      m.medicine_name.trim() ||
+      m.dose.trim() ||
+      m.frequency.trim() ||
+      m.duration.trim() ||
+      m.route.trim() ||
+      m.food_instruction.trim(),
+  )
+  const investigations = content.investigations.filter(
+    (i) => i.test_name.trim() || i.urgency.trim() || i.preparation_instructions.trim(),
+  )
+  return {
+    ...content,
+    rx: rx.length > 0 ? rx : [],
+    investigations,
+    red_flags: rf,
+    data_gaps: dg,
+  }
+}
+
+function stableEditFingerprint(input: {
+  name: string
+  description: string
+  tags: string[]
+  appointmentTypes: string[]
+  content: TemplateContentPayload
+}): string {
+  return JSON.stringify({
+    name: input.name.trim(),
+    description: input.description.trim(),
+    tags: input.tags,
+    appointmentTypes: [...input.appointmentTypes].sort(),
+    content: input.content,
+  })
+}
+
 type Props = {
   isOpen: boolean
   onClose: () => void
@@ -185,6 +238,43 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setHiddenMedicationFields({})
   }, [isOpen, resetAll, templateToEdit])
 
+  const hasEditChanges = useMemo(() => {
+    if (!templateToEdit) return true
+    const currentFingerprint = stableEditFingerprint({
+      name,
+      description,
+      tags: parseTagsInput(tagsInput),
+      appointmentTypes,
+      content: buildBodyContent(content, redFlagsText, dataGapsText),
+    })
+
+    const baselineContent = templateToEdit.content
+      ? {
+          ...emptyContent(),
+          ...templateToEdit.content,
+          rx:
+            templateToEdit.content.rx && templateToEdit.content.rx.length > 0
+              ? templateToEdit.content.rx
+              : [emptyMedication()],
+          investigations: templateToEdit.content.investigations || [],
+        }
+      : emptyContent()
+
+    const baselineFingerprint = stableEditFingerprint({
+      name: templateToEdit.name || '',
+      description: templateToEdit.description || '',
+      tags: templateToEdit.tags || [],
+      appointmentTypes: templateToEdit.appointment_types || [],
+      content: buildBodyContent(
+        baselineContent,
+        (baselineContent.red_flags || []).filter(Boolean).join('\n'),
+        (baselineContent.data_gaps || []).filter(Boolean).join('\n'),
+      ),
+    })
+
+    return currentFingerprint !== baselineFingerprint
+  }, [templateToEdit, name, description, tagsInput, appointmentTypes, content, redFlagsText, dataGapsText])
+
   const toggleAppointment = (label: string) => {
     setAppointmentTypes((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]))
   }
@@ -204,37 +294,8 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       setError('Template name is required.')
       return
     }
-    const rf = redFlagsText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    const dg = dataGapsText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    const rx = content.rx.filter(
-      (m) =>
-        m.medicine_name.trim() ||
-        m.dose.trim() ||
-        m.frequency.trim() ||
-        m.duration.trim() ||
-        m.route.trim() ||
-        m.food_instruction.trim(),
-    )
-    const investigations = content.investigations.filter(
-      (i) => i.test_name.trim() || i.urgency.trim() || i.preparation_instructions.trim(),
-    )
-    const tags = tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-    const bodyContent: TemplateContentPayload = {
-      ...content,
-      rx: rx.length > 0 ? rx : [],
-      investigations,
-      red_flags: rf,
-      data_gaps: dg,
-    }
+    const tags = parseTagsInput(tagsInput)
+    const bodyContent = buildBodyContent(content, redFlagsText, dataGapsText)
     setSaveLoading(true)
     try {
       if (templateToEdit?.id) {
@@ -634,7 +695,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
           </button>
           <button
             className="rounded-xl bg-[#16a34a] px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#00873a] disabled:opacity-60"
-            disabled={saveLoading}
+            disabled={saveLoading || (isEditMode && !hasEditChanges)}
             onClick={() => void submit()}
             type="button"
           >

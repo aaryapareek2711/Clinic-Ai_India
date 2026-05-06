@@ -156,7 +156,7 @@ function TemplatesPage() {
               {templateSavedMessage}
             </div>
           )}
-          <div className="mb-8">
+          <div className="mb-6">
             <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
             <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
           </div>

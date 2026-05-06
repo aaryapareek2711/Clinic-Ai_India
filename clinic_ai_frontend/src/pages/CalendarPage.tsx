@@ -69,6 +69,15 @@ function formatShortTime(iso: string): string {
   return t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
+function toDisplayName(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'Patient'
+  return raw
+    .split(/\s+/)
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ')
+}
+
 function CalendarPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -287,7 +296,7 @@ function CalendarPage() {
                 {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
                   <div
                     key={d}
-                    className="flex items-center justify-center border-r border-gray-100 px-3 py-3 text-center text-[13px] font-medium text-[#3e4a3d] last:border-r-0"
+                    className="flex items-center justify-start border-r border-gray-100 px-4 py-4 text-left text-[13px] font-medium text-[#3e4a3d] last:border-r-0"
                   >
                     {d}
                   </div>
@@ -328,7 +337,7 @@ function CalendarPage() {
                                 title={a.chief_complaint}
                                 type="button"
                               >
-                                {formatShortTime(a.scheduled_start)} · {a.patient_name}
+                                {formatShortTime(a.scheduled_start)} · {toDisplayName(a.patient_name)}
                               </button>
                             ))}
                             {dayAppts.length > 3 && (
@@ -368,7 +377,7 @@ function CalendarPage() {
                             title={a.chief_complaint}
                             type="button"
                           >
-                            {formatShortTime(a.scheduled_start)} · {a.patient_name}
+                            {formatShortTime(a.scheduled_start)} · {toDisplayName(a.patient_name)}
                           </button>
                         ))}
                       </div>
@@ -391,7 +400,7 @@ function CalendarPage() {
                       type="button"
                     >
                       <div>
-                        <p className="font-semibold">{a.patient_name}</p>
+                        <p className="font-semibold">{toDisplayName(a.patient_name)}</p>
                         <p className="text-sm text-[#3e4a3d]">{a.chief_complaint || a.appointment_type || 'Visit'}</p>
                       </div>
                       <p className="rounded-md bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{formatShortTime(a.scheduled_start)}</p>
@@ -432,7 +441,7 @@ function CalendarPage() {
                           <span className="text-lg leading-none">{day}</span>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold">{a.patient_name}</p>
+                          <p className="truncate font-semibold">{toDisplayName(a.patient_name)}</p>
                           <p className="truncate text-sm text-[#3e4a3d]">{formatShortTime(a.scheduled_start)} · {a.appointment_type || 'Visit'}</p>
                         </div>
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">

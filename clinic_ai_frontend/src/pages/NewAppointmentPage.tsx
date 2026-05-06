@@ -26,6 +26,15 @@ function initials(full: string): string {
   return `${p[0][0] ?? ''}${p[1][0] ?? ''}`.toUpperCase()
 }
 
+function toDisplayName(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'Patient'
+  return raw
+    .split(/\s+/)
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ')
+}
+
 function dateKeyLocal(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -420,7 +429,7 @@ function NewAppointmentPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <h4 className="truncate font-semibold">{p.full_name}</h4>
+                      <h4 className="truncate font-semibold">{toDisplayName(p.full_name)}</h4>
                       {isSel ? (
                         <span className="shrink-0 rounded-full bg-[#2563eb] px-2 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase">Selected</span>
                       ) : null}
@@ -574,7 +583,10 @@ function NewAppointmentPage() {
                   )}
                   <p className="mt-2 text-xs text-[#575e70]">
                     Visit will be created for{' '}
-                    {patients.find((p) => p.id === selectedId)?.full_name ?? '(choose patient)'}.
+                    {selectedId
+                      ? toDisplayName(patients.find((p) => p.id === selectedId)?.full_name)
+                      : '(choose patient)'}
+                    .
                   </p>
                   {selectedStartIsos.length > 0 && (
                     <p className="mt-1 text-xs font-semibold text-[#0f5132]">

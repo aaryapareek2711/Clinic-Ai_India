@@ -42,6 +42,15 @@ function normalizeVisitStatus(raw: string | undefined): string {
   return (raw || '').toLowerCase()
 }
 
+function toDisplayName(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'Patient'
+  return raw
+    .split(/\s+/)
+    .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : ''))
+    .join(' ')
+}
+
 /** Not finished and not actively in consultation (still “waiting to be seen”). */
 function isNotVisitedYet(status: string | undefined): boolean {
   const s = normalizeVisitStatus(status)
@@ -245,7 +254,7 @@ function ProviderDashboardPage() {
           <section className="rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-8 py-12 text-white shadow-lg">
             <div className="flex items-center justify-between gap-5">
               <div>
-                <p className="text-2xl font-bold text-gray-300">Welcome back, {headerName}</p>
+                <p className="text-2xl font-bold text-white">Welcome , {headerName}</p>
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -270,19 +279,34 @@ function ProviderDashboardPage() {
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">New patients {dayLabel}</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.patientsForDay}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Newly registered patients with today&apos;s slot</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[13px] uppercase text-gray-500">New patients {dayLabel}</p>
+                  <h3 className="mt-1 text-3xl font-bold">{stats.patientsForDay}</h3>
+                  <p className="mt-2 text-xs text-[#575e70]">Newly registered patients with today&apos;s slot</p>
+                </div>
+                <span className="material-symbols-outlined text-2xl text-[#16a34a]">stethoscope</span>
+              </div>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Pending {dayLabel}</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.pending}</h3>
-              <p className="mt-2 text-xs text-amber-600">Scheduled / queue board</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[13px] uppercase text-gray-500">Pending {dayLabel}</p>
+                  <h3 className="mt-1 text-3xl font-bold">{stats.pending}</h3>
+                  <p className="mt-2 text-xs text-amber-600">Scheduled / queue board</p>
+                </div>
+                <span className="material-symbols-outlined text-2xl text-[#f59e0b]">schedule</span>
+              </div>
             </div>
             <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <p className="text-[13px] uppercase text-gray-500">Visit {dayLabel}</p>
-              <h3 className="mt-1 text-3xl font-bold">{stats.visitsForDayCount}</h3>
-              <p className="mt-2 text-xs text-[#575e70]">Total patients with {upcomingDayFilter} slot</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[13px] uppercase text-gray-500">Visit {dayLabel}</p>
+                  <h3 className="mt-1 text-3xl font-bold">{stats.visitsForDayCount}</h3>
+                  <p className="mt-2 text-xs text-[#575e70]">Total patients with {upcomingDayFilter} slot</p>
+                </div>
+                <span className="material-symbols-outlined text-2xl text-[#2563eb]">calendar_month</span>
+              </div>
             </div>
           </div>
 
@@ -329,7 +353,7 @@ function ProviderDashboardPage() {
                   type="button"
                 >
                   <div>
-                    <p className="font-semibold">{a.patient_name}</p>
+                    <p className="font-semibold">{toDisplayName(a.patient_name)}</p>
                     <p className="text-xs text-gray-500">Type: {visitModeLabel(a.appointment_type)}</p>
                   </div>
                   <p className="text-sm font-medium">{formatDateTimeShort(a.scheduled_start)}</p>
