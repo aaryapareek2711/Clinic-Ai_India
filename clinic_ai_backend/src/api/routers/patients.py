@@ -17,6 +17,7 @@ from src.api.schemas.patient import (
 )
 
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
+TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
 
 
 def _is_walk_in_visit_type(value: object) -> bool:
@@ -46,6 +47,17 @@ def _require_appointment_not_in_past(scheduled_start: str | None) -> None:
             status_code=422,
             detail="Appointment cannot be in the past. Pick today or a future date and time.",
         )
+
+
+def _find_reusable_active_visit(db, *, patient_id: str) -> dict | None:
+    """Return most recent non-terminal visit for this patient, if any."""
+    return db.visits.find_one(
+        {
+            "patient_id": patient_id,
+            "status": {"$nin": list(TERMINAL_VISIT_STATUSES)},
+        },
+        sort=[("updated_at", -1), ("created_at", -1)],
+    )
 
 
 @router.get("", response_model=list[PatientSummaryResponse])
@@ -168,21 +180,36 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
     is_walk_in = _is_walk_in_visit_type(payload.visit_type)
     visit_type_stored = "walk_in" if is_walk_in else (str(payload.visit_type or "").strip() or "scheduled_visit")
 
-    db.visits.insert_one(
-        {
-            "visit_id": visit_id,
-            "patient_id": internal_patient_id,
-            "provider_id": None,
-            "scheduled_start": scheduled_start,
-            "visit_type": visit_type_stored,
-            "status": "patient_registered",
-            "previous_workflow_stage": None,
-            "current_workflow_stage": "patient_registered",
-            "next_workflow_stage": "vitals" if is_walk_in else "intake",
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    reusable_visit = _find_reusable_active_visit(db, patient_id=internal_patient_id)
+    if reusable_visit:
+        visit_id = str(reusable_visit.get("visit_id") or reusable_visit.get("id") or "").strip() or visit_id
+        db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {
+                "$set": {
+                    "provider_id": reusable_visit.get("provider_id"),
+                    "scheduled_start": scheduled_start if scheduled_start else reusable_visit.get("scheduled_start"),
+                    "visit_type": visit_type_stored,
+                    "updated_at": now,
+                }
+            },
+        )
+    else:
+        db.visits.insert_one(
+            {
+                "visit_id": visit_id,
+                "patient_id": internal_patient_id,
+                "provider_id": None,
+                "scheduled_start": scheduled_start,
+                "visit_type": visit_type_stored,
+                "status": "patient_registered",
+                "previous_workflow_stage": None,
+                "current_workflow_stage": "patient_registered",
+                "next_workflow_stage": "vitals" if is_walk_in else "intake",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
     whatsapp_triggered = False
     phone_number = str(payload.phone_number or "").strip()
     pending_schedule_for_intake = scheduled_start is None
@@ -227,21 +254,38 @@ def create_visit_from_existing_patient(
 
     visit_id = VisitId.validate(VisitId.generate())
     now = datetime.now(timezone.utc)
-    db.visits.insert_one(
-        {
-            "visit_id": visit_id,
-            "patient_id": internal_patient_id,
-            "provider_id": payload.provider_id,
-            "scheduled_start": payload.scheduled_start,
-            "visit_type": visit_type_stored,
-            "status": "patient_registered",
-            "previous_workflow_stage": None,
-            "current_workflow_stage": "patient_registered",
-            "next_workflow_stage": "vitals" if is_walk_in else "intake",
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
+    reusable_visit = _find_reusable_active_visit(db, patient_id=internal_patient_id)
+    if reusable_visit:
+        visit_id = str(reusable_visit.get("visit_id") or reusable_visit.get("id") or "").strip() or visit_id
+        db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {
+                "$set": {
+                    "provider_id": payload.provider_id if payload.provider_id else reusable_visit.get("provider_id"),
+                    "scheduled_start": payload.scheduled_start
+                    if payload.scheduled_start and str(payload.scheduled_start).strip()
+                    else reusable_visit.get("scheduled_start"),
+                    "visit_type": visit_type_stored,
+                    "updated_at": now,
+                }
+            },
+        )
+    else:
+        db.visits.insert_one(
+            {
+                "visit_id": visit_id,
+                "patient_id": internal_patient_id,
+                "provider_id": payload.provider_id,
+                "scheduled_start": payload.scheduled_start,
+                "visit_type": visit_type_stored,
+                "status": "patient_registered",
+                "previous_workflow_stage": None,
+                "current_workflow_stage": "patient_registered",
+                "next_workflow_stage": "vitals" if is_walk_in else "intake",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
     intake_triggered = False
     phone_number = str(patient.get("phone_number") or "").strip()
@@ -261,7 +305,7 @@ def create_visit_from_existing_patient(
     return CreateVisitFromPatientResponse(
         patient_id=encode_patient_id(internal_patient_id),
         visit_id=visit_id,
-        status="open",
+        status="patient_registered",
         scheduled_start=payload.scheduled_start,
         intake_triggered=intake_triggered,
         pending_schedule_for_intake=pending_schedule_for_intake,

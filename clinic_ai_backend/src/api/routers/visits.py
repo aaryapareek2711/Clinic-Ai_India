@@ -435,9 +435,10 @@ def list_provider_visits(
                 "actual_end": 1,
                 "chief_complaint": 1,
                 "created_at": 1,
+                "updated_at": 1,
             },
         )
-        .sort("created_at", -1)
+        .sort([("updated_at", -1), ("created_at", -1)])
         .limit(VISITS_LIMIT)
     )
     patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
@@ -493,6 +494,7 @@ def list_provider_visits(
                     "duration_minutes": duration_minutes,
                     "chief_complaint": visit.get("chief_complaint") or None,
                     "created_at": visit.get("created_at") or "",
+                    "updated_at": visit.get("updated_at") or "",
                 },
                 **{
                     "previous_workflow_stage": visit.get(

@@ -308,7 +308,7 @@ class IntakeChatService:
                     reason="patient_opted_out",
                 )
                 end_msg = self._opt_out_ack_message(session.get("language", "en"))
-                self.whatsapp.send_text(session["to_number"], end_msg)
+                self._send_text_with_typing(session["to_number"], end_msg)
                 self._auto_generate_pre_visit_summary(session)
                 return
 
@@ -713,7 +713,7 @@ class IntakeChatService:
                 }
             },
         )
-        self.whatsapp.send_text(session["to_number"], planner_fallback_question)
+        self._send_text_with_typing(session["to_number"], planner_fallback_question)
         self._log_intake_turn(
             session=session,
             question_number=int(session.get("question_number", 1) or 1),
@@ -767,7 +767,7 @@ class IntakeChatService:
         refreshed_session = self.db.intake_sessions.find_one({"_id": session["_id"]}) or {}
         if refreshed_session:
             self._sync_visit_intake_projection(refreshed_session)
-        self.whatsapp.send_text(session["to_number"], message)
+        self._send_text_with_typing(session["to_number"], message)
         logger.info(
             "intake_next_question_sent visit_id=%s patient_id=%s to=%s",
             str(session.get("visit_id") or ""),
@@ -833,7 +833,7 @@ class IntakeChatService:
             keep_session_id=session.get("_id"),
             reason="session_completed",
         )
-        self.whatsapp.send_text(session["to_number"], message)
+        self._send_text_with_typing(session["to_number"], message)
         self._auto_generate_pre_visit_summary(session)
 
     def _bootstrap_session_for_number(self, normalized_from: str) -> dict | None:
@@ -1373,7 +1373,7 @@ class IntakeChatService:
             return
         message = self._chief_complaint_question(session.get("language", "en"))
         now = datetime.now(timezone.utc)
-        self.whatsapp.send_text(to_number, message)
+        self._send_text_with_typing(to_number, message)
         self.db.intake_sessions.update_one(
             {"_id": session["_id"]},
             {
@@ -1400,6 +1400,21 @@ class IntakeChatService:
         """Return the initial opening message before intake begins."""
         lang = normalize_intake_language(language)
         return OPENING_MESSAGES.get(lang, OPENING_MESSAGES["en"])
+
+    def _send_text_with_typing(self, to_number: str, message: str) -> None:
+        """
+        Best-effort typing indicator before sending message.
+
+        If typing indicator call fails, message send must still proceed.
+        """
+        try:
+            self.whatsapp.send_typing_indicator(to_number)
+        except Exception:
+            logger.exception(
+                "whatsapp_typing_indicator_failed to=%s",
+                self._mask_phone_number(str(to_number or "")),
+            )
+        self.whatsapp.send_text(to_number, message)
 
     @staticmethod
     def _opt_out_ack_message(language: str) -> str:
