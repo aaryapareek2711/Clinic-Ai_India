@@ -181,7 +181,7 @@ function transcriptionStatusUiMessage(
 
   if (status === 'completed') return msg || 'Transcription completed.'
   if (status === 'failed') return msg || 'Transcription failed.'
-  if (status === 'queued' || status === 'pending' || status === 'uploading') return msg || 'Transcription queued.'
+  if (status === 'queued' || status === 'uploading') return msg || 'Transcription queued.'
   if (
     status === 'processing' ||
     status === 'in_progress' ||
@@ -191,6 +191,7 @@ function transcriptionStatusUiMessage(
   ) {
     return msg || 'Transcription in progress.'
   }
+  if (status === 'pending') return msg || 'Transcription not started.'
   return msg || status || 'Transcription status unavailable.'
 }
 
@@ -199,7 +200,7 @@ function transcriptionStatusUiLabel(
   _backendMessage: string | null | undefined,
 ): string {
   const status = (statusRaw || '').trim().toLowerCase()
-  if (status === 'queued' || status === 'pending' || status === 'uploading') return 'Queued'
+  if (status === 'queued' || status === 'uploading') return 'Queued'
   if (
     status === 'processing' ||
     status === 'in_progress' ||
@@ -208,6 +209,7 @@ function transcriptionStatusUiLabel(
     status === 'stale_processing'
   )
     return 'Processing'
+  if (status === 'pending') return 'Pending'
   if (status === 'completed') return 'Completed'
   if (status === 'failed') return 'Failed'
   if (!status) return 'Unknown'
@@ -895,21 +897,17 @@ export default function VisitDetailPage() {
       const rawMessage = (status.message || '').toLowerCase()
       const hadRecentTranscriptionActivity =
         transcriptionUploading || hasTranscriptionUploadAttempt
+      const statusMeta = status as Record<string, unknown>
+      const hasPersistedTranscriptionSession = Boolean(
+        statusMeta.enqueued_at || statusMeta.started_at || statusMeta.completed_at || statusMeta.transcription_id,
+      )
 
       let normalizedStatus =
-        rawStatus === 'pending' && rawMessage.includes('not started') && hadRecentTranscriptionActivity
+        rawStatus === 'pending' &&
+        rawMessage.includes('not started') &&
+        (hadRecentTranscriptionActivity || hasPersistedTranscriptionSession)
           ? { ...status, status: 'queued', message: 'Transcription queued' }
           : status
-
-      // Do not freeze controls on stale backend processing unless this visit had an explicit upload attempt.
-      if (
-        !hadRecentTranscriptionActivity &&
-        ['queued', 'pending', 'processing', 'in_progress', 'running', 'started', 'uploading'].includes(
-          String(normalizedStatus.status || '').toLowerCase(),
-        )
-      ) {
-        normalizedStatus = { ...normalizedStatus, status: 'pending', message: 'Transcription not started' }
-      }
 
       setTranscriptionStatus(normalizedStatus)
       const baseMessage = transcriptionStatusUiMessage(normalizedStatus.status, normalizedStatus.message)
@@ -938,7 +936,7 @@ export default function VisitDetailPage() {
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
     }
-  }, [patientId, visitId, loadTranscriptBody, transcriptionStatus?.status, transcriptionUploading, hasTranscriptionUploadAttempt])
+  }, [patientId, visitId, loadTranscriptBody, transcriptionUploading, hasTranscriptionUploadAttempt])
 
   const handleStructureVisitDialogue = useCallback(async () => {
     if (!patientId || !visitId || structureDialogueLoading) return
@@ -959,19 +957,12 @@ export default function VisitDetailPage() {
     [displayStructuredDialogue],
   )
   const transcriptionStateLowerRaw = (transcriptionStatus?.status || 'pending').toLowerCase()
-  const hasAttempt = hasTranscriptionUploadAttempt || transcriptionUploading
-  const queuedStatuses = new Set(['queued', 'pending', 'uploading'])
+  const queuedStatuses = new Set(['queued', 'uploading'])
   const processingStatuses = new Set(['processing', 'in_progress', 'running', 'started', 'stale_processing'])
-  const terminalStatuses = new Set(['completed', 'failed'])
+  const effectiveStateLower = transcriptionStateLowerRaw
 
-  // If the doctor opens the transcription page without uploading anything in this session,
-  // don't freeze controls just because backend still has a stale processing job.
-  // Completed/failed should still show if transcript exists.
-  const effectiveStateLower =
-    hasAttempt || terminalStatuses.has(transcriptionStateLowerRaw) ? transcriptionStateLowerRaw : 'pending'
-
-  const isTranscriptionQueued = hasAttempt && queuedStatuses.has(effectiveStateLower)
-  const isTranscriptionCurrentlyProcessing = hasAttempt && processingStatuses.has(effectiveStateLower)
+  const isTranscriptionQueued = queuedStatuses.has(effectiveStateLower)
+  const isTranscriptionCurrentlyProcessing = processingStatuses.has(effectiveStateLower)
   const isTranscriptionBusy = transcriptionUploading || isTranscriptionQueued || isTranscriptionCurrentlyProcessing
   // Freeze controls from upload accepted until terminal status.
   const isTranscriptionControlLocked = isTranscriptionBusy
@@ -979,8 +970,7 @@ export default function VisitDetailPage() {
   const transcriptionStateLower = effectiveStateLower
 
   const effectiveTranscriptionStatus = (() => {
-    if (!transcriptionStatus) return null
-    if (hasAttempt || terminalStatuses.has(transcriptionStateLowerRaw)) return transcriptionStatus
+    if (transcriptionStatus) return transcriptionStatus
     return { status: 'pending', message: 'Transcription not started' } as TranscriptionStatusResponse
   })()
 
