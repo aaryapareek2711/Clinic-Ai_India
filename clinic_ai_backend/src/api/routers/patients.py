@@ -64,14 +64,41 @@ def _find_reusable_active_visit(db, *, patient_id: str) -> dict | None:
 def list_patients() -> list[PatientSummaryResponse]:
     """Return normalized patient records for frontend patient picker."""
     db = get_database()
-    records = list(db.patients.find({}, {"_id": 0}).sort("updated_at", -1))
+    records = list(
+        db.patients.find(
+            {},
+            {
+                "_id": 0,
+                "patient_id": 1,
+                "name": 1,
+                "date_of_birth": 1,
+                "mrn": 1,
+                "age": 1,
+                "gender": 1,
+                "phone_number": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        ).sort("updated_at", -1)
+    )
     patient_ids = [str(record.get("patient_id") or "").strip() for record in records if str(record.get("patient_id") or "").strip()]
     latest_visit_by_patient: dict[str, dict] = {}
     if patient_ids:
-        for visit in db.visits.find(
-            {"patient_id": {"$in": patient_ids}},
-            {"_id": 0, "patient_id": 1, "visit_id": 1, "id": 1, "scheduled_start": 1, "created_at": 1},
-        ).sort("created_at", -1):
+        for visit in db.visits.aggregate(
+            [
+                {"$match": {"patient_id": {"$in": patient_ids}}},
+                {"$sort": {"created_at": -1}},
+                {
+                    "$group": {
+                        "_id": "$patient_id",
+                        "patient_id": {"$first": "$patient_id"},
+                        "visit_id": {"$first": "$visit_id"},
+                        "id": {"$first": "$id"},
+                        "scheduled_start": {"$first": "$scheduled_start"},
+                    }
+                },
+            ]
+        ):
             pid = str(visit.get("patient_id") or "").strip()
             if pid and pid not in latest_visit_by_patient:
                 latest_visit_by_patient[pid] = visit

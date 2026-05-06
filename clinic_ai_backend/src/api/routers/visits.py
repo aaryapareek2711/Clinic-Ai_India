@@ -328,8 +328,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                 "scheduled_start": 1,
                 "visit_type": 1,
                 "status": 1,
-                "pre_visit_summary": 1,
-                "intake_session": 1,
                 "chief_complaint": 1,
             },
         )
@@ -347,7 +345,10 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
     )
     patient_map: dict[str, dict] = {}
     if patient_ids:
-        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0}):
+        for patient in db.patients.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1},
+        ):
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
@@ -377,8 +378,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
         scheduled_start = visit.get("scheduled_start")
         chief_complaint = (
             visit.get("chief_complaint")
-            or ((visit.get("pre_visit_summary") or {}).get("sections") or {}).get("chief_complaint", {}).get("reason_for_visit")
-            or (visit.get("intake_session") or {}).get("illness")
             or previsit_reason_by_visit.get(resolved_visit_id)
         )
         appointments.append(
@@ -434,6 +433,9 @@ def list_provider_visits(
                 "actual_start": 1,
                 "actual_end": 1,
                 "chief_complaint": 1,
+                "intake_session.status": 1,
+                "intake_session.question_answers": 1,
+                "intake_session.updated_at": 1,
                 "created_at": 1,
                 "updated_at": 1,
             },
@@ -444,7 +446,10 @@ def list_provider_visits(
     patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
     patient_map: dict[str, dict] = {}
     if patient_ids:
-        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0}):
+        for patient in db.patients.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1, "created_at": 1},
+        ):
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
@@ -493,6 +498,9 @@ def list_provider_visits(
                     "actual_end": actual_end,
                     "duration_minutes": duration_minutes,
                     "chief_complaint": visit.get("chief_complaint") or None,
+                    "intake_status": str((visit.get("intake_session") or {}).get("status") or ""),
+                    "intake_question_count": len(((visit.get("intake_session") or {}).get("question_answers") or [])),
+                    "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
                     "created_at": visit.get("created_at") or "",
                     "updated_at": visit.get("updated_at") or "",
                 },
