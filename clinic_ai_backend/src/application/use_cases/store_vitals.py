@@ -255,6 +255,11 @@ class StoreVitalsUseCase:
             {
                 "$set": {
                     "vitals_form": form_doc,
+                    # Vitals form generation means we are now in the vitals stage.
+                    "status": "in_progress",
+                    "previous_workflow_stage": "pre_visit",
+                    "current_workflow_stage": "vitals",
+                    "next_workflow_stage": "transcription",
                     "updated_at": form_doc["generated_at"],
                 }
             },

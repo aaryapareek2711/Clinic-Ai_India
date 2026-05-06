@@ -39,19 +39,55 @@ class GeneratePreVisitSummaryUseCase:
             pass
 
         now = datetime.now(timezone.utc)
+        # When doctor generates pre-visit summary, we treat intake as completed for display/workflow.
+        intake_status_update = {
+            "intake_session.status": "completed",
+            "intake_session.pending_question": None,
+            "intake_session.pending_topic": "doctor_generated_pre_visit",
+            "intake_session.updated_at": now,
+        }
         doc = {
             "patient_id": patient_id,
             "visit_id": visit_id,
             "intake_session_id": str(session.get("visit_id") or visit_id),
             "language": language,
-            "status": session.get("status", "in_progress"),
+            # Once we generate the pre-visit summary successfully, show it as completed
+            # in the UI (VisitIntakeCanvas displays this field as "Intake status").
+            "status": "completed",
             "sections": summary,
             "updated_at": now,
         }
         self.db.visits.update_one(
             {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
-            {"$set": {"pre_visit_summary": doc, "updated_at": now}},
+            {
+                "$set": {
+                    "pre_visit_summary": doc,
+                    **intake_status_update,
+                    # Move workflow forward: pre-visit summary done -> pre-visit stage.
+                    "status": "in_queue",
+                    "previous_workflow_stage": "intake",
+                    "current_workflow_stage": "pre_visit",
+                    "next_workflow_stage": "vitals",
+                    "updated_at": now,
+                }
+            },
         )
+        # Best-effort: keep the standalone intake_sessions collection consistent too.
+        try:
+            self.db.intake_sessions.update_one(
+                {"visit_id": visit_id, "patient_id": patient_id},
+                {
+                    "$set": {
+                        "status": "completed",
+                        "pending_question": None,
+                        "pending_topic": "doctor_generated_pre_visit",
+                        "updated_at": now,
+                    }
+                },
+            )
+        except Exception:
+            # Embedded snapshot is the primary source for the visit page.
+            pass
         return doc
 
     @staticmethod
