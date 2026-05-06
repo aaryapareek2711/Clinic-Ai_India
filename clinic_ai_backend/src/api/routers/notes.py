@@ -1,11 +1,14 @@
 """Clinical notes routes module."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
+from src.adapters.external.ai.openai_client import OpenAIQuestionClient
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.api.schemas.notes import (
     ClinicalNoteTemplateRequest,
@@ -25,6 +28,15 @@ from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
+
+
+class TranslateDisplayRequest(BaseModel):
+    payload: dict[str, Any] = Field(default_factory=dict)
+    target_language: str = Field(default="English", min_length=2, max_length=40)
+
+
+class TranslateDisplayResponse(BaseModel):
+    payload: dict[str, Any]
 
 
 def _encode_note_patient_id(doc: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +69,34 @@ def _sync_note_into_visit(*, note_type: str, doc: dict[str, Any]) -> None:
         {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
         {"$set": {visit_field: visit_note, "updated_at": doc.get("updated_at") or doc.get("created_at")}},
     )
+
+
+@router.post("/translate-display", response_model=TranslateDisplayResponse)
+def translate_display_payload(body: TranslateDisplayRequest) -> TranslateDisplayResponse:
+    """Translate visit-display text while preserving JSON shape and keys."""
+    if not body.payload:
+        return TranslateDisplayResponse(payload={})
+    target = str(body.target_language or "English").strip() or "English"
+    prompt = (
+        "Translate all human-readable string values in this JSON payload to "
+        f"{target}. Preserve object/array structure, keys, and non-language data.\n"
+        "Rules:\n"
+        "- Keep IDs, codes, dates/times, URLs, phone numbers, and numeric values unchanged.\n"
+        "- Keep medical meaning accurate.\n"
+        "- Return strict JSON object only.\n\n"
+        f"INPUT_JSON:\n{json.dumps(body.payload, ensure_ascii=False)}"
+    )
+    try:
+        content = OpenAIQuestionClient._chat_completion(
+            prompt=prompt,
+            system_role="You are a medical translation engine. Return strict JSON only.",
+        )
+        translated = json.loads(content)
+        if not isinstance(translated, dict):
+            raise ValueError("translation_json_not_object")
+        return TranslateDisplayResponse(payload=translated)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"DISPLAY_TRANSLATION_FAILED: {exc}") from exc
 
 
 def _build_clinical_note_template(*, doctor_type: str, language_style: str, region: str, optional_preferences: str | None) -> dict[str, Any]:
