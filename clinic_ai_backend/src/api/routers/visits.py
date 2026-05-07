@@ -786,6 +786,7 @@ def list_provider_careprep(
         .limit(page_size)
     )
     patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
+    visit_ids = sorted({str(v.get("visit_id") or v.get("id") or "").strip() for v in records if str(v.get("visit_id") or v.get("id") or "").strip()})
     patient_map: dict[str, dict] = {}
     if patient_ids:
         for patient in db.patients.find(
@@ -795,6 +796,28 @@ def list_provider_careprep(
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
+    intake_by_visit: dict[str, dict] = {}
+    if visit_ids:
+        for session in db.intake_sessions.find(
+            {"visit_id": {"$in": visit_ids}},
+            {
+                "_id": 0,
+                "visit_id": 1,
+                "status": 1,
+                "question_answers": 1,
+                "answers": 1,
+                "updated_at": 1,
+                "created_at": 1,
+            },
+        ):
+            sid = str(session.get("visit_id") or "").strip()
+            if not sid:
+                continue
+            session_updated = _serialize_datetime(session.get("updated_at") or session.get("created_at")) or ""
+            existing = intake_by_visit.get(sid)
+            existing_updated = _serialize_datetime((existing or {}).get("updated_at") or (existing or {}).get("created_at")) or ""
+            if sid not in intake_by_visit or session_updated >= existing_updated:
+                intake_by_visit[sid] = session
     items: list[dict] = []
     for v in records:
         vid = str(v.get("visit_id") or v.get("id") or "").strip()
@@ -802,8 +825,11 @@ def list_provider_careprep(
             continue
         pid = str(v.get("patient_id") or "").strip()
         patient = patient_map.get(pid, {})
-        intake = v.get("intake_session") or {}
-        qa_len = len((intake.get("question_answers") or []))
+        embedded_intake = v.get("intake_session") or {}
+        latest_intake = intake_by_visit.get(vid) or {}
+        intake = latest_intake or embedded_intake
+        qa_items = intake.get("question_answers") or intake.get("answers") or []
+        qa_len = len(qa_items)
         intake_status = str(intake.get("status") or "not_started").lower()
         touched_at = intake.get("updated_at") or v.get("updated_at") or v.get("created_at")
         status_kind = "progress"
