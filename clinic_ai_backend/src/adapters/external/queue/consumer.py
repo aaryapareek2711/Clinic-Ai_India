@@ -23,11 +23,13 @@ class TranscriptionQueueConsumer:
                 return LOCAL_TRANSCRIPTION_QUEUE.get_nowait()
             except QueueEmpty:
                 return None
-        doc = self.queue.find_one(sort=[("queued_at", ASCENDING)])
+        doc = self.queue.find_one_and_delete(
+            filter={},
+            sort=[("queued_at", ASCENDING)],
+        )
         if not doc:
             return None
-        self.queue.delete_one({"_id": doc["_id"]})
-        return doc["job_id"]
+        return doc.get("job_id")
 
     def ack_last(self) -> None:
         return

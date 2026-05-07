@@ -5,15 +5,22 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.adapters.db.mongo.client import get_database
+from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.api.schemas.patient import ScheduleVisitIntakeRequest, ScheduleVisitIntakeResponse
 from src.application.services.intake_chat_service import IntakeChatService
+from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
+from src.core.config import get_settings
+from src.core.ttl_cache import TTLCache
 router = APIRouter(prefix="/api/visits", tags=["Visits"])
 
 LOCKED_VISIT_STATUSES = {"completed", "closed", "ended", "cancelled"}
 QUEUEABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
 STARTABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
 _INDEXES_READY = False
+_visit_summary_cache = TTLCache(max_items=512)
+_provider_upcoming_cache = TTLCache(max_items=256)
+_provider_visits_cache = TTLCache(max_items=256)
 
 
 def _ensure_visit_indexes(db) -> None:
@@ -325,6 +332,10 @@ def list_provider_upcoming_visits(
     to_date: str | None = Query(default=None, description="Optional upper bound ISO (inclusive) for scheduled_start"),
 ) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
+    cache_key = f"provider:upcoming:{provider_id}:{from_date or ''}:{to_date or ''}"
+    cached = _provider_upcoming_cache.get(cache_key)
+    if cached is not None:
+        return cached
     db = get_database()
     _ensure_visit_indexes(db)
     # Keep this endpoint fast: don't return the full visit history.
@@ -400,7 +411,9 @@ def list_provider_upcoming_visits(
             }
         )
 
-    return {"appointments": appointments}
+    out = {"appointments": appointments}
+    _provider_upcoming_cache.set(cache_key, out, ttl_sec=8.0)
+    return out
 
 
 @router.get("/provider/{provider_id}")
@@ -409,6 +422,10 @@ def list_provider_visits(
     status_filter: str | None = Query(default=None, description="Filter by visit status (scheduled, in_progress, completed, etc)"),
 ) -> list[dict]:
     """Return provider visits for Visits workspace list."""
+    cache_key = f"provider:visits:{provider_id}:{status_filter or ''}"
+    cached = _provider_visits_cache.get(cache_key)
+    if cached is not None:
+        return cached
     db = get_database()
     _ensure_visit_indexes(db)
     VISITS_LIMIT = 200
@@ -534,6 +551,7 @@ def list_provider_visits(
             }
         )
 
+    _provider_visits_cache.set(cache_key, out, ttl_sec=8.0)
     return out
 
 
@@ -700,6 +718,112 @@ def list_provider_visits_paged(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/provider/{provider_id}/careprep")
+def list_provider_careprep(
+    provider_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    filter: str = Query(default="all", description="all|ready|in_progress"),
+    search: str | None = Query(default=None),
+) -> dict:
+    """
+    CarePrep read-model: return only fields needed by CarePrep UI.
+    Avoids overfetching full visit list and reduces client-side computation.
+    """
+    db = get_database()
+    _ensure_visit_indexes(db)
+    query: dict = {
+        "$or": [
+            {"provider_id": provider_id},
+            {"provider_id": ""},
+            {"provider_id": None},
+            {"provider_id": {"$exists": False}},
+        ],
+    }
+    s = str(search or "").strip()
+    if s:
+        import re
+
+        esc = re.escape(s)
+        rx = {"$regex": esc, "$options": "i"}
+        patient_matches = list(
+            db.patients.find({"$or": [{"name": rx}, {"phone_number": rx}, {"patient_id": rx}]}, {"_id": 0, "patient_id": 1})
+        )
+        patient_ids = [str(p.get("patient_id") or "").strip() for p in patient_matches if str(p.get("patient_id") or "").strip()]
+        query["$and"] = [
+            {
+                "$or": [
+                    {"visit_id": rx},
+                    {"id": rx},
+                    {"patient_id": {"$in": patient_ids}} if patient_ids else {"visit_id": rx},
+                ]
+            }
+        ]
+    skip = (page - 1) * page_size
+    records = list(
+        db.visits.find(
+            query,
+            {
+                "_id": 0,
+                "visit_id": 1,
+                "id": 1,
+                "patient_id": 1,
+                "status": 1,
+                "scheduled_start": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "intake_session.status": 1,
+                "intake_session.question_answers": 1,
+                "intake_session.updated_at": 1,
+            },
+        )
+        .sort([("updated_at", -1), ("created_at", -1)])
+        .skip(skip)
+        .limit(page_size)
+    )
+    patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
+    patient_map: dict[str, dict] = {}
+    if patient_ids:
+        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1}):
+            pid = str(patient.get("patient_id") or "").strip()
+            if pid:
+                patient_map[pid] = patient
+    items: list[dict] = []
+    for v in records:
+        vid = str(v.get("visit_id") or v.get("id") or "").strip()
+        if not vid:
+            continue
+        pid = str(v.get("patient_id") or "").strip()
+        patient = patient_map.get(pid, {})
+        intake = v.get("intake_session") or {}
+        qa_len = len((intake.get("question_answers") or []))
+        intake_status = str(intake.get("status") or "not_started").lower()
+        touched_at = intake.get("updated_at") or v.get("updated_at") or v.get("created_at")
+        status_kind = "progress"
+        if intake_status == "stopped" and qa_len > 0:
+            status_kind = "ready"
+        elif qa_len >= 6:
+            status_kind = "ready"
+        if filter == "ready" and status_kind != "ready":
+            continue
+        if filter == "in_progress" and status_kind != "progress":
+            continue
+        items.append(
+            {
+                "visit_id": vid,
+                "patient_id": encode_patient_id(pid) if pid else "",
+                "patient_name": str(patient.get("name") or "Patient").strip(),
+                "mobile_number": str(patient.get("phone_number") or "").strip(),
+                "intake_status": intake_status,
+                "intake_question_count": qa_len,
+                "touched_at": touched_at,
+                "status_kind": status_kind,
+            }
+        )
+    total = len(items) if s or filter != "all" else int(db.visits.count_documents(query))
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 @router.get("/patient/{patient_id}")
 def list_patient_visits(
     patient_id: str,
@@ -786,6 +910,133 @@ def get_visit(visit_id: str) -> dict:
             "phone_number": patient.get("phone_number"),
         },
     }
+
+
+@router.get("/{visit_id}/summary")
+def get_visit_summary(
+    visit_id: str,
+    include: str | None = Query(
+        default=None,
+        description="Comma-separated fields: visit,intake_session,pre_visit_summary,latest_vitals,latest_vitals_form,clinical_note. Default=all.",
+    ),
+) -> dict:
+    """
+    Return a visit workspace summary to reduce frontend waterfalls.
+
+    Includes: visit detail, intake session snapshot, pre-visit summary (if any),
+    latest vitals/form (if any), and latest clinical note (if any).
+    """
+    db = get_database()
+    _ensure_visit_indexes(db)
+    cache_key = f"visit:summary:{visit_id}:{include or ''}"
+    cached = _visit_summary_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    visit = _find_visit(db, visit_id)
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
+    patient_id_raw = str(visit.get("patient_id") or "")
+    patient = db.patients.find_one({"patient_id": patient_id_raw}, {"_id": 0}) or {}
+
+    # Base visit payload (same shape as GET /api/visits/{visit_id})
+    # Note: `get_visit` is read-only (no write-on-read backfills).
+    visit_payload = get_visit(resolved_visit_id)
+
+    # Intake session snapshot (read-only; do NOT auto-complete or write in this summary endpoint).
+    intake = visit.get("intake_session")
+    if not intake:
+        intake_payload = {
+            "visit_id": resolved_visit_id,
+            "patient_id": encode_patient_id(patient_id_raw) if patient_id_raw else "",
+            "status": "not_started",
+            "question_answers": [],
+            "illness": None,
+            "language": None,
+            "updated_at": None,
+            "created_at": None,
+        }
+    else:
+        normalized_answers: list[dict] = []
+        for item in (intake.get("answers") or []):
+            normalized_answers.append(
+                {
+                    "question": str(item.get("question") or "").strip(),
+                    "answer": str(item.get("answer") or "").strip(),
+                    "topic": str(item.get("topic") or "").strip() or None,
+                    "asked_at": item.get("asked_at"),
+                    "answered_at": item.get("answered_at"),
+                }
+            )
+        intake_patient_id = str(intake.get("patient_id") or patient_id_raw or "")
+        intake_payload = {
+            "visit_id": resolved_visit_id,
+            "patient_id": encode_patient_id(intake_patient_id) if intake_patient_id else "",
+            "status": str(intake.get("status") or "in_progress"),
+            "illness": intake.get("illness"),
+            "question_answers": normalized_answers,
+            "language": intake.get("language"),
+            "updated_at": intake.get("updated_at"),
+            "created_at": intake.get("created_at"),
+        }
+
+    # Pre-visit summary: prefer embedded on visit, fall back to legacy collection.
+    pre_visit_summary = None
+    embedded_pre = dict((visit.get("pre_visit_summary") or {}))
+    if embedded_pre:
+        embedded_pre["patient_id"] = encode_patient_id(str(embedded_pre.get("patient_id") or patient_id_raw))
+        pre_visit_summary = embedded_pre
+    else:
+        doc = db.pre_visit_summaries.find_one(
+            {"patient_id": patient_id_raw, "visit_id": resolved_visit_id},
+            sort=[("updated_at", -1)],
+        )
+        if doc:
+            doc.pop("_id", None)
+            doc["patient_id"] = encode_patient_id(str(doc.get("patient_id") or patient_id_raw))
+            pre_visit_summary = doc
+
+    vitals_use_case = StoreVitalsUseCase()
+    vitals_form = vitals_use_case.get_latest_vitals_form(patient_id_raw, resolved_visit_id)
+    latest_vitals = vitals_use_case.get_latest_vitals(patient_id_raw, resolved_visit_id)
+
+    # Latest clinical note (default note type).
+    clinical_note = None
+    try:
+        default_note_type = get_settings().default_note_type
+        note = ClinicalNoteRepository().find_latest(
+            patient_id=patient_id_raw,
+            visit_id=resolved_visit_id,
+            note_type=default_note_type,
+        )
+        if note:
+            note.pop("_id", None)
+            note["patient_id"] = encode_patient_id(str(note.get("patient_id") or patient_id_raw))
+            clinical_note = note
+    except Exception:
+        clinical_note = None
+
+    # Attach patient phone (used for recap drafts) even if patient block is partial.
+    patient_phone = patient.get("phone_number")
+    if isinstance(visit_payload.get("patient"), dict) and patient_phone is not None:
+        visit_payload["patient"]["phone_number"] = patient_phone
+
+    include_set = None
+    if include and str(include).strip():
+        include_set = {part.strip() for part in str(include).split(",") if part.strip()}
+    out = {
+        "visit": visit_payload,
+        "intake_session": intake_payload,
+        "pre_visit_summary": pre_visit_summary,
+        "latest_vitals_form": vitals_form,
+        "latest_vitals": latest_vitals,
+        "clinical_note": clinical_note,
+    }
+    if include_set is not None:
+        out = {k: v for k, v in out.items() if k in include_set}
+    _visit_summary_cache.set(cache_key, out, ttl_sec=8.0)
+    return out
 
 
 @router.get("/{visit_id}/intake-session")

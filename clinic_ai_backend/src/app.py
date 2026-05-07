@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.api.routers import (
     auth,
+    ai_jobs,
     contextai,
     followthrough,
     health,
@@ -21,6 +23,7 @@ from src.api.routers import (
     workflow,
 )
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
+from src.workers.ai_job_worker import start_ai_job_workers, stop_ai_job_workers
 from src.core.ai_factory import prompt_registry
 from src.middleware.performance_middleware import PerformanceMiddleware
 
@@ -30,9 +33,11 @@ async def lifespan(_: FastAPI):
     """Start/stop background transcription workers with app lifecycle."""
     prompt_registry.initialize()
     start_background_workers()
+    start_ai_job_workers(concurrency=1, poll_interval_sec=0.5)
     try:
         yield
     finally:
+        await stop_ai_job_workers()
         await stop_background_workers()
 
 
@@ -51,6 +56,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Compress large JSON payloads (notes/transcripts/summaries).
+    app.add_middleware(GZipMiddleware, minimum_size=800)
     app.add_middleware(PerformanceMiddleware)
     app.include_router(auth.router)
     app.include_router(health.router)
@@ -66,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(notes.router)
     app.include_router(followthrough.router)
     app.include_router(intake.router)
+    app.include_router(ai_jobs.router)
     return app
 
 

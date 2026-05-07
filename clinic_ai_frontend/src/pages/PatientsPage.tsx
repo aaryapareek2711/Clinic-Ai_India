@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
@@ -31,39 +32,22 @@ function PatientsPage() {
   const [patientSort, setPatientSort] = useState<PatientSort>('visit_latest')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [patients, setPatients] = useState<PatientSummary[]>([])
-  const [totalPatients, setTotalPatients] = useState(0)
-  const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setError(null)
-        }
-        const data = await fetchPatientsPaged({
-          page: currentPage,
-          pageSize: PAGE_SIZE,
-          search: searchQuery.trim() || undefined,
-          sort: patientSort,
-        })
-        if (!cancelled) {
-          setPatients(data.items)
-          setTotalPatients(data.total)
-        }
-      } catch (e) {
-        if (!cancelled) setError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [currentPage, patientSort, searchQuery])
+  const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
+  const { data, isFetching, error } = useQuery({
+    queryKey: ['patients', 'paged', { page: currentPage, pageSize: PAGE_SIZE, search, sort: patientSort }],
+    queryFn: () =>
+      fetchPatientsPaged({
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        search,
+        sort: patientSort,
+      }),
+    placeholderData: keepPreviousData,
+  })
+  const patients: PatientSummary[] = data?.items ?? []
+  const totalPatients = data?.total ?? 0
+  const loading = isFetching && !data
+  const errorMessage = error ? getApiErrorMessage(error) : null
   const totalPages = Math.max(1, Math.ceil(totalPatients / PAGE_SIZE))
 
   useEffect(() => {
@@ -142,8 +126,10 @@ function PatientsPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        {errorMessage && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {errorMessage}
+          </div>
         )}
         <div className="bg-white rounded-xl border border-[#bdcaba] overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse">

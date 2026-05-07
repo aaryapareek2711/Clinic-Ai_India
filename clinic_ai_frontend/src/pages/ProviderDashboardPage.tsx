@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
@@ -88,68 +89,51 @@ function ProviderDashboardPage() {
   const provider = useProviderIdentity()
   const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
-  const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
   const [upcomingDayFilter, setUpcomingDayFilter] = useState<'today' | 'tomorrow'>('today')
   const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(INITIAL_UPCOMING_COUNT)
-  const loadInFlightRef = useRef(false)
-  const lastLoadAtRef = useRef(0)
+  const lastFocusRefetchAtRef = useRef(0)
+
+  const upcomingQuery = useQuery({
+    queryKey: ['dashboard', 'upcoming', DEFAULT_PROVIDER_ID],
+    queryFn: () => fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+    staleTime: 15_000,
+    refetchInterval: AUTO_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  })
+  const visitsQuery = useQuery({
+    queryKey: ['dashboard', 'visits', DEFAULT_PROVIDER_ID],
+    queryFn: () => fetchProviderVisits(DEFAULT_PROVIDER_ID),
+    staleTime: 15_000,
+    refetchInterval: AUTO_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  })
+
+  const appointments: ProviderUpcomingAppointment[] = upcomingQuery.data ?? []
+  const visits: ProviderVisitListItem[] = visitsQuery.data ?? []
+  const loading = (upcomingQuery.isFetching && !upcomingQuery.data) || (visitsQuery.isFetching && !visitsQuery.data)
+  const error = useMemo(() => {
+    const errs: string[] = []
+    if (upcomingQuery.error) errs.push(getApiErrorMessage(upcomingQuery.error))
+    if (visitsQuery.error) errs.push(getApiErrorMessage(visitsQuery.error))
+    return errs.length ? [...new Set(errs)].join(' · ') : null
+  }, [upcomingQuery.error, visitsQuery.error])
 
   useEffect(() => {
-    let cancelled = false
-    const loadDashboard = async (showSpinner: boolean) => {
-      if (loadInFlightRef.current) return
-      if (!showSpinner && document.visibilityState !== 'visible') return
-      loadInFlightRef.current = true
-      if (!cancelled && showSpinner) {
-        setLoading(true)
-        setError(null)
-      }
-      try {
-        const [upcomingRes, visitsRes] = await Promise.allSettled([
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        ])
-        if (cancelled) return
-
-        if (upcomingRes.status === 'fulfilled') {
-          setAppointments(upcomingRes.value)
-        }
-        if (visitsRes.status === 'fulfilled') {
-          setVisits(visitsRes.value)
-        }
-
-        const loadErrs: string[] = []
-        if (upcomingRes.status === 'rejected') loadErrs.push(getApiErrorMessage(upcomingRes.reason))
-        if (visitsRes.status === 'rejected') loadErrs.push(getApiErrorMessage(visitsRes.reason))
-        setError(loadErrs.length ? [...new Set(loadErrs)].join(' · ') : null)
-        setLoading(false)
-      } finally {
-        lastLoadAtRef.current = Date.now()
-        loadInFlightRef.current = false
-      }
-    }
-    void loadDashboard(true)
-    const intervalId = window.setInterval(() => {
-      void loadDashboard(false)
-    }, AUTO_REFRESH_MS)
     const onVisible = () => {
       const now = Date.now()
-      if (document.visibilityState === 'visible' && now - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
-        void loadDashboard(false)
+      if (document.visibilityState === 'visible' && now - lastFocusRefetchAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
+        lastFocusRefetchAtRef.current = now
+        void upcomingQuery.refetch()
+        void visitsQuery.refetch()
       }
     }
     window.addEventListener('focus', onVisible)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
       window.removeEventListener('focus', onVisible)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [])
+  }, [upcomingQuery, visitsQuery])
 
   const mergedUpcoming = useMemo(() => {
     const visitById = new Map<string, ProviderVisitListItem>()

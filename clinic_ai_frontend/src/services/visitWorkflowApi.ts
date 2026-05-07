@@ -20,6 +20,15 @@ export type VisitDetailResponse = {
   }
 }
 
+export type VisitWorkspaceSummaryResponse = {
+  visit: VisitDetailResponse
+  intake_session: IntakeSessionResponse | null
+  pre_visit_summary: PreVisitSummaryResponse | null
+  latest_vitals_form?: VitalsFormResponse | null
+  latest_vitals?: LatestVitalsResponse | null
+  clinical_note?: ClinicalNoteLatest | null
+}
+
 export type IntakeQaItem = {
   question: string
   answer: string
@@ -100,6 +109,24 @@ export type PagedVisitResponse = {
   page_size: number
 }
 
+export type CarePrepItem = {
+  visit_id: string
+  patient_id: string
+  patient_name: string
+  mobile_number?: string | null
+  intake_status: string
+  intake_question_count: number
+  touched_at?: string | null
+  status_kind: 'ready' | 'progress'
+}
+
+export type CarePrepResponse = {
+  items: CarePrepItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export const DEFAULT_PROVIDER_ID =
   (import.meta.env.VITE_PROVIDER_ID as string | undefined)?.trim() || 'default'
 
@@ -129,6 +156,24 @@ export async function fetchProviderVisitsPaged(
         status_filter: opts.statusFilter || undefined,
         search: opts.search || undefined,
         sort: opts.sort || 'time_newest',
+      },
+    },
+  )
+  return data
+}
+
+export async function fetchProviderCarePrep(
+  providerId: string,
+  opts: { page: number; pageSize: number; filter?: 'all' | 'ready' | 'in_progress'; search?: string },
+): Promise<CarePrepResponse> {
+  const { data } = await apiClient.get<CarePrepResponse>(
+    `/api/visits/provider/${encodeURIComponent(providerId)}/careprep`,
+    {
+      params: {
+        page: opts.page,
+        page_size: opts.pageSize,
+        filter: opts.filter || 'all',
+        search: opts.search || undefined,
       },
     },
   )
@@ -168,6 +213,13 @@ export async function fetchProviderUpcoming(
 
 export async function fetchVisitDetail(visitId: string): Promise<VisitDetailResponse> {
   const { data } = await apiClient.get<VisitDetailResponse>(`/api/visits/${encodeURIComponent(visitId)}`)
+  return data
+}
+
+export async function fetchVisitWorkspaceSummary(visitId: string): Promise<VisitWorkspaceSummaryResponse> {
+  const { data } = await apiClient.get<VisitWorkspaceSummaryResponse>(
+    `/api/visits/${encodeURIComponent(visitId)}/summary`,
+  )
   return data
 }
 
