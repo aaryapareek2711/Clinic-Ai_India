@@ -6,7 +6,7 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
-type PatientSort = 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
+type PatientSort = 'created_newest' | 'created_oldest' | 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
 const PAGE_SIZE = 10
 
 function labelForGender(gender: string | null | undefined): string {
@@ -29,7 +29,7 @@ function PatientsPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [patientSort, setPatientSort] = useState<PatientSort>('visit_latest')
+  const [patientSort, setPatientSort] = useState<PatientSort>('created_newest')
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
@@ -114,6 +114,8 @@ function PatientsPage() {
               value={patientSort}
               onChange={(e) => setPatientSort(e.target.value as PatientSort)}
             >
+              <option value="created_newest">New patient: newest first</option>
+              <option value="created_oldest">New patient: oldest first</option>
               <option value="visit_latest">Last visit: newest first</option>
               <option value="visit_oldest">Last visit: oldest first</option>
               <option value="name_az">Name: A → Z</option>

@@ -12,7 +12,7 @@ import {
 
 type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
-type VisitSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+type VisitSort = 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
 const AUTO_REFRESH_MS = 30_000
 const MIN_FOCUS_REFRESH_GAP_MS = 8_000
@@ -211,7 +211,7 @@ function VisitsPage() {
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
+  const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
   const [currentPage, setCurrentPage] = useState(1)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
@@ -396,6 +396,8 @@ function VisitsPage() {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as VisitSort)}
               >
+                <option value="patient_newest">New patient: newest first</option>
+                <option value="patient_oldest">New patient: oldest first</option>
                 <option value="time_newest">Time: newest first</option>
                 <option value="time_oldest">Time: oldest first</option>
                 <option value="name_az">Name: A → Z</option>

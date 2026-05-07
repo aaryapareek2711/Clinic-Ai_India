@@ -113,7 +113,6 @@ export type VisitClinicalNotePanelProps = {
   transcriptionStatusKnown: boolean
   transcriptionCompleted: boolean
   onNoteUpdated: (note: ClinicalNoteLatest | null) => void
-  onApproveNext?: (payload: { followUpDate: string; followUpTime: string }) => void
 }
 
 export default function VisitClinicalNotePanel({
@@ -124,10 +123,8 @@ export default function VisitClinicalNotePanel({
   transcriptionStatusKnown,
   transcriptionCompleted,
   onNoteUpdated,
-  onApproveNext,
 }: VisitClinicalNotePanelProps) {
   const [generating, setGenerating] = useState(false)
-  const [approvingNext, setApprovingNext] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [activeEditSection, setActiveEditSection] = useState<'chief' | 'narrative' | 'assessment' | 'plan' | null>(null)
   const [draftAssessment, setDraftAssessment] = useState('')
@@ -151,7 +148,7 @@ export default function VisitClinicalNotePanel({
   }, [editing, payload, clinicalNote?.note_id])
 
   useEffect(() => {
-    // Keep follow-up draft in sync with latest persisted note so Approve & Next forwards current values.
+    // Keep follow-up draft in sync with latest persisted note.
     setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
     setFollowUpTime(to12HourTimeDisplay(payload?.follow_up_time?.toString().trim() || ''))
   }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
@@ -191,30 +188,6 @@ export default function VisitClinicalNotePanel({
     }
   }, [patientId, visitId, generating, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated])
 
-  const handleApproveAndNext = useCallback(async () => {
-    if (!patientId || !visitId || approvingNext) return
-    setApprovingNext(true)
-    setMessage(null)
-    const fuDate = followUpDate.trim()
-    const fuTime = followUpTime.trim()
-    const fuTimeApi = to24HourTimeForApi(fuTime)
-    try {
-      const res = await generateClinicalNote(patientId, visitId, {
-        follow_up_date: fuDate || undefined,
-        follow_up_time: fuTimeApi || undefined,
-        template_id: selectedTemplate?.id,
-      })
-      onNoteUpdated(res)
-      setActiveEditSection(null)
-      setMessage('Clinical note approved. Moving to post-visit.')
-      onApproveNext?.({ followUpDate: fuDate, followUpTime: fuTime })
-    } catch (e) {
-      setMessage(getApiErrorMessage(e))
-    } finally {
-      setApprovingNext(false)
-    }
-  }, [patientId, visitId, approvingNext, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated, onApproveNext])
-
   const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
     setDraftAssessment(payload.assessment ?? '')
@@ -248,22 +221,16 @@ export default function VisitClinicalNotePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!patientId || !visitId || generating || approvingNext}
-            onClick={() => void handleGenerate()}
-            type="button"
-          >
-            {generating ? 'Working…' : clinicalNote ? 'Regenerate note' : 'Generate note'}
-          </button>
-          <button
-            className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!patientId || !visitId || generating || approvingNext}
-            onClick={() => void handleApproveAndNext()}
-            type="button"
-          >
-            {approvingNext ? 'Approving…' : 'Approve & Next'}
-          </button>
+          {!clinicalNote && (
+            <button
+              className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!patientId || !visitId || generating}
+              onClick={() => void handleGenerate()}
+              type="button"
+            >
+              {generating ? 'Working…' : 'Generate note'}
+            </button>
+          )}
         </div>
       </div>
 

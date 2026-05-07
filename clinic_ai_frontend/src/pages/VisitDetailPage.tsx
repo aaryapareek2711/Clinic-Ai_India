@@ -712,6 +712,7 @@ export default function VisitDetailPage() {
 
   const handleGenerateVitalsForm = useCallback(async () => {
     if (!patientId || !visitId) return
+    if (vitalsLocked || vitalsFormVisible) return
     try {
       const form = await generateVitalsForm(patientId, visitId)
       setVitalsForm(form)
@@ -726,7 +727,7 @@ export default function VisitDetailPage() {
     } catch (e) {
       setVitalsMessage(getApiErrorMessage(e))
     }
-  }, [patientId, visitId])
+  }, [patientId, visitId, vitalsFormVisible, vitalsLocked])
 
   useEffect(() => {
     if (loading) return
@@ -1480,16 +1481,17 @@ export default function VisitDetailPage() {
                       completes.
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
-                      disabled={isTranscriptionCurrentlyProcessing}
-                      onClick={() => void handleGenerateVitalsForm()}
-                      type="button"
-                    >
-                      Generate Vitals Form
-                    </button>
-                  </div>
+                  {!isTranscriptionCurrentlyProcessing && !vitalsFormVisible && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
+                        onClick={() => void handleGenerateVitalsForm()}
+                        type="button"
+                      >
+                        Generate Vitals Form
+                      </button>
+                    </div>
+                  )}
                   {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
                   {!isTranscriptionCurrentlyProcessing && vitalsFormVisible && vitalsForm && (
                     <>
@@ -1840,11 +1842,6 @@ export default function VisitDetailPage() {
                   <VisitClinicalNotePanel
                     clinicalNote={displayClinicalNote}
                     onNoteUpdated={setClinicalNote}
-                    onApproveNext={({ followUpDate, followUpTime }) => {
-                      setRecapFollowUpDateDraft(followUpDate)
-                      setRecapFollowUpTimeDraft(followUpTime)
-                      syncTabToUrl('post-visit')
-                    }}
                     patientId={patientId}
                     transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
                     transcriptionStatusKnown={transcriptionStatus != null}

@@ -114,6 +114,7 @@ export type CarePrepItem = {
   patient_id: string
   patient_name: string
   mobile_number?: string | null
+  patient_created_at?: string | null
   intake_status: string
   intake_question_count: number
   touched_at?: string | null
@@ -144,7 +145,7 @@ export async function fetchProviderVisitsPaged(
     pageSize: number
     statusFilter?: string
     search?: string
-    sort?: 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+    sort?: 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
   },
 ): Promise<PagedVisitResponse> {
   const { data } = await apiClient.get<PagedVisitResponse>(
@@ -155,7 +156,7 @@ export async function fetchProviderVisitsPaged(
         page_size: opts.pageSize,
         status_filter: opts.statusFilter || undefined,
         search: opts.search || undefined,
-        sort: opts.sort || 'time_newest',
+        sort: opts.sort || 'patient_newest',
       },
     },
   )
