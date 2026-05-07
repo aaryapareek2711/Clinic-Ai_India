@@ -33,6 +33,7 @@ from src.application.utils.transcript_dialogue import (
     structured_dialogue_segment_coverage_ratio,
 )
 from src.core.config import get_settings
+from src.workers.intake_timeout_sweeper import sweep_intake_timeouts_forever
 
 logger = logging.getLogger(__name__)
 
@@ -1201,6 +1202,11 @@ async def _worker_loop(worker_id: int, stop_event: asyncio.Event, poll_interval_
             await asyncio.sleep(poll_interval_sec)
 
 
+async def _intake_timeout_loop(stop_event: asyncio.Event) -> None:
+    # Keep a separate loop so intake timeouts are enforced even when no API calls happen.
+    await sweep_intake_timeouts_forever(stop_event, poll_interval_sec=60.0, inactivity_timeout_sec=30 * 60)
+
+
 def start_background_workers() -> None:
     """Start background transcription workers once per process."""
     global _BACKGROUND_TASKS, _STOP_EVENT
@@ -1212,6 +1218,9 @@ def start_background_workers() -> None:
     poll_interval = max(0.2, float(settings.transcription_worker_poll_interval_sec))
     for i in range(concurrency):
         _BACKGROUND_TASKS.append(asyncio.create_task(_worker_loop(i + 1, _STOP_EVENT, poll_interval)))
+
+    # Intake inactivity sweeper (no outbound messages, only status transitions).
+    _BACKGROUND_TASKS.append(asyncio.create_task(_intake_timeout_loop(_STOP_EVENT)))
 
 
 async def stop_background_workers() -> None:

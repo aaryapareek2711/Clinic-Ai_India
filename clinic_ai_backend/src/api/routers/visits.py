@@ -808,66 +808,8 @@ def get_visit_intake_session(visit_id: str) -> dict:
             "updated_at": None,
         }
 
-    # Auto-complete intake if the patient has not replied within 30 minutes.
-    # This keeps the UI consistent even if the doctor refreshes/reopens the visit later.
-    now = datetime.now(timezone.utc)
-    intake_status = str(intake.get("status") or "in_progress").lower()
-    last_outbound_at = _parse_iso_datetime(intake.get("last_outbound_at"))
-    pending_question = intake.get("pending_question")
-    pending_question_present = bool(str(pending_question or "").strip())
-    if (
-        intake_status in {"in_progress", "awaiting_illness", "awaiting_conversation_start"}
-        and last_outbound_at is not None
-        and pending_question_present
-        and (now - last_outbound_at).total_seconds() >= 30 * 60
-    ):
-        current_stage = str(visit.get("current_workflow_stage") or "").strip().lower()
-        # Only move workflow from intake-like stages forward; never regress if already progressed.
-        should_move_workflow = current_stage in {"intake", "patient_registered"} or not current_stage
-        update_fields: dict[str, object] = {
-            "intake_session.status": "completed",
-            "intake_session.pending_question": None,
-            "intake_session.pending_topic": "inactivity_timeout",
-            "intake_session.updated_at": now,
-            "updated_at": now,
-        }
-        if should_move_workflow:
-            update_fields.update(
-                {
-                    "previous_workflow_stage": "intake",
-                    "current_workflow_stage": "pre_visit",
-                    "next_workflow_stage": "vitals",
-                    # Also keep visit legacy status moving forward for any existing UI logic.
-                    "status": "in_queue",
-                },
-            )
-        db.visits.update_one(
-            {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
-            {"$set": update_fields},
-        )
-        patient_id = str(intake.get("patient_id") or visit.get("patient_id") or "")
-        try:
-            db.intake_sessions.update_one(
-                {"visit_id": resolved_visit_id, "patient_id": patient_id, "status": {"$in": ["in_progress", "awaiting_illness", "awaiting_conversation_start"]}},
-                {
-                    "$set": {
-                        "status": "completed",
-                        "pending_question": None,
-                        "pending_topic": "inactivity_timeout",
-                        "updated_at": now,
-                    }
-                },
-            )
-        except Exception:
-            # Embedded snapshot is what the UI reads; best-effort only.
-            pass
-
-        # Refresh the local view after update so the response reflects the new status.
-        intake = db.visits.find_one(
-            {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
-            {"_id": 0, "intake_session": 1, "current_workflow_stage": 1, "status": 1},
-        ).get("intake_session") or intake
-
+    # NOTE: Auto-completing intake after inactivity is handled by a background sweeper.
+    # This endpoint is read-only.
     normalized_answers: list[dict] = []
     for item in intake.get("answers", []):
         normalized_answers.append(
