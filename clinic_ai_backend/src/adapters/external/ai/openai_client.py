@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error
 from urllib import request
 
+from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
 from src.core.language_support import normalize_intake_language
 
@@ -476,7 +478,78 @@ class OpenAIQuestionClient:
                 self._map_validation_reason_to_fallback_reason(validation["reason_code"]),
                 model_topic=normalize_topic_key(str(result.get("topic", "") or "")),
             )
-        return self._enforce_condition_guidance(result=result, context=context, guidance=guidance)
+        final_result = self._enforce_condition_guidance(result=result, context=context, guidance=guidance)
+        self._log_intake_prompt_turn(context=context, user_prompt=prompt, model_json=final_result)
+        return final_result
+
+    @staticmethod
+    def _log_intake_prompt_turn(*, context: dict, user_prompt: str, model_json: dict) -> None:
+        """
+        Persist full intake prompt/response and agent-wise question trails in MongoDB.
+        Logging must never block intake flow.
+        """
+        try:
+            visit_id = str(context.get("visit_id") or "").strip()
+            patient_id = str(context.get("patient_id") or "").strip()
+            session_id = str(context.get("session_id") or "").strip()
+            if not visit_id:
+                return
+            now = datetime.now(timezone.utc)
+            question_number = int(model_json.get("question_number", context.get("question_number", 1)) or 1)
+            question_key = f"q{question_number}"
+            question_text = str(model_json.get("message") or "").strip()
+            if not question_text:
+                return
+            db = get_database()
+            collection = db.intake_prompt_logs
+            base_query = {"visit_id": visit_id}
+            base_set = {
+                "visit_id": visit_id,
+                "patient_id": patient_id,
+                "session_id": session_id,
+                "updated_at": now,
+            }
+            collection.update_one(
+                base_query,
+                {
+                    "$setOnInsert": {
+                        **base_set,
+                        "created_at": now,
+                        "agents": {
+                            "agent1": {"questions": []},
+                            "agent2": {"questions": []},
+                            "agent3": {"questions": []},
+                            "agent4": {"questions": []},
+                        },
+                    },
+                    "$set": base_set,
+                },
+                upsert=True,
+            )
+            question_entry = {
+                "question_key": question_key,
+                "question_number": question_number,
+                "question_text": question_text,
+                "user_prompt": user_prompt,
+                "json_response": model_json,
+                "logged_at": now,
+            }
+            for agent_key in ("agent1", "agent2", "agent3", "agent4"):
+                agent_payload = model_json.get(agent_key) if isinstance(model_json.get(agent_key), dict) else {}
+                collection.update_one(
+                    base_query,
+                    {
+                        "$set": {"updated_at": now},
+                        "$push": {
+                            f"agents.{agent_key}.questions": {
+                                **question_entry,
+                                "agent_payload": agent_payload,
+                            }
+                        },
+                    },
+                )
+        except Exception:
+            return
 
     def detect_patient_opt_out(
         self,

@@ -572,6 +572,9 @@ class IntakeChatService:
                 return
             patient = self.db.patients.find_one({"patient_id": session.get("patient_id")}) or {}
             context = {
+                "visit_id": str(session.get("visit_id", "") or ""),
+                "patient_id": str(session.get("patient_id", "") or ""),
+                "session_id": str(session.get("_id", "") or ""),
                 "patient_name": patient.get("name", ""),
                 "patient_age": patient.get("age", ""),
                 "gender": patient.get("gender", ""),
