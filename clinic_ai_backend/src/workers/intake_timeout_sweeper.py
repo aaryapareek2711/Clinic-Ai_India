@@ -33,8 +33,8 @@ async def sweep_intake_timeouts_forever(
             # Find visits where a question was asked but patient didn't reply in time.
             query = {
                 "intake_session.status": {"$in": statuses},
-                "intake_session.pending_question": {"$exists": True, "$ne": None, "$ne": ""},
-                "intake_session.last_outbound_at": {"$exists": True, "$ne": None, "$ne": "", "$lte": cutoff_iso},
+                "intake_session.pending_question": {"$exists": True, "$nin": [None, ""]},
+                "intake_session.last_outbound_at": {"$exists": True, "$nin": [None, ""], "$lte": cutoff_iso},
             }
             cursor = db.visits.find(
                 query,
@@ -45,7 +45,9 @@ async def sweep_intake_timeouts_forever(
                     "patient_id": 1,
                     "status": 1,
                     "current_workflow_stage": 1,
-                    "intake_session": 1,
+                    "intake_session.status": 1,
+                    "intake_session.pending_question": 1,
+                    "intake_session.last_outbound_at": 1,
                     "intake_session.patient_id": 1,
                 },
             ).limit(int(batch_size))

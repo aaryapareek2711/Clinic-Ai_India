@@ -517,6 +517,10 @@ class IntakeChatService:
         self._generate_and_send_next_turn(refreshed)
 
     def _generate_and_send_next_turn(self, session: dict) -> None:
+        self._send_typing_indicator_best_effort(
+            to_number=str(session.get("to_number") or ""),
+            reply_to_message_id=str(session.get("last_inbound_message_id") or "") or None,
+        )
         language = session.get("language", "en")
         fallback_topic = self._planner_fallback_topic(session)
         planner_fallback_question = self.openai._topic_message(fallback_topic, language)
@@ -1636,6 +1640,17 @@ class IntakeChatService:
             # Keep a short delay so the patient can see WhatsApp typing dots.
             time.sleep(1.2)
         self.whatsapp.send_text(to_number, message)
+
+    def _send_typing_indicator_best_effort(self, *, to_number: str, reply_to_message_id: str | None = None) -> None:
+        if not to_number:
+            return
+        try:
+            self.whatsapp.send_typing_indicator(to_number, reply_to_message_id=reply_to_message_id)
+        except Exception:
+            logger.warning(
+                "whatsapp_typing_indicator_failed to=%s",
+                self._mask_phone_number(str(to_number or "")),
+            )
 
     @staticmethod
     def _opt_out_confirm_message(language: str) -> str:
