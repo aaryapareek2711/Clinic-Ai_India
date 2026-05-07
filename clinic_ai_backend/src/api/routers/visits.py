@@ -19,6 +19,8 @@ QUEUEABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
 STARTABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
 _INDEXES_READY = False
 _visit_summary_cache = TTLCache(max_items=512)
+_provider_upcoming_cache = TTLCache(max_items=256)
+_provider_visits_cache = TTLCache(max_items=256)
 
 
 def _ensure_visit_indexes(db) -> None:
@@ -330,6 +332,10 @@ def list_provider_upcoming_visits(
     to_date: str | None = Query(default=None, description="Optional upper bound ISO (inclusive) for scheduled_start"),
 ) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
+    cache_key = f"provider:upcoming:{provider_id}:{from_date or ''}:{to_date or ''}"
+    cached = _provider_upcoming_cache.get(cache_key)
+    if cached is not None:
+        return cached
     db = get_database()
     _ensure_visit_indexes(db)
     # Keep this endpoint fast: don't return the full visit history.
@@ -405,7 +411,9 @@ def list_provider_upcoming_visits(
             }
         )
 
-    return {"appointments": appointments}
+    out = {"appointments": appointments}
+    _provider_upcoming_cache.set(cache_key, out, ttl_sec=8.0)
+    return out
 
 
 @router.get("/provider/{provider_id}")
@@ -414,6 +422,10 @@ def list_provider_visits(
     status_filter: str | None = Query(default=None, description="Filter by visit status (scheduled, in_progress, completed, etc)"),
 ) -> list[dict]:
     """Return provider visits for Visits workspace list."""
+    cache_key = f"provider:visits:{provider_id}:{status_filter or ''}"
+    cached = _provider_visits_cache.get(cache_key)
+    if cached is not None:
+        return cached
     db = get_database()
     _ensure_visit_indexes(db)
     VISITS_LIMIT = 200
@@ -539,6 +551,7 @@ def list_provider_visits(
             }
         )
 
+    _provider_visits_cache.set(cache_key, out, ttl_sec=8.0)
     return out
 
 
