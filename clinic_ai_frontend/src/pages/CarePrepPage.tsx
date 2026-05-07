@@ -88,6 +88,10 @@ function mapVisitAndIntake(visit: ProviderVisitListItem): QueueRow {
   } else if (qaLen > 0) {
     action = 'review'
   }
+  // CarePrep row should always be navigable to intake details,
+  // even when intake is not started yet.
+  if (!visitId) action = 'waiting'
+  else action = 'review'
 
   const mins = minutesSince(touchedAt)
   const seed = visitId ? visitId.charCodeAt(0) : 63
@@ -166,7 +170,6 @@ export default function CarePrepPage() {
             const tb = new Date(b.scheduled_start || b.created_at || '').getTime()
             return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
           })
-          .slice(0, 40)
 
         const mapped = candidate.map((v) => mapVisitAndIntake(v))
         if (!cancelled) setRows(mapped)
@@ -330,9 +333,9 @@ export default function CarePrepPage() {
                 {pagedPatients.map((p) => (
                   <tr
                     key={p.visitId}
-                    className={`transition-colors hover:bg-slate-50/80 ${p.action === 'review' ? 'cursor-pointer' : ''}`}
+                    className="cursor-pointer transition-colors hover:bg-slate-50/80"
                     onClick={() => {
-                      if (p.action === 'review') goToIntake(p.visitId)
+                      goToIntake(p.visitId)
                     }}
                   >
                     <td className="px-6 py-4">
