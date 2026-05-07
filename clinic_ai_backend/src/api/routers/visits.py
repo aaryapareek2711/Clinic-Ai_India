@@ -562,7 +562,7 @@ def list_provider_visits_paged(
     page_size: int = Query(default=20, ge=1, le=200),
     status_filter: str | None = Query(default=None, description="Filter by visit status"),
     search: str | None = Query(default=None, description="Search by patient name/mobile/id/visit id"),
-    sort: str = Query(default="time_newest", description="time_newest|time_oldest|name_az|name_za|visit_id"),
+    sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|time_newest|time_oldest|name_az|name_za|visit_id"),
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
@@ -711,7 +711,11 @@ def list_provider_visits_paged(
                 ),
             }
         )
-    if sort == "name_az":
+    if sort == "patient_newest":
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""), reverse=True)
+    elif sort == "patient_oldest":
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""))
+    elif sort == "name_az":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
     elif sort == "name_za":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
@@ -782,12 +786,38 @@ def list_provider_careprep(
         .limit(page_size)
     )
     patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
+    visit_ids = sorted({str(v.get("visit_id") or v.get("id") or "").strip() for v in records if str(v.get("visit_id") or v.get("id") or "").strip()})
     patient_map: dict[str, dict] = {}
     if patient_ids:
-        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1}):
+        for patient in db.patients.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1, "created_at": 1},
+        ):
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
+    intake_by_visit: dict[str, dict] = {}
+    if visit_ids:
+        for session in db.intake_sessions.find(
+            {"visit_id": {"$in": visit_ids}},
+            {
+                "_id": 0,
+                "visit_id": 1,
+                "status": 1,
+                "question_answers": 1,
+                "answers": 1,
+                "updated_at": 1,
+                "created_at": 1,
+            },
+        ):
+            sid = str(session.get("visit_id") or "").strip()
+            if not sid:
+                continue
+            session_updated = _serialize_datetime(session.get("updated_at") or session.get("created_at")) or ""
+            existing = intake_by_visit.get(sid)
+            existing_updated = _serialize_datetime((existing or {}).get("updated_at") or (existing or {}).get("created_at")) or ""
+            if sid not in intake_by_visit or session_updated >= existing_updated:
+                intake_by_visit[sid] = session
     items: list[dict] = []
     for v in records:
         vid = str(v.get("visit_id") or v.get("id") or "").strip()
@@ -795,8 +825,11 @@ def list_provider_careprep(
             continue
         pid = str(v.get("patient_id") or "").strip()
         patient = patient_map.get(pid, {})
-        intake = v.get("intake_session") or {}
-        qa_len = len((intake.get("question_answers") or []))
+        embedded_intake = v.get("intake_session") or {}
+        latest_intake = intake_by_visit.get(vid) or {}
+        intake = latest_intake or embedded_intake
+        qa_items = intake.get("question_answers") or intake.get("answers") or []
+        qa_len = len(qa_items)
         intake_status = str(intake.get("status") or "not_started").lower()
         touched_at = intake.get("updated_at") or v.get("updated_at") or v.get("created_at")
         status_kind = "progress"
@@ -814,6 +847,7 @@ def list_provider_careprep(
                 "patient_id": encode_patient_id(pid) if pid else "",
                 "patient_name": str(patient.get("name") or "Patient").strip(),
                 "mobile_number": str(patient.get("phone_number") or "").strip(),
+                "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
                 "intake_status": intake_status,
                 "intake_question_count": qa_len,
                 "touched_at": touched_at,
@@ -1059,66 +1093,8 @@ def get_visit_intake_session(visit_id: str) -> dict:
             "updated_at": None,
         }
 
-    # Auto-complete intake if the patient has not replied within 30 minutes.
-    # This keeps the UI consistent even if the doctor refreshes/reopens the visit later.
-    now = datetime.now(timezone.utc)
-    intake_status = str(intake.get("status") or "in_progress").lower()
-    last_outbound_at = _parse_iso_datetime(intake.get("last_outbound_at"))
-    pending_question = intake.get("pending_question")
-    pending_question_present = bool(str(pending_question or "").strip())
-    if (
-        intake_status in {"in_progress", "awaiting_illness", "awaiting_conversation_start"}
-        and last_outbound_at is not None
-        and pending_question_present
-        and (now - last_outbound_at).total_seconds() >= 30 * 60
-    ):
-        current_stage = str(visit.get("current_workflow_stage") or "").strip().lower()
-        # Only move workflow from intake-like stages forward; never regress if already progressed.
-        should_move_workflow = current_stage in {"intake", "patient_registered"} or not current_stage
-        update_fields: dict[str, object] = {
-            "intake_session.status": "completed",
-            "intake_session.pending_question": None,
-            "intake_session.pending_topic": "inactivity_timeout",
-            "intake_session.updated_at": now,
-            "updated_at": now,
-        }
-        if should_move_workflow:
-            update_fields.update(
-                {
-                    "previous_workflow_stage": "intake",
-                    "current_workflow_stage": "pre_visit",
-                    "next_workflow_stage": "vitals",
-                    # Also keep visit legacy status moving forward for any existing UI logic.
-                    "status": "in_queue",
-                },
-            )
-        db.visits.update_one(
-            {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
-            {"$set": update_fields},
-        )
-        patient_id = str(intake.get("patient_id") or visit.get("patient_id") or "")
-        try:
-            db.intake_sessions.update_one(
-                {"visit_id": resolved_visit_id, "patient_id": patient_id, "status": {"$in": ["in_progress", "awaiting_illness", "awaiting_conversation_start"]}},
-                {
-                    "$set": {
-                        "status": "completed",
-                        "pending_question": None,
-                        "pending_topic": "inactivity_timeout",
-                        "updated_at": now,
-                    }
-                },
-            )
-        except Exception:
-            # Embedded snapshot is what the UI reads; best-effort only.
-            pass
-
-        # Refresh the local view after update so the response reflects the new status.
-        intake = db.visits.find_one(
-            {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
-            {"_id": 0, "intake_session": 1, "current_workflow_stage": 1, "status": 1},
-        ).get("intake_session") or intake
-
+    # NOTE: Auto-completing intake after inactivity is handled by a background sweeper.
+    # This endpoint is read-only.
     normalized_answers: list[dict] = []
     for item in intake.get("answers", []):
         normalized_answers.append(

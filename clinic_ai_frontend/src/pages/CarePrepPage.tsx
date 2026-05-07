@@ -10,7 +10,7 @@ import type { CarePrepItem } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 type QueueFilter = 'all' | 'ready' | 'in_progress'
-type CarePrepSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+type CarePrepSort = 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
 
 type QueueRow = {
@@ -22,6 +22,7 @@ type QueueRow = {
   dobLine: string
   submitted: string
   submittedMinutesAgo: number
+  patientCreatedAt: string
   statusKind: 'complete' | 'progress'
   progressPct?: number
   action: 'review' | 'waiting'
@@ -30,6 +31,7 @@ type QueueRow = {
 }
 
 const INITIALS_CLASSES = ['bg-blue-600 text-white', 'bg-teal-600 text-white', 'bg-violet-600 text-white', 'bg-rose-600 text-white']
+const MAX_INTAKE_QUESTIONS = 8
 
 function initialsFromName(name: string): string {
   const p = name.split(/\s+/).filter(Boolean)
@@ -72,17 +74,18 @@ function mapVisitAndIntake(visit: CarePrepItem): QueueRow {
   const touchedAt = visit.touched_at
 
   let statusKind: 'complete' | 'progress' = 'progress'
-  let progressPct = Math.min(95, 10 + qaLen * 12)
+  const answered = Math.max(0, Math.min(MAX_INTAKE_QUESTIONS, qaLen))
+  let progressPct = Math.round((answered / MAX_INTAKE_QUESTIONS) * 100)
   let action: 'review' | 'waiting' = 'waiting'
 
   if (st === 'not_started') {
-    progressPct = 5
+    progressPct = 0
     action = 'waiting'
   } else if (st === 'stopped' && qaLen > 0) {
     statusKind = 'complete'
     progressPct = 100
     action = 'review'
-  } else if (qaLen >= 6) {
+  } else if (qaLen >= MAX_INTAKE_QUESTIONS) {
     statusKind = 'complete'
     progressPct = 100
     action = 'review'
@@ -107,6 +110,7 @@ function mapVisitAndIntake(visit: CarePrepItem): QueueRow {
     dobLine: `Patient ID …${patientId.slice(-10)}`,
     submitted: submittedLabelMinutes(mins),
     submittedMinutesAgo: mins,
+    patientCreatedAt: String(visit.patient_created_at || ''),
     statusKind,
     progressPct,
     action,
@@ -143,7 +147,7 @@ export default function CarePrepPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState<CarePrepSort>('time_newest')
+  const [sortBy, setSortBy] = useState<CarePrepSort>('patient_newest')
   const [currentPage, setCurrentPage] = useState(1)
   const { data, isFetching, error } = useQuery({
     queryKey: [
@@ -171,6 +175,8 @@ export default function CarePrepPage() {
   const visiblePatients = useMemo(() => {
     const sorted = [...rows]
     sorted.sort((a, b) => {
+      if (sortBy === 'patient_newest') return b.patientCreatedAt.localeCompare(a.patientCreatedAt)
+      if (sortBy === 'patient_oldest') return a.patientCreatedAt.localeCompare(b.patientCreatedAt)
       if (sortBy === 'time_newest') return a.submittedMinutesAgo - b.submittedMinutesAgo
       if (sortBy === 'time_oldest') return b.submittedMinutesAgo - a.submittedMinutesAgo
       if (sortBy === 'name_az') return a.patientName.localeCompare(b.patientName)
@@ -261,6 +267,8 @@ export default function CarePrepPage() {
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as CarePrepSort)}
                   >
+                    <option value="patient_newest">New patient: newest first</option>
+                    <option value="patient_oldest">New patient: oldest first</option>
                     <option value="time_newest">Time: newest first</option>
                     <option value="time_oldest">Time: oldest first</option>
                     <option value="name_az">Name: A → Z</option>

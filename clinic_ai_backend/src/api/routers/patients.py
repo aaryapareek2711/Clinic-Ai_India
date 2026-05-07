@@ -164,7 +164,7 @@ def list_patients_paged(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     search: str | None = Query(default=None),
-    sort: str = Query(default="visit_latest"),
+    sort: str = Query(default="created_newest"),
 ) -> dict:
     """Return paginated patient records with server-side filtering/sorting."""
     db = get_database()
@@ -253,7 +253,11 @@ def list_patients_paged(
                 "latest_visit_scheduled_start": latest_visit_scheduled_start,
             }
         )
-    if sort == "name_az":
+    if sort == "created_newest":
+        items.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    elif sort == "created_oldest":
+        items.sort(key=lambda row: str(row.get("created_at") or ""))
+    elif sort == "name_az":
         items.sort(key=lambda row: str(row.get("full_name") or "").lower())
     elif sort == "name_za":
         items.sort(key=lambda row: str(row.get("full_name") or "").lower(), reverse=True)

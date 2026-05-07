@@ -13,6 +13,11 @@ class UserRegisterRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
     role: str = Field(default="doctor", min_length=1, max_length=40)
+    opd_morning_start: str | None = Field(default=None, max_length=20)
+    opd_morning_end: str | None = Field(default=None, max_length=20)
+    opd_evening_enabled: bool = Field(default=False)
+    opd_evening_start: str | None = Field(default=None, max_length=20)
+    opd_evening_end: str | None = Field(default=None, max_length=20)
 
 
 class UserLoginRequest(BaseModel):
@@ -36,6 +41,7 @@ class UserProfileUpdateRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: str
+    doctor_id: str | None = None
     email: str
     username: str
     full_name: str
@@ -47,6 +53,11 @@ class UserResponse(BaseModel):
     is_active: bool
     is_verified: bool
     tenant_id: str | None = None
+    opd_morning_start: str | None = None
+    opd_morning_end: str | None = None
+    opd_evening_enabled: bool = False
+    opd_evening_start: str | None = None
+    opd_evening_end: str | None = None
 
 
 class AuthResponse(BaseModel):

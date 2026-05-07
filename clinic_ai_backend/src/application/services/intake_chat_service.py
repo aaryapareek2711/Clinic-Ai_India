@@ -42,15 +42,37 @@ CHIEF_COMPLAINT_MESSAGES = {
     "kn": "ದಯವಿಟ್ಟು ನಿಮ್ಮ ಮುಖ್ಯ ಆರೋಗ್ಯ ಸಮಸ್ಯೆಯನ್ನು ಕೆಲವು ಪದಗಳಲ್ಲಿ ಹೇಳಿ.",
 }
 
-OPT_OUT_ACK_MESSAGES = {
-    "en": "Thank you. We will continue with your submitted answers.",
-    "hi": "धन्यवाद। हम आपके दिए गए जवाबों के साथ आगे बढ़ेंगे।",
-    "hi-eng": "Dhanyavaad. Hum aapke diye gaye answers ke saath aage badhenge.",
-    "ta": "நன்றி. நீங்கள் கொடுத்த பதில்களுடன் நாங்கள் தொடர்கிறோம்.",
-    "te": "ధన్యవాదాలు. మీరు ఇచ్చిన సమాధానాలతో మేము ముందుకు వెళ్తాము.",
-    "bn": "ধন্যবাদ। আপনি যে উত্তরগুলো দিয়েছেন, সেগুলো নিয়ে আমরা এগিয়ে যাব।",
-    "mr": "धन्यवाद. तुम्ही दिलेल्या उत्तरांसह आम्ही पुढे जाऊ.",
-    "kn": "ಧನ್ಯವಾದಗಳು. ನೀವು ನೀಡಿದ ಉತ್ತರಗಳೊಂದಿಗೆ ನಾವು ಮುಂದುವರೆಯುತ್ತೇವೆ.",
+OPT_OUT_CONFIRM_MESSAGES = {
+    "en": "Do you want to stop the intake now? Reply Yes to stop or No to continue.",
+    "hi": "क्या आप अभी इंटेक रोकना चाहते हैं? रोकने के लिए हाँ और जारी रखने के लिए नहीं लिखें।",
+    "hi-eng": "Kya aap abhi intake rokna chahte hain? Stop ke liye Yes aur continue ke liye No likhiye.",
+    "ta": "இன்டேக்கை இப்போது நிறுத்த வேண்டுமா? நிறுத்த Yes, தொடர No என்று பதிலளிக்கவும்.",
+    "te": "మీరు ఇప్పుడు intake ఆపాలనుకుంటున్నారా? ఆపడానికి Yes, కొనసాగడానికి No పంపండి.",
+    "bn": "আপনি কি এখন intake বন্ধ করতে চান? বন্ধ করতে Yes, চালাতে No লিখুন।",
+    "mr": "तुम्हाला आता intake थांबवायचा आहे का? थांबवण्यासाठी Yes आणि सुरू ठेवण्यासाठी No लिहा.",
+    "kn": "ನೀವು ಈಗ intake ನಿಲ್ಲಿಸಬೇಕೆ? ನಿಲ್ಲಿಸಲು Yes ಮತ್ತು ಮುಂದುವರಿಸಲು No ಎಂದು ಉತ್ತರಿಸಿ.",
+}
+
+OPT_OUT_CONTINUE_MESSAGES = {
+    "en": "Okay, we will continue your intake.",
+    "hi": "ठीक है, हम आपका इंटेक जारी रखते हैं।",
+    "hi-eng": "Theek hai, hum aapka intake continue karte hain.",
+    "ta": "சரி, உங்கள் intake-ஐ தொடர்கிறோம்.",
+    "te": "సరే, మీ intake కొనసాగిస్తాము.",
+    "bn": "ঠিক আছে, আমরা আপনার intake চালিয়ে যাচ্ছি।",
+    "mr": "ठीक आहे, आम्ही तुमचा intake पुढे चालू ठेवतो.",
+    "kn": "ಸರಿ, ನಿಮ್ಮ intake ಮುಂದುವರಿಸುತ್ತೇವೆ.",
+}
+
+OPT_OUT_RECONFIRM_MESSAGES = {
+    "en": "Please reply Yes to stop intake or No to continue.",
+    "hi": "कृपया इंटेक रोकने के लिए हाँ और जारी रखने के लिए नहीं लिखें।",
+    "hi-eng": "Kripya stop ke liye Yes aur continue ke liye No likhiye.",
+    "ta": "நிறுத்த Yes அல்லது தொடர No என்று பதிலளிக்கவும்.",
+    "te": "ఆపడానికి Yes లేదా కొనసాగడానికి No పంపండి.",
+    "bn": "বন্ধ করতে Yes অথবা চালাতে No লিখুন।",
+    "mr": "थांबवण्यासाठी Yes किंवा सुरू ठेवण्यासाठी No लिहा.",
+    "kn": "ನಿಲ್ಲಿಸಲು Yes ಅಥವಾ ಮುಂದುವರಿಸಲು No ಎಂದು ಉತ್ತರಿಸಿ.",
 }
 
 CLOSING_MESSAGES = {
@@ -301,23 +323,16 @@ class IntakeChatService:
                 )
                 return
             self._remember_inbound_text(session["_id"], cleaned)
+            if self._has_pending_opt_out_confirmation(session):
+                self._handle_opt_out_confirmation_reply(session=session, message_text=cleaned, message_id=message_id)
+                return
             if self._should_end_intake_via_llm(session=session, message_text=cleaned):
-                self.db.intake_sessions.update_one(
-                    {"_id": session["_id"]},
-                    {"$set": {"status": "stopped", "updated_at": datetime.now(timezone.utc)}},
-                )
-                self._supersede_other_active_sessions_for_number(
-                    to_number=str(session.get("to_number") or ""),
-                    keep_session_id=session.get("_id"),
-                    reason="patient_opted_out",
-                )
-                end_msg = self._opt_out_ack_message(session.get("language", "en"))
+                self._set_opt_out_confirmation_pending(session["_id"], pending=True)
                 self._send_text_with_typing(
                     session["to_number"],
-                    end_msg,
+                    self._opt_out_confirm_message(session.get("language", "en")),
                     reply_to_message_id=message_id,
                 )
-                self._auto_generate_pre_visit_summary(session)
                 return
 
             if status == "awaiting_conversation_start":
@@ -571,11 +586,9 @@ class IntakeChatService:
             message = str(ai_turn.get("message", "") or "").strip()
             if not message:
                 raise RuntimeError("Empty message in AI turn")
-            is_complete = bool(ai_turn.get("is_complete", False))
             topic = str(ai_turn.get("topic", "") or "")
             question_number = int(ai_turn.get("question_number", session.get("question_number", 1)) or 1)
-            if topic == "closing":
-                is_complete = True
+            is_complete = self._should_complete_from_ai(session=session, ai_turn=ai_turn, topic=topic)
 
             if self._is_repeated_turn(session, message, topic):
                 recovery = self._build_recovery_turn(language, topic, session, ai_turn)
@@ -1025,14 +1038,32 @@ class IntakeChatService:
                 return True
         return False
 
+    @staticmethod
+    def _asked_question_count(session: dict) -> int:
+        # Exclude the stored chief complaint sentinel (question="illness").
+        return sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+
+    @staticmethod
+    def _max_questions(session: dict) -> int:
+        return int(session.get("max_questions", 10) or 10)
+
+    def _should_complete_from_ai(self, *, session: dict, ai_turn: dict, topic: str) -> bool:
+        # Deterministic completion signals:
+        # - safety_interrupt can complete early (triage)
+        # - any "closing" topic means we're done
+        # - model/enforcer can signal is_complete
+        if str(topic or "") == "safety_interrupt":
+            return True
+        if str(topic or "") == "closing":
+            return True
+        return bool(ai_turn.get("is_complete", False))
+
     def _has_reached_intake_limit(self, session: dict) -> bool:
-        max_questions = int(session.get("max_questions", 10) or 10)
-        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
-        return asked_questions >= max_questions
+        return self._asked_question_count(session) >= self._max_questions(session)
 
     def _should_ask_final_question(self, session: dict) -> bool:
-        max_questions = int(session.get("max_questions", 10) or 10)
-        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+        max_questions = self._max_questions(session)
+        asked_questions = self._asked_question_count(session)
         if asked_questions != max_questions - 1:
             return False
         pending_topic = str(session.get("pending_topic", "") or "").strip()
@@ -1045,7 +1076,7 @@ class IntakeChatService:
         if str(ai_turn.get("topic", "") or "") == "safety_interrupt":
             return True
 
-        asked_questions = sum(1 for answer in session.get("answers", []) if answer.get("question") != "illness")
+        asked_questions = self._asked_question_count(session)
         if asked_questions < MIN_FOLLOW_UP_QUESTIONS:
             return False
 
@@ -1213,8 +1244,164 @@ class IntakeChatService:
         if not bool(decision.get("is_opt_out")):
             return False
         confidence = float(decision.get("confidence") or 0.0)
-        # Pure LLM gating: only stop on high-confidence opt-out intent.
-        return confidence >= 0.7
+        # Primary gate: high-confidence opt-out from classifier.
+        if confidence >= 0.7:
+            return True
+        # Fallback: allow explicit closure-like phrases at medium confidence so
+        # we still ask for confirmation when patient likely wants to stop.
+        return confidence >= 0.5 and self._looks_like_opt_out_phrase(message_text)
+
+    @staticmethod
+    def _looks_like_opt_out_phrase(message_text: str) -> bool:
+        normalized = IntakeChatService._normalize_for_similarity(message_text)
+        if not normalized:
+            return False
+        explicit_tokens = {
+            "enoughquestions",
+            "nomorequestions",
+            "dontaskmore",
+            "dontaskanymore",
+            "alreadyanswered",
+            "ialreadyanswered",
+            "thatsall",
+            "done",
+            "stopintake",
+            "endintake",
+            "imfinenow",
+            "ifinenow",
+            "bas",
+            "baskaro",
+            "rukjao",
+            "abbas",
+            "hogaya",
+            "hogya",
+        }
+        if normalized in explicit_tokens:
+            return True
+        explicit_fragments = (
+            "alreadyanswer",
+            "nomorequestion",
+            "enoughquestion",
+            "dontask",
+            "stopasking",
+            "notanswermore",
+            "nofurtherquestion",
+            "continuewithsubmittedanswers",
+        )
+        return any(fragment in normalized for fragment in explicit_fragments)
+
+    @staticmethod
+    def _set_opt_out_confirmation_pending(session_id: object, *, pending: bool) -> None:
+        db = get_database()
+        db.intake_sessions.update_one(
+            {"_id": session_id},
+            {
+                "$set": {
+                    "opt_out_confirmation_pending": bool(pending),
+                    "opt_out_confirmation_updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+    @staticmethod
+    def _has_pending_opt_out_confirmation(session: dict) -> bool:
+        return bool(session.get("opt_out_confirmation_pending"))
+
+    def _handle_opt_out_confirmation_reply(self, *, session: dict, message_text: str, message_id: str | None) -> None:
+        language = str(session.get("language", "en") or "en")
+        normalized = self._normalize_for_similarity(message_text)
+        if self._is_affirmative_confirmation(normalized):
+            self._set_opt_out_confirmation_pending(session["_id"], pending=False)
+            question_number = int(session.get("question_number", 1) or 1)
+            closing_message = self._closing_message(language, session.get("patient_name"))
+            self._log_intake_turn(
+                session=session,
+                question_number=question_number,
+                selected_topic="closing",
+                model_topic="",
+                message_source="template_fallback",
+                llm_structure_valid=False,
+                llm_message_valid=False,
+                fallback_reason="patient_confirmed_opt_out",
+                is_complete=True,
+            )
+            self._complete_session(
+                session=session,
+                message=closing_message,
+                topic="closing",
+                question_number=question_number,
+                message_source="template_fallback",
+                fallback_reason="patient_confirmed_opt_out",
+                selected_topic="closing",
+                model_topic="",
+            )
+            return
+        if self._is_negative_confirmation(normalized):
+            self._set_opt_out_confirmation_pending(session["_id"], pending=False)
+            pending_question = str(session.get("pending_question") or "").strip()
+            if not pending_question:
+                if str(session.get("status") or "") == "awaiting_illness":
+                    pending_question = self._chief_complaint_message(language)
+                elif str(session.get("status") or "") == "in_progress":
+                    pending_question = self.openai._topic_message(
+                        str(session.get("pending_topic") or "associated_symptoms") or "associated_symptoms",
+                        language,
+                    )
+            continue_message = self._opt_out_continue_message(language)
+            merged_message = f"{continue_message} {pending_question}".strip()
+            self._send_text_with_typing(
+                session["to_number"],
+                merged_message,
+                reply_to_message_id=message_id,
+            )
+            return
+        self._send_text_with_typing(
+            session["to_number"],
+            self._opt_out_reconfirm_message(language),
+            reply_to_message_id=message_id,
+        )
+
+    @staticmethod
+    def _is_affirmative_confirmation(normalized: str) -> bool:
+        yes_tokens = {
+            "yes",
+            "y",
+            "yeah",
+            "yep",
+            "ok",
+            "okay",
+            "haan",
+            "ha",
+            "han",
+            "haji",
+            "ji",
+            "sure",
+            "stop",
+            "bandkaro",
+            "rokdo",
+            "rukna",
+            "rukjao",
+        }
+        return normalized in yes_tokens or normalized.startswith("yes")
+
+    @staticmethod
+    def _is_negative_confirmation(normalized: str) -> bool:
+        no_tokens = {
+            "no",
+            "n",
+            "nope",
+            "nah",
+            "nahi",
+            "nhi",
+            "mat",
+            "continue",
+            "chalu",
+            "chalurakho",
+            "jaari",
+            "carryon",
+        }
+        return normalized in no_tokens or normalized.startswith("no")
 
     @staticmethod
     def _closing_message(language: str, patient_name: str | None) -> str:
@@ -1448,6 +1635,16 @@ class IntakeChatService:
         self.whatsapp.send_text(to_number, message)
 
     @staticmethod
-    def _opt_out_ack_message(language: str) -> str:
+    def _opt_out_confirm_message(language: str) -> str:
         lang = normalize_intake_language(language)
-        return OPT_OUT_ACK_MESSAGES.get(lang, OPT_OUT_ACK_MESSAGES["en"])
+        return OPT_OUT_CONFIRM_MESSAGES.get(lang, OPT_OUT_CONFIRM_MESSAGES["en"])
+
+    @staticmethod
+    def _opt_out_continue_message(language: str) -> str:
+        lang = normalize_intake_language(language)
+        return OPT_OUT_CONTINUE_MESSAGES.get(lang, OPT_OUT_CONTINUE_MESSAGES["en"])
+
+    @staticmethod
+    def _opt_out_reconfirm_message(language: str) -> str:
+        lang = normalize_intake_language(language)
+        return OPT_OUT_RECONFIRM_MESSAGES.get(lang, OPT_OUT_RECONFIRM_MESSAGES["en"])

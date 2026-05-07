@@ -13,6 +13,11 @@ export type AuthUser = {
   is_active: boolean
   is_verified: boolean
   tenant_id?: string | null
+  opd_morning_start?: string | null
+  opd_morning_end?: string | null
+  opd_evening_enabled?: boolean
+  opd_evening_start?: string | null
+  opd_evening_end?: string | null
 }
 
 export type AuthResponse = {
@@ -52,6 +57,11 @@ export type RegisterPayload = {
   full_name: string
   phone?: string | null
   role?: string
+  opd_morning_start?: string | null
+  opd_morning_end?: string | null
+  opd_evening_enabled?: boolean
+  opd_evening_start?: string | null
+  opd_evening_end?: string | null
 }
 
 /** POST /api/auth/register */
@@ -63,6 +73,11 @@ export async function registerAccount(payload: RegisterPayload): Promise<AuthRes
     full_name: payload.full_name.trim(),
     phone: payload.phone?.trim() || null,
     role: (payload.role || 'doctor').trim() || 'doctor',
+    opd_morning_start: payload.opd_morning_start?.trim() || null,
+    opd_morning_end: payload.opd_morning_end?.trim() || null,
+    opd_evening_enabled: Boolean(payload.opd_evening_enabled),
+    opd_evening_start: payload.opd_evening_start?.trim() || null,
+    opd_evening_end: payload.opd_evening_end?.trim() || null,
   })
   return data
 }

@@ -41,14 +41,14 @@ export async function fetchPatientsPaged(opts: {
   page: number
   pageSize: number
   search?: string
-  sort?: 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
+  sort?: 'created_newest' | 'created_oldest' | 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
 }): Promise<PagedResponse<PatientSummary>> {
   const { data } = await apiClient.get<PagedResponse<PatientSummary>>('/api/patients/paged', {
     params: {
       page: opts.page,
       page_size: opts.pageSize,
       search: opts.search || undefined,
-      sort: opts.sort || 'visit_latest',
+      sort: opts.sort || 'created_newest',
     },
   })
   return data

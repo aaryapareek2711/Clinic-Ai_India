@@ -125,6 +125,65 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   return 'en'
 }
 
+function to12HourTimeDisplay(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const hh = Number(m12[1])
+    const mm = m12[2]
+    const mer = m12[3].toUpperCase()
+    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
+  }
+  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
+  if (!m24) return text
+  const h = Number(m24[1])
+  const mm = m24[2]
+  if (!Number.isFinite(h) || h < 0 || h > 23) return text
+  const mer = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${mm} ${mer}`
+}
+
+function to24HourTimeForApi(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const h12 = Number(m12[1])
+    const mm = Number(m12[2])
+    const mer = m12[3].toUpperCase()
+    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
+      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
+      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    }
+  }
+  return text
+}
+
+function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
+  const text = to12HourTimeDisplay(raw)
+  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!m) return { hour: '', minute: '', period: '' }
+  return {
+    hour: String(Number(m[1])).padStart(2, '0'),
+    minute: m[2],
+    period: m[3].toUpperCase(),
+  }
+}
+
+function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
+  if (!parts.hour || !parts.minute || !parts.period) return ''
+  const hh = Number(parts.hour)
+  const mm = Number(parts.minute)
+  const pp = parts.period.toUpperCase()
+  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
+  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
+}
+
+const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -156,25 +215,25 @@ function visitStatusChip(statusRaw: string | undefined | null): {
   if (['scheduled', 'open', 'queued', 'in_queue'].includes(s)) {
     return {
       label: 'Scheduled',
-      className: 'rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-800',
+      className: 'rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800',
     }
   }
   if (['in_progress', 'running', 'started', 'processing'].includes(s)) {
     return {
       label: 'In Progress',
-      className: 'rounded-full bg-sky-100 px-3 py-0.5 text-xs font-semibold text-sky-800',
+      className: 'rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800',
     }
   }
   if (['completed', 'closed', 'ended'].includes(s)) {
     return {
       label: 'Completed',
-      className: 'rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-800',
+      className: 'rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800',
     }
   }
   const fallback = s ? `${s[0].toUpperCase()}${s.slice(1).replace(/_/g, ' ')}` : 'Unknown'
   return {
     label: fallback,
-    className: 'rounded-full bg-white/15 px-3 py-0.5 text-xs font-semibold text-white',
+    className: 'rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-white',
   }
 }
 
@@ -437,7 +496,7 @@ export default function VisitDetailPage() {
     const noteDate = (o.follow_up_date != null ? String(o.follow_up_date) : '').trim()
     const noteTime = (o.follow_up_time != null ? String(o.follow_up_time) : '').trim()
     if (noteDate) setRecapFollowUpDateDraft(noteDate)
-    if (noteTime) setRecapFollowUpTimeDraft(noteTime)
+    if (noteTime) setRecapFollowUpTimeDraft(to12HourTimeDisplay(noteTime))
   }, [clinicalNote?.note_id, clinicalNote?.payload])
 
   useEffect(() => {
@@ -485,6 +544,8 @@ export default function VisitDetailPage() {
   const breadcrumbTitle = headerChief.length > 42 ? `${headerChief.slice(0, 40)}…` : headerChief
   const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
   const langBadge = languageLabel(preferredLanguageCode)
+  const languageToggleVisible = tab === 'post-visit'
+  const effectiveLanguageMode: 'english' | 'preferred' = languageToggleVisible ? languageMode : 'english'
   const scheduledVisitDisplay = useMemo(() => {
     const raw = (visit?.scheduled_start || '').trim()
     if (!raw) return 'Not booked'
@@ -493,9 +554,9 @@ export default function VisitDetailPage() {
     return dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   }, [visit?.scheduled_start])
   const postVisitLanguage = toPostVisitPatientLanguage(
-    languageMode === 'english' ? 'en' : preferredLanguageCode,
+    effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
-  const activeLanguageLabel = languageMode === 'english' ? 'English' : langBadge
+  const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
   const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
   const visitStatus = visitStatusChip(visit?.status)
@@ -527,9 +588,14 @@ export default function VisitDetailPage() {
 
   useEffect(() => {
     let cancelled = false
+    if (!languageToggleVisible) {
+      setTranslatedDisplayBundle(null)
+      setTranslatingDisplay(false)
+      return
+    }
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
-    const shouldTranslateToEnglish = languageMode === 'english' && !!pref && pref !== 'en'
-    const shouldTranslateToPreferred = languageMode === 'preferred' && !!pref && pref !== 'en'
+    const shouldTranslateToEnglish = effectiveLanguageMode === 'english' && !!pref && pref !== 'en'
+    const shouldTranslateToPreferred = effectiveLanguageMode === 'preferred' && !!pref && pref !== 'en'
     if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedDisplayBundle(null)
       setTranslatingDisplay(false)
@@ -569,7 +635,8 @@ export default function VisitDetailPage() {
       cancelled = true
     }
   }, [
-    languageMode,
+    effectiveLanguageMode,
+    languageToggleVisible,
     preferredLanguageCode,
     intake,
     preVisit,
@@ -586,6 +653,10 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
+  const recapFollowUpTimeParts = useMemo(
+    () => parse12HourTimeParts(recapFollowUpTimeDraft),
+    [recapFollowUpTimeDraft],
+  )
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -641,6 +712,7 @@ export default function VisitDetailPage() {
 
   const handleGenerateVitalsForm = useCallback(async () => {
     if (!patientId || !visitId) return
+    if (vitalsLocked || vitalsFormVisible) return
     try {
       const form = await generateVitalsForm(patientId, visitId)
       setVitalsForm(form)
@@ -655,7 +727,7 @@ export default function VisitDetailPage() {
     } catch (e) {
       setVitalsMessage(getApiErrorMessage(e))
     }
-  }, [patientId, visitId])
+  }, [patientId, visitId, vitalsFormVisible, vitalsLocked])
 
   useEffect(() => {
     if (loading) return
@@ -1275,7 +1347,7 @@ export default function VisitDetailPage() {
                   <div>
                     <div className="mb-1 flex flex-wrap items-center gap-3">
                       <h2 className="font-bold text-2xl text-white">{patientName}</h2>
-                      <span className="rounded-full bg-[#dde5d9]/20 px-3 py-0.5 text-xs font-medium">
+                      <span className="rounded-full bg-[#dde5d9]/20 px-2.5 py-0.5 text-[11px] font-medium">
                         🌐 {langBadge}
                       </span>
                       <span className={visitStatus.className}>{visitStatus.label}</span>
@@ -1285,13 +1357,13 @@ export default function VisitDetailPage() {
                         </span>
                       )}
                     </div>
-                    <p className="font-normal text-gray-400">
+                    <p className="text-sm font-normal text-gray-400">
                       {ageFromDob(visit?.patient?.date_of_birth)} Years • {genderLabel} • {headerChief}
                     </p>
+                    <p className="mt-2 text-xs text-white/80">Appointment: {scheduledVisitDisplay}</p>
                   </div>
                 </div>
                 <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
-                  <p className="text-xs text-white/80">Appointment: {scheduledVisitDisplay}</p>
                   {labUploadFeedback && (
                     <p className="text-xs text-emerald-300 md:text-right" role="status">
                       {labUploadFeedback}
@@ -1313,29 +1385,31 @@ export default function VisitDetailPage() {
             </div>
 
             <div className="mt-8 overflow-x-auto border-b border-[#bdcaba] px-8">
-              <div className="mb-3 flex items-center justify-end gap-3">
-                <p className="text-sm font-medium text-[#575e70]">Display language: {activeLanguageLabel}</p>
-                <div className="inline-flex items-center rounded-lg border border-[#bdcaba] bg-white p-1">
-                  <button
-                    className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
-                      languageMode === 'english' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
-                    }`}
-                    onClick={() => setLanguageMode('english')}
-                    type="button"
-                  >
-                    English
-                  </button>
-                  <button
-                    className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
-                      languageMode === 'preferred' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
-                    }`}
-                    onClick={() => setLanguageMode('preferred')}
-                    type="button"
-                  >
-                    Patient preferred ({langBadge})
-                  </button>
+              {languageToggleVisible && (
+                <div className="mb-3 flex items-center justify-end gap-3">
+                  <p className="text-sm font-medium text-[#575e70]">Display language: {activeLanguageLabel}</p>
+                  <div className="inline-flex items-center rounded-lg border border-[#bdcaba] bg-white p-1">
+                    <button
+                      className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
+                        languageMode === 'english' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
+                      }`}
+                      onClick={() => setLanguageMode('english')}
+                      type="button"
+                    >
+                      English
+                    </button>
+                    <button
+                      className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
+                        languageMode === 'preferred' ? 'bg-[#006b2c] text-white' : 'text-[#575e70]'
+                      }`}
+                      onClick={() => setLanguageMode('preferred')}
+                      type="button"
+                    >
+                      Patient preferred ({langBadge})
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="flex min-w-min gap-8 pb-0">
                 {visibleTabs.map((t) => (
                   <button
@@ -1367,7 +1441,7 @@ export default function VisitDetailPage() {
                 <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-sm">
                   <div className="w-full max-w-sm rounded-xl border border-[#bdcaba] bg-white p-5 text-center shadow-sm">
                     <p className="text-sm font-semibold text-[#171d16]">
-                      {languageMode === 'english'
+                      {effectiveLanguageMode === 'english'
                         ? 'Translating to English…'
                         : `Translating to ${languageLabel(preferredLanguageCode)}…`}
                     </p>
@@ -1407,16 +1481,17 @@ export default function VisitDetailPage() {
                       completes.
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
-                      disabled={isTranscriptionCurrentlyProcessing}
-                      onClick={() => void handleGenerateVitalsForm()}
-                      type="button"
-                    >
-                      Generate Vitals Form
-                    </button>
-                  </div>
+                  {!isTranscriptionCurrentlyProcessing && !vitalsFormVisible && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white"
+                        onClick={() => void handleGenerateVitalsForm()}
+                        type="button"
+                      >
+                        Generate Vitals Form
+                      </button>
+                    </div>
+                  )}
                   {vitalsMessage && <p className="text-xs text-[#575e70]">{vitalsMessage}</p>}
                   {!isTranscriptionCurrentlyProcessing && vitalsFormVisible && vitalsForm && (
                     <>
@@ -1767,11 +1842,6 @@ export default function VisitDetailPage() {
                   <VisitClinicalNotePanel
                     clinicalNote={displayClinicalNote}
                     onNoteUpdated={setClinicalNote}
-                    onApproveNext={({ followUpDate, followUpTime }) => {
-                      setRecapFollowUpDateDraft(followUpDate)
-                      setRecapFollowUpTimeDraft(followUpTime)
-                      syncTabToUrl('post-visit')
-                    }}
                     patientId={patientId}
                     transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
                     transcriptionStatusKnown={transcriptionStatus != null}
@@ -1799,7 +1869,7 @@ export default function VisitDetailPage() {
                     </p>
                     {translatingDisplay && preferredLanguageCode.toLowerCase() !== 'en' && (
                       <p className="mt-1 text-xs text-[#575e70]">
-                        {languageMode === 'english'
+                        {effectiveLanguageMode === 'english'
                           ? 'Translating display content to English…'
                           : `Translating display content to ${languageLabel(preferredLanguageCode)}…`}
                       </p>
@@ -1855,13 +1925,65 @@ export default function VisitDetailPage() {
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
                       Follow-up time (optional)
-                      <input
-                        className="mt-2 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                        onChange={(e) => setRecapFollowUpTimeDraft(e.target.value)}
-                        placeholder="10:30"
-                        type="text"
-                        value={recapFollowUpTimeDraft}
-                      />
+                      <div className="mt-2 flex w-full max-w-xs items-center gap-2">
+                        <select
+                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) =>
+                            setRecapFollowUpTimeDraft(
+                              compose12HourTime({
+                                hour: e.target.value,
+                                minute: recapFollowUpTimeParts.minute,
+                                period: recapFollowUpTimeParts.period,
+                              }),
+                            )
+                          }
+                          value={recapFollowUpTimeParts.hour}
+                        >
+                          <option value="">HH</option>
+                          {HOUR_OPTIONS_12H.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) =>
+                            setRecapFollowUpTimeDraft(
+                              compose12HourTime({
+                                hour: recapFollowUpTimeParts.hour,
+                                minute: e.target.value,
+                                period: recapFollowUpTimeParts.period,
+                              }),
+                            )
+                          }
+                          value={recapFollowUpTimeParts.minute}
+                        >
+                          <option value="">MM</option>
+                          {MINUTE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) =>
+                            setRecapFollowUpTimeDraft(
+                              compose12HourTime({
+                                hour: recapFollowUpTimeParts.hour,
+                                minute: recapFollowUpTimeParts.minute,
+                                period: e.target.value,
+                              }),
+                            )
+                          }
+                          value={recapFollowUpTimeParts.period}
+                        >
+                          <option value="">AM/PM</option>
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
                     </label>
                   </div>
 
@@ -1887,7 +2009,7 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
-                            const nextVisitTime = recapFollowUpTimeDraft.trim()
+                            const nextVisitTime = to24HourTimeForApi(recapFollowUpTimeDraft.trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
                               follow_up_date: nextVisitDate || undefined,

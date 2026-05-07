@@ -47,6 +47,29 @@ function to24HourTimeForApi(raw: string | null | undefined): string {
   return text
 }
 
+function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
+  const text = to12HourTimeDisplay(raw)
+  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!m) return { hour: '', minute: '', period: '' }
+  return {
+    hour: String(Number(m[1])).padStart(2, '0'),
+    minute: m[2],
+    period: m[3].toUpperCase(),
+  }
+}
+
+function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
+  if (!parts.hour || !parts.minute || !parts.period) return ''
+  const hh = Number(parts.hour)
+  const mm = Number(parts.minute)
+  const pp = parts.period.toUpperCase()
+  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
+  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
+}
+
+const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
 function asIndiaPayload(raw: ClinicalNoteLatest['payload']): IndiaClinicalNotePayload | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -90,7 +113,6 @@ export type VisitClinicalNotePanelProps = {
   transcriptionStatusKnown: boolean
   transcriptionCompleted: boolean
   onNoteUpdated: (note: ClinicalNoteLatest | null) => void
-  onApproveNext?: (payload: { followUpDate: string; followUpTime: string }) => void
 }
 
 export default function VisitClinicalNotePanel({
@@ -101,10 +123,8 @@ export default function VisitClinicalNotePanel({
   transcriptionStatusKnown,
   transcriptionCompleted,
   onNoteUpdated,
-  onApproveNext,
 }: VisitClinicalNotePanelProps) {
   const [generating, setGenerating] = useState(false)
-  const [approvingNext, setApprovingNext] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [activeEditSection, setActiveEditSection] = useState<'chief' | 'narrative' | 'assessment' | 'plan' | null>(null)
   const [draftAssessment, setDraftAssessment] = useState('')
@@ -113,6 +133,7 @@ export default function VisitClinicalNotePanel({
   const [draftChief, setDraftChief] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
   const [followUpTime, setFollowUpTime] = useState('')
+  const followUpTimeParts = useMemo(() => parse12HourTimeParts(followUpTime), [followUpTime])
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
@@ -127,7 +148,7 @@ export default function VisitClinicalNotePanel({
   }, [editing, payload, clinicalNote?.note_id])
 
   useEffect(() => {
-    // Keep follow-up draft in sync with latest persisted note so Approve & Next forwards current values.
+    // Keep follow-up draft in sync with latest persisted note.
     setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
     setFollowUpTime(to12HourTimeDisplay(payload?.follow_up_time?.toString().trim() || ''))
   }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
@@ -167,30 +188,6 @@ export default function VisitClinicalNotePanel({
     }
   }, [patientId, visitId, generating, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated])
 
-  const handleApproveAndNext = useCallback(async () => {
-    if (!patientId || !visitId || approvingNext) return
-    setApprovingNext(true)
-    setMessage(null)
-    const fuDate = followUpDate.trim()
-    const fuTime = followUpTime.trim()
-    const fuTimeApi = to24HourTimeForApi(fuTime)
-    try {
-      const res = await generateClinicalNote(patientId, visitId, {
-        follow_up_date: fuDate || undefined,
-        follow_up_time: fuTimeApi || undefined,
-        template_id: selectedTemplate?.id,
-      })
-      onNoteUpdated(res)
-      setActiveEditSection(null)
-      setMessage('Clinical note approved. Moving to post-visit.')
-      onApproveNext?.({ followUpDate: fuDate, followUpTime: fuTime })
-    } catch (e) {
-      setMessage(getApiErrorMessage(e))
-    } finally {
-      setApprovingNext(false)
-    }
-  }, [patientId, visitId, approvingNext, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated, onApproveNext])
-
   const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
     setDraftAssessment(payload.assessment ?? '')
@@ -224,22 +221,16 @@ export default function VisitClinicalNotePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!patientId || !visitId || generating || approvingNext}
-            onClick={() => void handleGenerate()}
-            type="button"
-          >
-            {generating ? 'Working…' : clinicalNote ? 'Regenerate note' : 'Generate note'}
-          </button>
-          <button
-            className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!patientId || !visitId || generating || approvingNext}
-            onClick={() => void handleApproveAndNext()}
-            type="button"
-          >
-            {approvingNext ? 'Approving…' : 'Approve & Next'}
-          </button>
+          {!clinicalNote && (
+            <button
+              className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!patientId || !visitId || generating}
+              onClick={() => void handleGenerate()}
+              type="button"
+            >
+              {generating ? 'Working…' : 'Generate note'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -283,13 +274,65 @@ export default function VisitClinicalNotePanel({
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-[#575e70]">Time (hh:mm AM/PM)</span>
-            <input
-              className="w-28 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-              onChange={(e) => setFollowUpTime(e.target.value)}
-              placeholder="10:30 AM"
-              type="text"
-              value={followUpTime}
-            />
+            <div className="flex items-center gap-2">
+              <select
+                className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                onChange={(e) =>
+                  setFollowUpTime(
+                    compose12HourTime({
+                      hour: e.target.value,
+                      minute: followUpTimeParts.minute,
+                      period: followUpTimeParts.period,
+                    }),
+                  )
+                }
+                value={followUpTimeParts.hour}
+              >
+                <option value="">HH</option>
+                {HOUR_OPTIONS_12H.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                onChange={(e) =>
+                  setFollowUpTime(
+                    compose12HourTime({
+                      hour: followUpTimeParts.hour,
+                      minute: e.target.value,
+                      period: followUpTimeParts.period,
+                    }),
+                  )
+                }
+                value={followUpTimeParts.minute}
+              >
+                <option value="">MM</option>
+                {MINUTE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="w-24 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                onChange={(e) =>
+                  setFollowUpTime(
+                    compose12HourTime({
+                      hour: followUpTimeParts.hour,
+                      minute: followUpTimeParts.minute,
+                      period: e.target.value,
+                    }),
+                  )
+                }
+                value={followUpTimeParts.period}
+              >
+                <option value="">AM/PM</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
           </label>
         </div>
       </div>

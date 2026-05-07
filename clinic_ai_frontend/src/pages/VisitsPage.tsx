@@ -7,12 +7,13 @@ import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderVisitsPaged,
+  scheduleVisitIntake,
   type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
 
 type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
-type VisitSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+type VisitSort = 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
 const AUTO_REFRESH_MS = 30_000
 const MIN_FOCUS_REFRESH_GAP_MS = 8_000
@@ -90,9 +91,25 @@ function formatVisitRowTimes(v: ProviderVisitListItem): { date: string; duration
   return { date: '—', duration: '' }
 }
 
+function localDateInputMin(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function canEditAppointment(scheduledIso: string | null | undefined): boolean {
+  if (!scheduledIso) return false
+  const t = new Date(scheduledIso).getTime()
+  if (Number.isNaN(t)) return false
+  return t >= Date.now()
+}
+
 function visitRowFromApi(v: ProviderVisitListItem): {
   visitId: string
   name: string
+  patientName: string
+  scheduledStart: string
   meta: string
   status: string
   stage: string
@@ -126,6 +143,8 @@ function visitRowFromApi(v: ProviderVisitListItem): {
   return {
     visitId,
     name,
+    patientName: displayName,
+    scheduledStart: v.scheduled_start || '',
     meta,
     status: displayStatus(v.status || 'open'),
     stage: stageForStatus(v.status || '', v.current_workflow_stage),
@@ -211,8 +230,13 @@ function VisitsPage() {
   const [activeTab, setActiveTab] = useState<VisitTab>('all')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
+  const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
   const [currentPage, setCurrentPage] = useState(1)
+  const [rescheduleTarget, setRescheduleTarget] = useState<{ visitId: string; patientName: string } | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
   const { data, isFetching, error, refetch } = useQuery({
@@ -396,6 +420,8 @@ function VisitsPage() {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as VisitSort)}
               >
+                <option value="patient_newest">New patient: newest first</option>
+                <option value="patient_oldest">New patient: oldest first</option>
                 <option value="time_newest">Time: newest first</option>
                 <option value="time_oldest">Time: oldest first</option>
                 <option value="name_az">Name: A → Z</option>
@@ -447,11 +473,42 @@ function VisitsPage() {
                     <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">{row.stage}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-8">
+                <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-sm font-medium">{row.date}</p>
                     <p className="text-xs text-gray-400">{row.duration}</p>
                   </div>
+                  {canEditAppointment(row.scheduledStart) && (
+                    <button
+                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setRescheduleTarget({ visitId: row.visitId, patientName: row.patientName })
+                        if (row.scheduledStart) {
+                          const dt = new Date(row.scheduledStart)
+                          if (!Number.isNaN(dt.getTime())) {
+                            const y = dt.getFullYear()
+                            const m = String(dt.getMonth() + 1).padStart(2, '0')
+                            const d = String(dt.getDate()).padStart(2, '0')
+                            const hh = String(dt.getHours()).padStart(2, '0')
+                            const mm = String(dt.getMinutes()).padStart(2, '0')
+                            setRescheduleDate(`${y}-${m}-${d}`)
+                            setRescheduleTime(`${hh}:${mm}`)
+                          } else {
+                            setRescheduleDate('')
+                            setRescheduleTime('')
+                          }
+                        } else {
+                          setRescheduleDate('')
+                          setRescheduleTime('')
+                        }
+                        setRescheduleError(null)
+                      }}
+                      type="button"
+                    >
+                      Edit Appointment
+                    </button>
+                  )}
                   <span className="material-symbols-outlined text-gray-300 group-hover:text-[#2563eb] transition-colors">chevron_right</span>
                 </div>
               </div>
@@ -566,6 +623,71 @@ function VisitsPage() {
             </div>
           </aside>
         </>
+      )}
+      {rescheduleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-[#171d16]">Edit appointment</h3>
+            <p className="mt-1 text-sm text-[#3e4a3d]">{rescheduleTarget.patientName}</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Date
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm"
+                  min={localDateInputMin()}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  type="date"
+                  value={rescheduleDate}
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                Time
+                <input
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm"
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  type="time"
+                  value={rescheduleTime}
+                />
+              </label>
+            </div>
+            {rescheduleError && <p className="mt-3 text-xs text-red-700">{rescheduleError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-[#171d16]"
+                onClick={() => setRescheduleTarget(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime}
+                onClick={() => {
+                  void (async () => {
+                    if (!rescheduleTarget) return
+                    setRescheduleSubmitting(true)
+                    setRescheduleError(null)
+                    try {
+                      await scheduleVisitIntake(rescheduleTarget.visitId, {
+                        appointment_date: rescheduleDate,
+                        appointment_time: rescheduleTime,
+                      })
+                      setRescheduleTarget(null)
+                      await refetch()
+                    } catch (e) {
+                      setRescheduleError(getApiErrorMessage(e))
+                    } finally {
+                      setRescheduleSubmitting(false)
+                    }
+                  })()
+                }}
+                type="button"
+              >
+                {rescheduleSubmitting ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
