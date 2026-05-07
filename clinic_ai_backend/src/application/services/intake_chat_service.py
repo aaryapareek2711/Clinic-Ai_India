@@ -1244,8 +1244,51 @@ class IntakeChatService:
         if not bool(decision.get("is_opt_out")):
             return False
         confidence = float(decision.get("confidence") or 0.0)
-        # Pure LLM gating: only stop on high-confidence opt-out intent.
-        return confidence >= 0.7
+        # Primary gate: high-confidence opt-out from classifier.
+        if confidence >= 0.7:
+            return True
+        # Fallback: allow explicit closure-like phrases at medium confidence so
+        # we still ask for confirmation when patient likely wants to stop.
+        return confidence >= 0.5 and self._looks_like_opt_out_phrase(message_text)
+
+    @staticmethod
+    def _looks_like_opt_out_phrase(message_text: str) -> bool:
+        normalized = IntakeChatService._normalize_for_similarity(message_text)
+        if not normalized:
+            return False
+        explicit_tokens = {
+            "enoughquestions",
+            "nomorequestions",
+            "dontaskmore",
+            "dontaskanymore",
+            "alreadyanswered",
+            "ialreadyanswered",
+            "thatsall",
+            "done",
+            "stopintake",
+            "endintake",
+            "imfinenow",
+            "ifinenow",
+            "bas",
+            "baskaro",
+            "rukjao",
+            "abbas",
+            "hogaya",
+            "hogya",
+        }
+        if normalized in explicit_tokens:
+            return True
+        explicit_fragments = (
+            "alreadyanswer",
+            "nomorequestion",
+            "enoughquestion",
+            "dontask",
+            "stopasking",
+            "notanswermore",
+            "nofurtherquestion",
+            "continuewithsubmittedanswers",
+        )
+        return any(fragment in normalized for fragment in explicit_fragments)
 
     @staticmethod
     def _set_opt_out_confirmation_pending(session_id: object, *, pending: bool) -> None:
