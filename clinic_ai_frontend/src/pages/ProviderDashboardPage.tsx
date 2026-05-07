@@ -203,19 +203,14 @@ function ProviderDashboardPage() {
   }, [mergedUpcoming, upcomingDayFilter])
 
   const stats = useMemo(() => {
-    const visitById = new Map<string, ProviderVisitListItem>()
-    for (const v of visits) {
-      const id = String(v.visit_id || v.id || '').trim()
-      if (id) visitById.set(id, v)
-    }
     const targetDayRef = dayReference(upcomingDayFilter)
     const patientsForDaySet = new Set<string>()
-    for (const a of selectedDayAllSlots) {
-      const pid = (a.patient_id || '').trim()
+    for (const visit of visits) {
+      const pid = (visit.patient_id || '').trim()
       if (!pid) continue
-      const visit = visitById.get(String(a.visit_id || '').trim())
       const isNewlyRegistered = isSameCalendarDay(visit?.patient_created_at, targetDayRef)
       if (!isNewlyRegistered) continue
+      if (!isSameCalendarDay(visit.scheduled_start, targetDayRef)) continue
       patientsForDaySet.add(pid)
     }
     const pending = selectedDayUpcomingSlots.filter((a) => {
@@ -227,7 +222,7 @@ function ProviderDashboardPage() {
       pending,
       visitsForDayCount: selectedDayAllVisits.length,
     }
-  }, [selectedDayAllSlots, selectedDayUpcomingSlots, upcomingDayFilter, visits, selectedDayAllVisits.length])
+  }, [selectedDayUpcomingSlots, upcomingDayFilter, visits, selectedDayAllVisits.length])
 
   const upcomingList = useMemo(() => {
     const now = new Date()
