@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,10 +23,47 @@ from src.core.config import get_settings
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+DOCTOR_ID_RE = re.compile(r"^DOC(\d{3})$")
+
+
+def _next_doctor_id(db) -> str:
+    max_num = 0
+    for row in db.users.find({"doctor_id": {"$regex": r"^DOC\d{3}$"}}, {"_id": 0, "doctor_id": 1}):
+        raw = str(row.get("doctor_id") or "").strip().upper()
+        m = DOCTOR_ID_RE.match(raw)
+        if not m:
+            continue
+        max_num = max(max_num, int(m.group(1)))
+    next_num = max_num + 1
+    if next_num > 999:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Doctor ID pool exhausted",
+        )
+    return f"DOC{next_num:03d}"
+
+
+def _ensure_doctor_id(db, user_doc: dict) -> dict:
+    """Ensure doctors have a persistent DOCXXX id generated once."""
+    role = str(user_doc.get("role") or "").strip().lower()
+    existing = str(user_doc.get("doctor_id") or "").strip().upper()
+    if role != "doctor":
+        return user_doc
+    if DOCTOR_ID_RE.match(existing):
+        return user_doc
+    doctor_id = _next_doctor_id(db)
+    db.users.update_one(
+        {"id": user_doc["id"]},
+        {"$set": {"doctor_id": doctor_id, "updated_at": datetime.now(timezone.utc)}},
+    )
+    refreshed = db.users.find_one({"id": user_doc["id"]})
+    return refreshed or user_doc
+
 
 def _as_user_response(user_doc: dict) -> UserResponse:
     return UserResponse(
         id=str(user_doc["id"]),
+        doctor_id=str(user_doc.get("doctor_id") or "") or None,
         email=str(user_doc["email"]),
         username=str(user_doc["username"]),
         full_name=str(user_doc.get("full_name") or ""),
@@ -37,6 +75,11 @@ def _as_user_response(user_doc: dict) -> UserResponse:
         is_active=bool(user_doc.get("is_active", True)),
         is_verified=bool(user_doc.get("is_verified", True)),
         tenant_id=user_doc.get("tenant_id"),
+        opd_morning_start=user_doc.get("opd_morning_start"),
+        opd_morning_end=user_doc.get("opd_morning_end"),
+        opd_evening_enabled=bool(user_doc.get("opd_evening_enabled", False)),
+        opd_evening_start=user_doc.get("opd_evening_start"),
+        opd_evening_end=user_doc.get("opd_evening_end"),
     )
 
 
@@ -83,12 +126,18 @@ def register(payload: UserRegisterRequest) -> AuthResponse:
     now = datetime.now(timezone.utc)
     user_doc = {
         "id": str(uuid4()),
+        "doctor_id": _next_doctor_id(db) if str(payload.role or "").strip().lower() == "doctor" else None,
         "email": payload.email,
         "username": payload.username,
         "hashed_password": hash_password(payload.password),
         "full_name": payload.full_name,
         "phone": payload.phone,
         "role": payload.role,
+        "opd_morning_start": payload.opd_morning_start,
+        "opd_morning_end": payload.opd_morning_end,
+        "opd_evening_enabled": bool(payload.opd_evening_enabled),
+        "opd_evening_start": payload.opd_evening_start,
+        "opd_evening_end": payload.opd_evening_end,
         "is_active": True,
         "is_verified": True,
         "tenant_id": None,
@@ -125,12 +174,15 @@ def login(payload: UserLoginRequest) -> AuthResponse:
         )
     if not bool(user_doc.get("is_active", True)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive")
+    user_doc = _ensure_doctor_id(db, user_doc)
     return _build_auth_response(user_doc)
 
 
 @router.get("/me", response_model=UserResponse)
 def me(current_user: dict = Depends(_get_current_user)) -> UserResponse:
-    return _as_user_response(current_user)
+    db = get_database()
+    ensured = _ensure_doctor_id(db, current_user)
+    return _as_user_response(ensured)
 
 
 @router.patch("/me", response_model=UserResponse)
