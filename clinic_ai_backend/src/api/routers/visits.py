@@ -562,7 +562,7 @@ def list_provider_visits_paged(
     page_size: int = Query(default=20, ge=1, le=200),
     status_filter: str | None = Query(default=None, description="Filter by visit status"),
     search: str | None = Query(default=None, description="Search by patient name/mobile/id/visit id"),
-    sort: str = Query(default="time_newest", description="time_newest|time_oldest|name_az|name_za|visit_id"),
+    sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|time_newest|time_oldest|name_az|name_za|visit_id"),
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
@@ -711,7 +711,11 @@ def list_provider_visits_paged(
                 ),
             }
         )
-    if sort == "name_az":
+    if sort == "patient_newest":
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""), reverse=True)
+    elif sort == "patient_oldest":
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""))
+    elif sort == "name_az":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
     elif sort == "name_za":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
@@ -784,7 +788,10 @@ def list_provider_careprep(
     patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
     patient_map: dict[str, dict] = {}
     if patient_ids:
-        for patient in db.patients.find({"patient_id": {"$in": patient_ids}}, {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1}):
+        for patient in db.patients.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1, "created_at": 1},
+        ):
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
@@ -814,6 +821,7 @@ def list_provider_careprep(
                 "patient_id": encode_patient_id(pid) if pid else "",
                 "patient_name": str(patient.get("name") or "Patient").strip(),
                 "mobile_number": str(patient.get("phone_number") or "").strip(),
+                "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
                 "intake_status": intake_status,
                 "intake_question_count": qa_len,
                 "touched_at": touched_at,
