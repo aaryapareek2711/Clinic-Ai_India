@@ -9,6 +9,7 @@ import ClinicSetupPage from './pages/ClinicSetupPage'
 import AbdmSetupPage from './pages/AbdmSetupPage'
 import WhatsAppSetupPage from './pages/WhatsAppSetupPage'
 import ProviderDashboardPage from './pages/ProviderDashboardPage'
+import DashboardSlotsPage from './pages/DashboardSlotsPage'
 import CalendarPage from './pages/CalendarPage'
 import VisitsPage from './pages/VisitsPage'
 import VisitDetailPage from './pages/VisitDetailPage'
@@ -36,6 +37,7 @@ function App() {
       <Route path="/whatsapp-setup" element={<WhatsAppSetupPage />} />
       <Route element={<ProviderLayout />}>
         <Route path="/dashboard" element={<ProviderDashboardPage />} />
+        <Route path="/dashboard/slots" element={<DashboardSlotsPage />} />
         <Route path="/careprep" element={<CarePrepPage />} />
         <Route path="/careprep/intake/:tokenKey" element={<CarePrepIntakeDetailPage />} />
         <Route path="/calendar" element={<CalendarPage />} />

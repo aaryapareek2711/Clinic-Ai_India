@@ -85,6 +85,12 @@ function isTomorrowSlot(scheduledIso: string, ref: Date): boolean {
   return isSameCalendarDay(scheduledIso, d)
 }
 
+function dayReference(day: 'today' | 'tomorrow'): Date {
+  const ref = new Date()
+  if (day === 'tomorrow') ref.setDate(ref.getDate() + 1)
+  return ref
+}
+
 function ProviderDashboardPage() {
   const provider = useProviderIdentity()
   const navigate = useNavigate()
@@ -175,6 +181,14 @@ function ProviderDashboardPage() {
     return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
   }, [mergedUpcoming, upcomingDayFilter])
 
+  const selectedDayAllVisits = useMemo(() => {
+    const now = new Date()
+    if (upcomingDayFilter === 'today') {
+      return visits.filter((v) => isSameCalendarDay(v.scheduled_start, now))
+    }
+    return visits.filter((v) => isTomorrowSlot(v.scheduled_start || '', now))
+  }, [upcomingDayFilter, visits])
+
   const selectedDayUpcomingSlots = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
@@ -189,25 +203,49 @@ function ProviderDashboardPage() {
   }, [mergedUpcoming, upcomingDayFilter])
 
   const stats = useMemo(() => {
+    const visitById = new Map<string, ProviderVisitListItem>()
+    for (const v of visits) {
+      const id = String(v.visit_id || v.id || '').trim()
+      if (id) visitById.set(id, v)
+    }
+    const targetDayRef = dayReference(upcomingDayFilter)
     const patientsForDaySet = new Set<string>()
     for (const a of selectedDayAllSlots) {
       const pid = (a.patient_id || '').trim()
-      if (pid) patientsForDaySet.add(pid)
+      if (!pid) continue
+      const visit = visitById.get(String(a.visit_id || '').trim())
+      const isNewlyRegistered = isSameCalendarDay(visit?.patient_created_at, targetDayRef)
+      if (!isNewlyRegistered) continue
+      patientsForDaySet.add(pid)
     }
     const pending = selectedDayUpcomingSlots.filter((a) => {
-      const s = (a.status || '').toLowerCase()
-      return s === 'scheduled' || s === 'queued' || s === 'in_queue' || s === 'open'
+      const s = normalizeVisitStatus(a.status)
+      return !['completed', 'closed', 'ended', 'cancelled', 'canceled', 'in_progress'].includes(s)
     }).length
     return {
       patientsForDay: patientsForDaySet.size,
       pending,
-      visitsForDayCount: selectedDayAllSlots.length,
+      visitsForDayCount: selectedDayAllVisits.length,
     }
-  }, [selectedDayAllSlots, selectedDayUpcomingSlots])
+  }, [selectedDayAllSlots, selectedDayUpcomingSlots, upcomingDayFilter, visits, selectedDayAllVisits.length])
 
   const upcomingList = useMemo(() => {
-    return selectedDayUpcomingSlots
-  }, [selectedDayUpcomingSlots])
+    const now = new Date()
+    if (upcomingDayFilter === 'today') {
+      const nowMs = now.getTime()
+      return visits
+        .filter((v) => {
+          if (!isSameCalendarDay(v.scheduled_start, now)) return false
+          return timeValue(v.scheduled_start) >= nowMs
+        })
+        .map((v) => visitToUpcomingRow(v))
+        .sort((a, b) => timeValue(a.scheduled_start) - timeValue(b.scheduled_start))
+    }
+    return visits
+      .filter((v) => isTomorrowSlot(v.scheduled_start || '', now))
+      .map((v) => visitToUpcomingRow(v))
+      .sort((a, b) => timeValue(a.scheduled_start) - timeValue(b.scheduled_start))
+  }, [upcomingDayFilter, visits])
 
   const visibleUpcoming = useMemo(
     () => upcomingList.slice(0, upcomingVisibleCount),
@@ -298,7 +336,11 @@ function ProviderDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
+            <button
+              className="rounded-xl border border-[#e5e7eb] bg-white p-6 text-left transition-all hover:border-[#16a34a] hover:shadow-sm"
+              onClick={() => navigate(`/dashboard/slots?view=new-patients&day=${upcomingDayFilter}`)}
+              type="button"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[13px] uppercase text-gray-500">New patients {dayLabel}</p>
@@ -307,8 +349,12 @@ function ProviderDashboardPage() {
                 </div>
                 <span className="material-symbols-outlined text-2xl text-[#16a34a]">stethoscope</span>
               </div>
-            </div>
-            <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
+            </button>
+            <button
+              className="rounded-xl border border-[#e5e7eb] bg-white p-6 text-left transition-all hover:border-[#f59e0b] hover:shadow-sm"
+              onClick={() => navigate(`/dashboard/slots?view=pending&day=${upcomingDayFilter}`)}
+              type="button"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[13px] uppercase text-gray-500">Pending {dayLabel}</p>
@@ -317,8 +363,12 @@ function ProviderDashboardPage() {
                 </div>
                 <span className="material-symbols-outlined text-2xl text-[#f59e0b]">schedule</span>
               </div>
-            </div>
-            <div className="rounded-xl border border-[#e5e7eb] bg-white p-6">
+            </button>
+            <button
+              className="rounded-xl border border-[#e5e7eb] bg-white p-6 text-left transition-all hover:border-[#2563eb] hover:shadow-sm"
+              onClick={() => navigate(`/dashboard/slots?view=visits&day=${upcomingDayFilter}`)}
+              type="button"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[13px] uppercase text-gray-500">Visit {dayLabel}</p>
@@ -327,7 +377,7 @@ function ProviderDashboardPage() {
                 </div>
                 <span className="material-symbols-outlined text-2xl text-[#2563eb]">calendar_month</span>
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
