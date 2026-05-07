@@ -1,31 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { fetchPatients, type PatientSummary } from '../services/patientsApi'
+import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
-
-type PatientRow = PatientSummary
 
 type PatientSort = 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
 const PAGE_SIZE = 10
-
-function visitTimestamp(value: string | null | undefined): number {
-  const t = new Date(value ?? '').getTime()
-  return Number.isNaN(t) ? 0 : t
-}
-
-function sortPatientRows(rows: PatientRow[], sort: PatientSort): PatientRow[] {
-  const copy = [...rows]
-  copy.sort((a, b) => {
-    if (sort === 'visit_latest') return visitTimestamp(b.latest_visit_scheduled_start) - visitTimestamp(a.latest_visit_scheduled_start)
-    if (sort === 'visit_oldest') return visitTimestamp(a.latest_visit_scheduled_start) - visitTimestamp(b.latest_visit_scheduled_start)
-    if (sort === 'name_az') return (a.full_name || '').localeCompare(b.full_name || '')
-    if (sort === 'name_za') return (b.full_name || '').localeCompare(a.full_name || '')
-    return (a.id || '').localeCompare(b.id || '')
-  })
-  return copy
-}
 
 function labelForGender(gender: string | null | undefined): string {
   const g = (gender ?? '').trim().toLowerCase()
@@ -51,6 +32,7 @@ function PatientsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [patients, setPatients] = useState<PatientSummary[]>([])
+  const [totalPatients, setTotalPatients] = useState(0)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,8 +44,16 @@ function PatientsPage() {
           setLoading(true)
           setError(null)
         }
-        const data = await fetchPatients()
-        if (!cancelled) setPatients(data)
+        const data = await fetchPatientsPaged({
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+          search: searchQuery.trim() || undefined,
+          sort: patientSort,
+        })
+        if (!cancelled) {
+          setPatients(data.items)
+          setTotalPatients(data.total)
+        }
       } catch (e) {
         if (!cancelled) setError(getApiErrorMessage(e))
       } finally {
@@ -73,21 +63,8 @@ function PatientsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
-
-  const sortedPatients = useMemo(() => sortPatientRows(patients, patientSort), [patients, patientSort])
-  const filteredPatients = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    return sortedPatients.filter((p) => {
-      if (!q) return true
-      return (p.full_name || '').toLowerCase().includes(q)
-    })
-  }, [sortedPatients, searchQuery])
-  const totalPages = Math.max(1, Math.ceil(filteredPatients.length / PAGE_SIZE))
-  const pagedPatients = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return filteredPatients.slice(start, start + PAGE_SIZE)
-  }, [filteredPatients, currentPage])
+  }, [currentPage, patientSort, searchQuery])
+  const totalPages = Math.max(1, Math.ceil(totalPatients / PAGE_SIZE))
 
   useEffect(() => {
     setCurrentPage(1)
@@ -180,7 +157,7 @@ function PatientsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#bdcaba]">
-              {pagedPatients.map((patient) => (
+              {patients.map((patient) => (
                 <tr
                   key={patient.id}
                   className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
@@ -227,7 +204,7 @@ function PatientsPage() {
                   </td>
                 </tr>
               ))}
-              {!loading && filteredPatients.length === 0 && (
+              {!loading && patients.length === 0 && (
                 <tr>
                   <td className="px-6 py-12 text-center text-sm text-slate-500" colSpan={5}>
                     No patients found in backend.
@@ -241,9 +218,9 @@ function PatientsPage() {
             <span className="text-sm text-slate-500 font-medium">
               {loading
                 ? 'Loading patients...'
-                : filteredPatients.length === 0
+                : totalPatients === 0
                   ? 'Showing 0 patient(s)'
-                  : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, filteredPatients.length)} of ${filteredPatients.length} patient(s)`}
+                  : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, totalPatients)} of ${totalPatients} patient(s)`}
             </span>
             <div className="flex items-center gap-2">
               <button

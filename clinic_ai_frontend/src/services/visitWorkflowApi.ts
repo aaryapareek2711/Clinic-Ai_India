@@ -93,12 +93,44 @@ export type ProviderVisitListItem = {
   updated_at?: string
 }
 
+export type PagedVisitResponse = {
+  items: ProviderVisitListItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export const DEFAULT_PROVIDER_ID =
   (import.meta.env.VITE_PROVIDER_ID as string | undefined)?.trim() || 'default'
 
 export async function fetchProviderVisits(providerId: string): Promise<ProviderVisitListItem[]> {
   const { data } = await apiClient.get<ProviderVisitListItem[]>(
     `/api/visits/provider/${encodeURIComponent(providerId)}`,
+  )
+  return data
+}
+
+export async function fetchProviderVisitsPaged(
+  providerId: string,
+  opts: {
+    page: number
+    pageSize: number
+    statusFilter?: string
+    search?: string
+    sort?: 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+  },
+): Promise<PagedVisitResponse> {
+  const { data } = await apiClient.get<PagedVisitResponse>(
+    `/api/visits/provider/${encodeURIComponent(providerId)}/paged`,
+    {
+      params: {
+        page: opts.page,
+        page_size: opts.pageSize,
+        status_filter: opts.statusFilter || undefined,
+        search: opts.search || undefined,
+        sort: opts.sort || 'time_newest',
+      },
+    },
   )
   return data
 }

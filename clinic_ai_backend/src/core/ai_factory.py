@@ -29,10 +29,18 @@ PROMPT_FILES = {
     "postvisit": "post_visit_summary_prompt.txt",
 }
 PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "adapters" / "external" / "ai" / "prompt_templates"
+MAX_PROMPT_LOG_CHARS = 4000
+MAX_RESPONSE_LOG_CHARS = 4000
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _truncate_for_log(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    return f"{value[:max_chars]}...[truncated]"
 
 
 class PromptVersionRegistry:
@@ -198,11 +206,12 @@ def execute_prompt(*, scenario: str, messages: list[dict[str, str]], metadata: d
         }
     )
     response_payload: dict[str, Any]
+    response_text = str(llm_result.get("response_text") or "")
     if llm_result["status"] == "success":
         try:
-            response_payload = {"raw": llm_result["response_text"], "json": json.loads(llm_result["response_text"])}
+            response_payload = {"raw": response_text, "json": json.loads(response_text)}
         except json.JSONDecodeError:
-            response_payload = {"raw": llm_result["response_text"]}
+            response_payload = {"raw": response_text}
     else:
         response_payload = {"error": llm_result["error"]}
 
@@ -212,8 +221,16 @@ def execute_prompt(*, scenario: str, messages: list[dict[str, str]], metadata: d
         "patient_id": str(metadata.get("patient_id") or ""),
         "phase": phase,
         "agent_name": str(metadata.get("agent_name") or "llm_gateway"),
-        "prompt_payload": {"messages": messages, "final_prompt": final_prompt},
-        "response_payload": response_payload,
+        "prompt_payload": {
+            "messages": messages,
+            "final_prompt": _truncate_for_log(final_prompt, MAX_PROMPT_LOG_CHARS),
+            "final_prompt_chars": len(final_prompt),
+        },
+        "response_payload": {
+            **response_payload,
+            "raw": _truncate_for_log(str(response_payload.get("raw") or ""), MAX_RESPONSE_LOG_CHARS),
+            "raw_chars": len(str(response_payload.get("raw") or "")),
+        },
         "metadata": {
             **metadata,
             "prompt_version": prompt_version,

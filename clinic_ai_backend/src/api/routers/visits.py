@@ -13,6 +13,24 @@ router = APIRouter(prefix="/api/visits", tags=["Visits"])
 LOCKED_VISIT_STATUSES = {"completed", "closed", "ended", "cancelled"}
 QUEUEABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
 STARTABLE_VISIT_STATUSES = {"open", "scheduled", "queued", "in_queue"}
+_INDEXES_READY = False
+
+
+def _ensure_visit_indexes(db) -> None:
+    global _INDEXES_READY
+    if _INDEXES_READY:
+        return
+    try:
+        db.visits.create_index([("visit_id", 1)], unique=True)
+        db.visits.create_index([("id", 1)])
+        db.visits.create_index([("appointment_id", 1)])
+        db.visits.create_index([("provider_id", 1), ("updated_at", -1), ("created_at", -1)])
+        db.visits.create_index([("provider_id", 1), ("scheduled_start", 1), ("status", 1)])
+        db.visits.create_index([("patient_id", 1), ("created_at", -1)])
+        db.patients.create_index([("patient_id", 1)], unique=True)
+    except Exception:
+        return
+    _INDEXES_READY = True
 
 
 class VisitStatusUpdateRequest(BaseModel):
@@ -308,14 +326,10 @@ def list_provider_upcoming_visits(
 ) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
     db = get_database()
+    _ensure_visit_indexes(db)
     # Keep this endpoint fast: don't return the full visit history.
     # Without a limit/projection, the backend can hang on Render and the frontend shows "Failed to load visits".
     UPCOMING_LIMIT = 120
-    try:
-        db.visits.create_index([("provider_id", 1), ("scheduled_start", 1), ("status", 1)])
-    except Exception:
-        # Non-blocking optimization guard.
-        pass
     scheduled_bounds: dict = {"$exists": True, "$ne": None, "$ne": ""}
     if from_date and str(from_date).strip():
         scheduled_bounds["$gte"] = str(from_date).strip()
@@ -396,6 +410,7 @@ def list_provider_visits(
 ) -> list[dict]:
     """Return provider visits for Visits workspace list."""
     db = get_database()
+    _ensure_visit_indexes(db)
     VISITS_LIMIT = 200
     query: dict = {
         "$or": [
@@ -406,7 +421,13 @@ def list_provider_visits(
         ],
     }
     if status_filter:
-        query["status"] = status_filter
+        status_value = str(status_filter).strip().lower()
+        if status_value == "scheduled":
+            query["status"] = {"$in": ["scheduled", "queued", "in_queue"]}
+        elif status_value == "completed":
+            query["status"] = {"$in": ["completed", "complete", "closed", "ended"]}
+        else:
+            query["status"] = status_value
 
     records = list(
         db.visits.find(
@@ -516,6 +537,169 @@ def list_provider_visits(
     return out
 
 
+@router.get("/provider/{provider_id}/paged")
+def list_provider_visits_paged(
+    provider_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    status_filter: str | None = Query(default=None, description="Filter by visit status"),
+    search: str | None = Query(default=None, description="Search by patient name/mobile/id/visit id"),
+    sort: str = Query(default="time_newest", description="time_newest|time_oldest|name_az|name_za|visit_id"),
+) -> dict:
+    """Return paginated provider visits with server-side filtering."""
+    db = get_database()
+    _ensure_visit_indexes(db)
+    query: dict = {
+        "$or": [
+            {"provider_id": provider_id},
+            {"provider_id": ""},
+            {"provider_id": None},
+            {"provider_id": {"$exists": False}},
+        ],
+    }
+    if status_filter:
+        status_value = str(status_filter).strip().lower()
+        if status_value == "scheduled":
+            query["status"] = {"$in": ["scheduled", "queued", "in_queue"]}
+        elif status_value == "completed":
+            query["status"] = {"$in": ["completed", "complete", "closed", "ended"]}
+        else:
+            query["status"] = status_value
+    search_value = str(search or "").strip()
+    if search_value:
+        import re
+
+        escaped = re.escape(search_value)
+        search_regex = {"$regex": escaped, "$options": "i"}
+        patient_matches = list(
+            db.patients.find(
+                {"$or": [{"name": search_regex}, {"phone_number": search_regex}, {"patient_id": search_regex}]},
+                {"_id": 0, "patient_id": 1},
+            )
+        )
+        patient_ids = [str(p.get("patient_id") or "").strip() for p in patient_matches if str(p.get("patient_id") or "").strip()]
+        query["$and"] = [
+            {
+                "$or": [
+                    {"visit_id": search_regex},
+                    {"id": search_regex},
+                    {"patient_id": {"$in": patient_ids}} if patient_ids else {"visit_id": search_regex},
+                ]
+            }
+        ]
+    total = int(db.visits.count_documents(query))
+    skip = (page - 1) * page_size
+    sort_spec: list[tuple[str, int]]
+    if sort == "time_oldest":
+        sort_spec = [("updated_at", 1), ("created_at", 1)]
+    elif sort == "visit_id":
+        sort_spec = [("visit_id", 1), ("id", 1)]
+    else:
+        sort_spec = [("updated_at", -1), ("created_at", -1)]
+    records = list(
+        db.visits.find(
+            query,
+            {
+                "_id": 0,
+                "visit_id": 1,
+                "id": 1,
+                "patient_id": 1,
+                "visit_type": 1,
+                "status": 1,
+                "previous_workflow_stage": 1,
+                "current_workflow_stage": 1,
+                "next_workflow_stage": 1,
+                "scheduled_start": 1,
+                "actual_start": 1,
+                "actual_end": 1,
+                "chief_complaint": 1,
+                "intake_session.status": 1,
+                "intake_session.question_answers": 1,
+                "intake_session.updated_at": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        .sort(sort_spec)
+        .skip(skip)
+        .limit(page_size)
+    )
+    patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
+    patient_map: dict[str, dict] = {}
+    if patient_ids:
+        for patient in db.patients.find(
+            {"patient_id": {"$in": patient_ids}},
+            {"_id": 0, "patient_id": 1, "name": 1, "phone_number": 1, "created_at": 1},
+        ):
+            pid = str(patient.get("patient_id") or "").strip()
+            if pid:
+                patient_map[pid] = patient
+    items: list[dict] = []
+    for visit in records:
+        resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
+        if not resolved_visit_id:
+            continue
+        internal_patient_id = str(visit.get("patient_id") or "")
+        patient = patient_map.get(internal_patient_id, {})
+        patient_name = str(patient.get("name") or "").strip() or "Unknown patient"
+        patient_phone_number = str(patient.get("phone_number") or "").strip()
+        actual_start = visit.get("actual_start")
+        actual_end = visit.get("actual_end")
+        duration_minutes = None
+        try:
+            if isinstance(actual_start, datetime) and isinstance(actual_end, datetime):
+                duration_minutes = int((actual_end - actual_start).total_seconds() / 60)
+            elif isinstance(actual_start, str) and isinstance(actual_end, str):
+                start_dt = datetime.fromisoformat(actual_start.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(actual_end.replace("Z", "+00:00"))
+                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+        except Exception:
+            duration_minutes = None
+        items.append(
+            {
+                "id": resolved_visit_id,
+                "visit_id": resolved_visit_id,
+                "patient_id": encode_patient_id(internal_patient_id) if internal_patient_id else "",
+                "patient_name": patient_name,
+                "mobile_number": patient_phone_number or None,
+                "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
+                "visit_type": (
+                    "Visit"
+                    if str(visit.get("visit_type") or "").strip().lower() in {"", "string"}
+                    else str(visit.get("visit_type"))
+                ),
+                "status": str(visit.get("status") or "open"),
+                "scheduled_start": visit.get("scheduled_start"),
+                "actual_start": actual_start,
+                "actual_end": actual_end,
+                "duration_minutes": duration_minutes,
+                "chief_complaint": visit.get("chief_complaint") or None,
+                "intake_status": str((visit.get("intake_session") or {}).get("status") or ""),
+                "intake_question_count": len(((visit.get("intake_session") or {}).get("question_answers") or [])),
+                "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
+                "created_at": visit.get("created_at") or "",
+                "updated_at": visit.get("updated_at") or "",
+                "previous_workflow_stage": visit.get(
+                    "previous_workflow_stage",
+                    _workflow_stage_triplet_for_status(visit.get("status") or "open")["previous_workflow_stage"],
+                ),
+                "current_workflow_stage": visit.get(
+                    "current_workflow_stage",
+                    _workflow_stage_triplet_for_status(visit.get("status") or "open")["current_workflow_stage"],
+                ),
+                "next_workflow_stage": visit.get(
+                    "next_workflow_stage",
+                    _workflow_stage_triplet_for_status(visit.get("status") or "open")["next_workflow_stage"],
+                ),
+            }
+        )
+    if sort == "name_az":
+        items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
+    elif sort == "name_za":
+        items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 @router.get("/patient/{patient_id}")
 def list_patient_visits(
     patient_id: str,
@@ -523,6 +707,7 @@ def list_patient_visits(
 ) -> list[dict]:
     """Return visits for a single patient, resolving encrypted patient ids."""
     db = get_database()
+    _ensure_visit_indexes(db)
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     query: dict = {"patient_id": internal_patient_id}
     if status_filter:
@@ -556,6 +741,7 @@ def list_patient_visits(
 def get_visit(visit_id: str) -> dict:
     """Return visit details for visit workflow page."""
     db = get_database()
+    _ensure_visit_indexes(db)
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
@@ -570,84 +756,7 @@ def get_visit(visit_id: str) -> dict:
     age = patient.get("age")
     year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
 
-    # Best-effort backfill of workflow triplet fields from embedded single-document data.
-    # This fixes older records where `previous_workflow_stage` was stored as `null` or stages
-    # were not persisted consistently.
-    try:
-        def _is_walk_in_type(v: dict) -> bool:
-            t = str(v.get("visit_type") or "").strip().lower()
-            return t in {"walk_in", "walkin"} or "walk_in" in t or "walkin" in t
-
-        is_walk_in = _is_walk_in_type(visit)
-        now = datetime.now(timezone.utc)
-        intake_session = dict(visit.get("intake_session") or {})
-        pre_visit_summary = dict(visit.get("pre_visit_summary") or {})
-        vitals_form = dict(visit.get("vitals_form") or {})
-        vitals = dict(visit.get("vitals") or {})
-        transcription_session = dict(visit.get("transcription_session") or {})
-        post_visit_summary = dict(visit.get("post_visit_summary") or {})
-
-        has_completed_post = bool(post_visit_summary) or str(visit.get("status") or "").lower() in {"completed", "complete", "closed", "ended"}
-        has_pre_visit = bool(pre_visit_summary.get("sections"))
-        has_vitals = bool(vitals_form) or bool(vitals)
-        has_transcription = bool(transcription_session.get("transcription_status")) and str(transcription_session.get("transcription_status") or "").lower() in {
-            "queued",
-            "processing",
-            "in_progress",
-            "running",
-            "started",
-            "completed",
-            "failed",
-        }
-        has_intake = bool(intake_session)
-
-        desired_prev = None
-        desired_curr = "patient_registered"
-        desired_next = "vitals" if is_walk_in else "intake"
-        desired_status = "scheduled"
-
-        if has_completed_post:
-            desired_prev = "post_visit"
-            desired_curr = "completed"
-            desired_next = None
-            desired_status = "completed"
-        elif has_transcription or has_vitals:
-            desired_prev = "pre_visit" if has_pre_visit else "patient_registered"
-            desired_curr = "vitals"
-            desired_next = "post_visit" if has_completed_post else "transcription"
-            desired_status = "in_progress"
-        elif has_pre_visit:
-            desired_prev = "intake"
-            desired_curr = "pre_visit"
-            desired_next = "vitals"
-            desired_status = "in_queue"
-        elif has_intake:
-            desired_prev = "patient_registered"
-            desired_curr = "intake"
-            desired_next = "vitals" if is_walk_in else "pre_visit"
-            desired_status = "scheduled"
-
-        updates: dict = {}
-        for k, v in {
-            "previous_workflow_stage": desired_prev,
-            "current_workflow_stage": desired_curr,
-            "next_workflow_stage": desired_next,
-            "status": desired_status,
-        }.items():
-            if visit.get(k) != v:
-                updates[k] = v
-
-        if updates:
-            db.visits.update_one(
-                {"$or": [{"visit_id": resolved_visit_id}, {"id": resolved_visit_id}]},
-                {"$set": {**updates, "updated_at": now}},
-            )
-            # Reload so response matches persisted data.
-            visit = _find_visit(db, resolved_visit_id) or visit
-    except Exception:
-        # Backfill is best-effort only; never block visit detail.
-        pass
-
+    default_stage = _workflow_stage_triplet_for_status(visit.get("status") or "open")
     resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
     return {
         "id": resolved_visit_id,
@@ -656,9 +765,9 @@ def get_visit(visit_id: str) -> dict:
         "appointment_id": visit.get("appointment_id"),
         "visit_type": str(visit.get("visit_type") or "Visit"),
         "status": str(visit.get("status") or "open"),
-        "previous_workflow_stage": visit.get("previous_workflow_stage"),
-        "current_workflow_stage": visit.get("current_workflow_stage"),
-        "next_workflow_stage": visit.get("next_workflow_stage"),
+        "previous_workflow_stage": visit.get("previous_workflow_stage", default_stage.get("previous_workflow_stage")),
+        "current_workflow_stage": visit.get("current_workflow_stage", default_stage.get("current_workflow_stage")),
+        "next_workflow_stage": visit.get("next_workflow_stage", default_stage.get("next_workflow_stage")),
         "chief_complaint": resolved_chief_complaint,
         "reason_for_visit": visit.get("reason_for_visit"),
         "scheduled_start": visit.get("scheduled_start"),

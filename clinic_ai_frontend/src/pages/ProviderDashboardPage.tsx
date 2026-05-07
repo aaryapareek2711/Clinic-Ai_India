@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -13,6 +13,8 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 const INITIAL_UPCOMING_COUNT = 5
 const UPCOMING_LOAD_MORE_STEP = 10
+const AUTO_REFRESH_MS = 20_000
+const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function isSameCalendarDay(iso: string | null | undefined, ref: Date): boolean {
   if (!iso) return false
@@ -92,39 +94,52 @@ function ProviderDashboardPage() {
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
   const [upcomingDayFilter, setUpcomingDayFilter] = useState<'today' | 'tomorrow'>('today')
   const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(INITIAL_UPCOMING_COUNT)
+  const loadInFlightRef = useRef(false)
+  const lastLoadAtRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
     const loadDashboard = async (showSpinner: boolean) => {
+      if (loadInFlightRef.current) return
+      if (!showSpinner && document.visibilityState !== 'visible') return
+      loadInFlightRef.current = true
       if (!cancelled && showSpinner) {
         setLoading(true)
         setError(null)
       }
-      const [upcomingRes, visitsRes] = await Promise.allSettled([
-        fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-        fetchProviderVisits(DEFAULT_PROVIDER_ID),
-      ])
-      if (cancelled) return
+      try {
+        const [upcomingRes, visitsRes] = await Promise.allSettled([
+          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+          fetchProviderVisits(DEFAULT_PROVIDER_ID),
+        ])
+        if (cancelled) return
 
-      if (upcomingRes.status === 'fulfilled') {
-        setAppointments(upcomingRes.value)
-      }
-      if (visitsRes.status === 'fulfilled') {
-        setVisits(visitsRes.value)
-      }
+        if (upcomingRes.status === 'fulfilled') {
+          setAppointments(upcomingRes.value)
+        }
+        if (visitsRes.status === 'fulfilled') {
+          setVisits(visitsRes.value)
+        }
 
-      const loadErrs: string[] = []
-      if (upcomingRes.status === 'rejected') loadErrs.push(getApiErrorMessage(upcomingRes.reason))
-      if (visitsRes.status === 'rejected') loadErrs.push(getApiErrorMessage(visitsRes.reason))
-      setError(loadErrs.length ? [...new Set(loadErrs)].join(' · ') : null)
-      setLoading(false)
+        const loadErrs: string[] = []
+        if (upcomingRes.status === 'rejected') loadErrs.push(getApiErrorMessage(upcomingRes.reason))
+        if (visitsRes.status === 'rejected') loadErrs.push(getApiErrorMessage(visitsRes.reason))
+        setError(loadErrs.length ? [...new Set(loadErrs)].join(' · ') : null)
+        setLoading(false)
+      } finally {
+        lastLoadAtRef.current = Date.now()
+        loadInFlightRef.current = false
+      }
     }
     void loadDashboard(true)
     const intervalId = window.setInterval(() => {
       void loadDashboard(false)
-    }, 10_000)
+    }, AUTO_REFRESH_MS)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void loadDashboard(false)
+      const now = Date.now()
+      if (document.visibilityState === 'visible' && now - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
+        void loadDashboard(false)
+      }
     }
     window.addEventListener('focus', onVisible)
     document.addEventListener('visibilitychange', onVisible)

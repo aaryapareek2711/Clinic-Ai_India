@@ -1,7 +1,8 @@
 """Patient routes module."""
+import re
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
 from src.application.services.intake_chat_service import IntakeChatService
@@ -18,6 +19,21 @@ from src.api.schemas.patient import (
 
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
+_INDEXES_READY = False
+
+
+def _ensure_patient_indexes(db) -> None:
+    global _INDEXES_READY
+    if _INDEXES_READY:
+        return
+    try:
+        db.patients.create_index([("patient_id", 1)], unique=True)
+        db.patients.create_index([("updated_at", -1)])
+        db.patients.create_index([("name", 1)])
+        db.visits.create_index([("patient_id", 1), ("created_at", -1)])
+    except Exception:
+        return
+    _INDEXES_READY = True
 
 
 def _is_walk_in_visit_type(value: object) -> bool:
@@ -64,6 +80,7 @@ def _find_reusable_active_visit(db, *, patient_id: str) -> dict | None:
 def list_patients() -> list[PatientSummaryResponse]:
     """Return normalized patient records for frontend patient picker."""
     db = get_database()
+    _ensure_patient_indexes(db)
     records = list(
         db.patients.find(
             {},
@@ -140,6 +157,113 @@ def list_patients() -> list[PatientSummaryResponse]:
         )
 
     return patients
+
+
+@router.get("/paged")
+def list_patients_paged(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    search: str | None = Query(default=None),
+    sort: str = Query(default="visit_latest"),
+) -> dict:
+    """Return paginated patient records with server-side filtering/sorting."""
+    db = get_database()
+    _ensure_patient_indexes(db)
+    query: dict = {}
+    search_value = str(search or "").strip()
+    if search_value:
+        escaped = re.escape(search_value)
+        query["name"] = {"$regex": escaped, "$options": "i"}
+
+    total = int(db.patients.count_documents(query))
+    skip = (page - 1) * page_size
+    records = list(
+        db.patients.find(
+            query,
+            {
+                "_id": 0,
+                "patient_id": 1,
+                "name": 1,
+                "date_of_birth": 1,
+                "mrn": 1,
+                "age": 1,
+                "gender": 1,
+                "phone_number": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        .sort("updated_at", -1)
+        .skip(skip)
+        .limit(page_size)
+    )
+    patient_ids = [str(record.get("patient_id") or "").strip() for record in records if str(record.get("patient_id") or "").strip()]
+    latest_visit_by_patient: dict[str, dict] = {}
+    if patient_ids:
+        for visit in db.visits.aggregate(
+            [
+                {"$match": {"patient_id": {"$in": patient_ids}}},
+                {"$sort": {"created_at": -1}},
+                {
+                    "$group": {
+                        "_id": "$patient_id",
+                        "patient_id": {"$first": "$patient_id"},
+                        "visit_id": {"$first": "$visit_id"},
+                        "id": {"$first": "$id"},
+                        "scheduled_start": {"$first": "$scheduled_start"},
+                    }
+                },
+            ]
+        ):
+            pid = str(visit.get("patient_id") or "").strip()
+            if pid and pid not in latest_visit_by_patient:
+                latest_visit_by_patient[pid] = visit
+
+    items: list[dict] = []
+    for record in records:
+        full_name = (record.get("name") or "").strip()
+        name_parts = [part for part in full_name.split(" ") if part]
+        first_name = name_parts[0] if name_parts else "Unknown"
+        last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+        internal_patient_id = str(record.get("patient_id") or "")
+        age = record.get("age")
+        year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
+        estimated_dob = f"{year:04d}-01-01"
+        opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
+        latest_visit = latest_visit_by_patient.get(internal_patient_id) if internal_patient_id else None
+        latest_visit_id = (
+            str((latest_visit or {}).get("visit_id") or (latest_visit or {}).get("id") or "").strip() or None
+        )
+        latest_visit_scheduled_start = (latest_visit or {}).get("scheduled_start")
+        items.append(
+            {
+                "id": opaque_patient_id,
+                "patient_id": opaque_patient_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "full_name": full_name or first_name,
+                "date_of_birth": str(record.get("date_of_birth") or estimated_dob),
+                "mrn": str(record.get("mrn") or internal_patient_id),
+                "age": record.get("age"),
+                "gender": str(record.get("gender") or "").strip() or None,
+                "phone_number": str(record.get("phone_number") or "").strip() or None,
+                "created_at": str(record.get("created_at") or "") or None,
+                "updated_at": str(record.get("updated_at") or "") or None,
+                "latest_visit_id": latest_visit_id,
+                "latest_visit_scheduled_start": latest_visit_scheduled_start,
+            }
+        )
+    if sort == "name_az":
+        items.sort(key=lambda row: str(row.get("full_name") or "").lower())
+    elif sort == "name_za":
+        items.sort(key=lambda row: str(row.get("full_name") or "").lower(), reverse=True)
+    elif sort == "id_az":
+        items.sort(key=lambda row: str(row.get("id") or "").lower())
+    elif sort == "visit_oldest":
+        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""))
+    else:
+        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""), reverse=True)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/{patient_id}/latest-visit")

@@ -23,6 +23,11 @@ export type ProviderProfilePatch = Partial<{
   avatar_url: string
 }>
 
+const PROFILE_CACHE_TTL_MS = 60_000
+let profileCache: ProviderProfile | null = null
+let profileCacheAt = 0
+let profileInFlight: Promise<ProviderProfile> | null = null
+
 function authHeaders(): Record<string, string> {
   const token =
     typeof localStorage !== 'undefined'
@@ -33,24 +38,40 @@ function authHeaders(): Record<string, string> {
 }
 
 export async function fetchMyProfile(): Promise<ProviderProfile> {
-  const { data } = await apiClient.get<ProviderProfile>('/api/auth/me', {
-    headers: authHeaders(),
-  })
-  try {
-    localStorage.setItem('auth_user_full_name', (data.full_name || '').trim())
-    localStorage.setItem('auth_user_username', (data.username || '').trim())
-    localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
-    localStorage.setItem('auth_user_role', (data.role || '').trim())
-  } catch {
-    /* ignore */
+  const now = Date.now()
+  if (profileCache && now - profileCacheAt < PROFILE_CACHE_TTL_MS) {
+    return profileCache
   }
-  return data
+  if (profileInFlight) return profileInFlight
+  profileInFlight = (async () => {
+    const { data } = await apiClient.get<ProviderProfile>('/api/auth/me', {
+      headers: authHeaders(),
+    })
+    profileCache = data
+    profileCacheAt = Date.now()
+    try {
+      localStorage.setItem('auth_user_full_name', (data.full_name || '').trim())
+      localStorage.setItem('auth_user_username', (data.username || '').trim())
+      localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
+      localStorage.setItem('auth_user_role', (data.role || '').trim())
+    } catch {
+      /* ignore */
+    }
+    return data
+  })()
+  try {
+    return await profileInFlight
+  } finally {
+    profileInFlight = null
+  }
 }
 
 export async function patchMyProfile(body: ProviderProfilePatch): Promise<ProviderProfile> {
   const { data } = await apiClient.patch<ProviderProfile>('/api/auth/me', body, {
     headers: authHeaders(),
   })
+  profileCache = data
+  profileCacheAt = Date.now()
   return data
 }
 

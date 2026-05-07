@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getApiErrorMessage } from '../lib/apiClient'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
-  fetchProviderVisits,
+  fetchProviderVisitsPaged,
   type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
 
@@ -13,7 +13,8 @@ type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
 type VisitSort = 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
 const PAGE_SIZE = 10
-const AUTO_REFRESH_MS = 15000
+const AUTO_REFRESH_MS = 30_000
+const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function displayStatus(status: string): string {
   const s = status.toLowerCase()
@@ -48,15 +49,6 @@ function stageForStatus(status: string, currentWorkflowStage?: string | null): s
   if (s === 'in_progress') return 'Vitals / Transcript'
   if (s === 'completed' || s === 'complete' || s === 'closed' || s === 'ended') return 'Transcript completed'
   return 'Intake'
-}
-
-function matchesVisitTab(v: ProviderVisitListItem, tab: VisitTab): boolean {
-  const s = (v.status || '').toLowerCase()
-  if (tab === 'all') return true
-  if (tab === 'scheduled') return s === 'scheduled' || s === 'queued' || s === 'in_queue'
-  if (tab === 'in-progress') return s === 'in_progress'
-  if (tab === 'completed') return s === 'completed' || s === 'complete' || s === 'closed' || s === 'ended'
-  return true
 }
 
 function formatVisitRowTimes(v: ProviderVisitListItem): { date: string; duration: string } {
@@ -205,13 +197,11 @@ function iconClasses(tone: string) {
   return 'bg-blue-50 text-blue-600'
 }
 
-function visitTimeForSort(v: ProviderVisitListItem): number {
-  const updated = new Date(v.updated_at || '').getTime()
-  if (!Number.isNaN(updated) && updated > 0) return updated
-  const created = new Date(v.created_at || '').getTime()
-  if (!Number.isNaN(created) && created > 0) return created
-  const scheduled = new Date(v.scheduled_start || '').getTime()
-  return Number.isNaN(scheduled) ? 0 : scheduled
+function statusFilterForTab(tab: VisitTab): string | undefined {
+  if (tab === 'all') return undefined
+  if (tab === 'scheduled') return 'scheduled'
+  if (tab === 'in-progress') return 'in_progress'
+  return 'completed'
 }
 
 function VisitsPage() {
@@ -223,22 +213,37 @@ function VisitsPage() {
   const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
   const [currentPage, setCurrentPage] = useState(1)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
+  const [totalVisits, setTotalVisits] = useState(0)
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
+  const loadInFlightRef = useRef(false)
+  const lastLoadAtRef = useRef(0)
 
   const loadVisits = useCallback(async (opts?: { initial?: boolean }) => {
     const initial = opts?.initial === true
+    if (loadInFlightRef.current) return
+    if (!initial && document.visibilityState !== 'visible') return
+    loadInFlightRef.current = true
     try {
       if (initial) setLoading(true)
       setListError(null)
-      const data = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
-      setVisits(data)
+      const data = await fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        statusFilter: statusFilterForTab(activeTab),
+        search: searchQuery.trim() || undefined,
+        sort: sortBy,
+      })
+      setVisits(data.items)
+      setTotalVisits(data.total)
     } catch (e) {
       setListError(getApiErrorMessage(e))
     } finally {
+      lastLoadAtRef.current = Date.now()
+      loadInFlightRef.current = false
       if (initial) setLoading(false)
     }
-  }, [])
+  }, [activeTab, currentPage, searchQuery, sortBy])
 
   useEffect(() => {
     void loadVisits({ initial: true })
@@ -253,10 +258,14 @@ function VisitsPage() {
 
   useEffect(() => {
     const onFocus = () => {
-      void loadVisits()
+      if (Date.now() - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
+        void loadVisits()
+      }
     }
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void loadVisits()
+      if (document.visibilityState === 'visible' && Date.now() - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
+        void loadVisits()
+      }
     }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
@@ -266,37 +275,8 @@ function VisitsPage() {
     }
   }, [loadVisits])
 
-  const filteredVisits = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    return visits.filter((v) => {
-      if (!matchesVisitTab(v, activeTab)) return false
-      if (!q) return true
-      return (
-        String(v.patient_name || '').toLowerCase().includes(q) ||
-        String(v.mobile_number || '').toLowerCase().includes(q) ||
-        String(v.patient_id || '').toLowerCase().includes(q) ||
-        String(v.visit_id || v.id || '').toLowerCase().includes(q)
-      )
-    })
-  }, [visits, activeTab, searchQuery])
-  const sortedVisits = useMemo(() => {
-    const copy = [...filteredVisits]
-    copy.sort((a, b) => {
-      if (sortBy === 'time_newest') return visitTimeForSort(b) - visitTimeForSort(a)
-      if (sortBy === 'time_oldest') return visitTimeForSort(a) - visitTimeForSort(b)
-      if (sortBy === 'name_az') return (a.patient_name || '').localeCompare(b.patient_name || '')
-      if (sortBy === 'name_za') return (b.patient_name || '').localeCompare(a.patient_name || '')
-      return String(a.visit_id || a.id || '').localeCompare(String(b.visit_id || b.id || ''))
-    })
-    return copy
-  }, [filteredVisits, sortBy])
-
-  const filteredRows = useMemo(() => sortedVisits.map(visitRowFromApi), [sortedVisits])
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
-  const pagedRows = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return filteredRows.slice(start, start + PAGE_SIZE)
-  }, [filteredRows, currentPage])
+  const filteredRows = useMemo(() => visits.map(visitRowFromApi), [visits])
+  const totalPages = Math.max(1, Math.ceil(totalVisits / PAGE_SIZE))
 
   useEffect(() => {
     setCurrentPage(1)
@@ -447,7 +427,7 @@ function VisitsPage() {
                 Loading visits…
               </div>
             )}
-            {!loading && !listError && filteredRows.length === 0 && (
+            {!loading && !listError && totalVisits === 0 && (
               <div className="rounded-xl border border-dashed border-gray-300 bg-white px-5 py-12 text-center">
                 <p className="font-medium text-[#171d16]">No visits to show</p>
                 <p className="mt-1 text-sm text-gray-500">
@@ -456,7 +436,7 @@ function VisitsPage() {
               </div>
             )}
             {!loading &&
-              pagedRows.map((row, idx) => (
+              filteredRows.map((row, idx) => (
               <div
                 key={row.visitId || `visit-row-${idx}`}
                 className="group bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between hover:border-[#2563eb] transition-all cursor-pointer"
@@ -490,11 +470,11 @@ function VisitsPage() {
               </div>
             ))}
           </div>
-          {!loading && !listError && filteredRows.length > 0 && (
+          {!loading && !listError && totalVisits > 0 && (
             <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-sm text-gray-600">
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}-
-                {Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+                {Math.min(currentPage * PAGE_SIZE, totalVisits)} of {totalVisits}
               </p>
               <div className="flex items-center gap-2">
                 <button

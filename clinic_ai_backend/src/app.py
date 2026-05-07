@@ -22,6 +22,7 @@ from src.api.routers import (
 )
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
 from src.core.ai_factory import prompt_registry
+from src.middleware.performance_middleware import PerformanceMiddleware
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(PerformanceMiddleware)
     app.include_router(auth.router)
     app.include_router(health.router)
     app.include_router(patients.router)

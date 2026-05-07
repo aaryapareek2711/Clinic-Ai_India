@@ -13,8 +13,9 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 
 type CalendarViewMode = 'month' | 'week' | 'day'
-const AUTO_REFRESH_MS = 10000
+const AUTO_REFRESH_MS = 20_000
 const CALENDAR_APPOINTMENTS_CACHE_KEY_PREFIX = 'calendar:appointments'
+const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function escapeCsvCell(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -114,6 +115,8 @@ function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const isMountedRef = useRef(true)
+  const loadInFlightRef = useRef(false)
+  const lastLoadAtRef = useRef(0)
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
   const activeRange = useMemo(() => {
@@ -154,6 +157,9 @@ function CalendarPage() {
 
   const loadCalendarData = useCallback(async (showSpinner: boolean) => {
     if (!isMountedRef.current) return
+    if (loadInFlightRef.current) return
+    if (!showSpinner && document.visibilityState !== 'visible') return
+    loadInFlightRef.current = true
     if (showSpinner) {
       setLoading(true)
       setLoadError(null)
@@ -176,11 +182,15 @@ function CalendarPage() {
       if (!isMountedRef.current) return
       setLoadError(getApiErrorMessage(e))
       setLoading(false)
+    } finally {
+      lastLoadAtRef.current = Date.now()
+      loadInFlightRef.current = false
     }
   }, [activeRange.cacheKey, activeRange.fromDate, activeRange.toDate])
 
   useEffect(() => {
     let cancelled = false
+    isMountedRef.current = true
     try {
       const raw = sessionStorage.getItem(activeRange.cacheKey)
       if (raw) {
@@ -201,7 +211,10 @@ function CalendarPage() {
       if (!cancelled) void loadCalendarData(false)
     }, AUTO_REFRESH_MS)
     const onVisible = () => {
-      if (!cancelled && document.visibilityState === 'visible') void loadCalendarData(false)
+      const now = Date.now()
+      if (!cancelled && document.visibilityState === 'visible' && now - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
+        void loadCalendarData(false)
+      }
     }
     window.addEventListener('focus', onVisible)
     document.addEventListener('visibilitychange', onVisible)

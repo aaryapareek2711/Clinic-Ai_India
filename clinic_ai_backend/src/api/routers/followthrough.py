@@ -16,6 +16,23 @@ from src.core.config import get_settings
 from src.application.utils.patient_id_crypto import encode_patient_id
 
 router = APIRouter(prefix="/api/follow-through", tags=["Follow-through"])
+_INDEXES_READY = False
+
+
+def _ensure_followthrough_indexes() -> None:
+    global _INDEXES_READY
+    if _INDEXES_READY:
+        return
+    db = get_database()
+    try:
+        db.visits.create_index([("visit_id", 1)])
+        db.visits.create_index([("id", 1)])
+        db.visits.create_index([("appointment_id", 1)])
+        db.follow_through_lab_records.create_index([("record_id", 1)], unique=True)
+        db.follow_through_lab_records.create_index([("status", 1), ("updated_at", -1)])
+    except Exception:
+        return
+    _INDEXES_READY = True
 
 
 class CreateLabRecordRequest(BaseModel):
@@ -78,6 +95,7 @@ def _public_lab_record(doc: dict) -> dict:
 
 def _find_visit_for_follow_through(raw_visit_id: str) -> dict | None:
     """Resolve a visit from common ID variants entered by staff."""
+    _ensure_followthrough_indexes()
     db = get_database()
     normalized = str(raw_visit_id or "").strip()
     if not normalized:
@@ -91,13 +109,17 @@ def _find_visit_for_follow_through(raw_visit_id: str) -> dict | None:
     if direct:
         return direct
 
-    normalized_lower = normalized.lower()
-    for visit in db.visits.find({}):
-        for key in ("visit_id", "id", "appointment_id"):
-            candidate = str(visit.get(key) or "").strip()
-            if candidate and candidate.lower() == normalized_lower:
-                return visit
-    return None
+    escaped = re.escape(normalized)
+    case_insensitive = {"$regex": f"^{escaped}$", "$options": "i"}
+    return db.visits.find_one(
+        {
+            "$or": [
+                {"visit_id": case_insensitive},
+                {"id": case_insensitive},
+                {"appointment_id": case_insensitive},
+            ]
+        }
+    )
 
 
 def _ocr_images_with_openai(image_payloads: list[tuple[bytes, str]]) -> str:
@@ -227,13 +249,20 @@ async def create_lab_record_with_images(
 
 
 @router.get("/lab-queue")
-def list_lab_queue(status: str | None = Query(default=None)) -> dict:
+def list_lab_queue(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    _ensure_followthrough_indexes()
     db = get_database()
     query: dict = {}
     if status:
         query["status"] = status
-    records = list(db.follow_through_lab_records.find(query, {"_id": 0}))
-    records.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or datetime.min, reverse=True)
+    records = list(
+        db.follow_through_lab_records.find(query, {"_id": 0})
+        .sort([("updated_at", -1), ("created_at", -1)])
+        .limit(limit)
+    )
     return {"items": [_public_lab_record(item) for item in records]}
 
 

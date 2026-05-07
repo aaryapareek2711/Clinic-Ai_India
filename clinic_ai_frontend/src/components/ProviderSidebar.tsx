@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { clearAuthSession, getStoredAuthProfile } from '../lib/authSession'
-import { doctorNameLabel } from '../lib/doctorDisplayName'
-import { fetchMyProfile } from '../services/profileApi'
+import { useProviderIdentity } from '../hooks/useProviderIdentity'
 
 const ACTIVE =
   'bg-[#16a34a] text-white rounded-lg mx-2 flex items-center px-4 py-2 w-[calc(100%-1rem)]'
@@ -26,29 +25,11 @@ export default function ProviderSidebar() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const n = navState(pathname)
-  const [sidebarName, setSidebarName] = useState<string>(
-    doctorNameLabel(seed.fullName || seed.username || ''),
+  const provider = useProviderIdentity()
+  const sidebarName = useMemo(
+    () => provider.displayName || seed.fullName || seed.username || '',
+    [provider.displayName, seed.fullName, seed.username],
   )
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const me = await fetchMyProfile()
-        if (cancelled) return
-        const raw = me.full_name?.trim() || me.username?.trim() || ''
-        setSidebarName(doctorNameLabel(raw))
-      } catch {
-        if (!cancelled) {
-          const fallback = getStoredAuthProfile()
-          setSidebarName(doctorNameLabel(fallback.fullName || fallback.username || ''))
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   function handleLogout(): void {
     clearAuthSession()
