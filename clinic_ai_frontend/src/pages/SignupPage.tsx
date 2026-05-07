@@ -6,6 +6,14 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { identityForRegister } from '../lib/registerIdentity'
 import { persistAuthSession, registerAccount } from '../services/authApi'
 
+const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
+function composeTime12(hour: string, minute: string, period: string): string {
+  if (!hour || !minute || !period) return ''
+  return `${Number(hour)}:${minute} ${period}`
+}
+
 function SignupPage() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
@@ -14,6 +22,19 @@ function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [specialty, setSpecialty] = useState('general')
+  const [morningStartHour, setMorningStartHour] = useState('')
+  const [morningStartMinute, setMorningStartMinute] = useState('')
+  const [morningStartPeriod, setMorningStartPeriod] = useState('')
+  const [morningEndHour, setMorningEndHour] = useState('')
+  const [morningEndMinute, setMorningEndMinute] = useState('')
+  const [morningEndPeriod, setMorningEndPeriod] = useState('')
+  const [eveningEnabled, setEveningEnabled] = useState(false)
+  const [eveningStartHour, setEveningStartHour] = useState('')
+  const [eveningStartMinute, setEveningStartMinute] = useState('')
+  const [eveningStartPeriod, setEveningStartPeriod] = useState('')
+  const [eveningEndHour, setEveningEndHour] = useState('')
+  const [eveningEndMinute, setEveningEndMinute] = useState('')
+  const [eveningEndPeriod, setEveningEndPeriod] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -55,6 +76,18 @@ function SignupPage() {
             onSubmit={(e) => {
               e.preventDefault()
               setError(null)
+              const morningStart = composeTime12(morningStartHour, morningStartMinute, morningStartPeriod)
+              const morningEnd = composeTime12(morningEndHour, morningEndMinute, morningEndPeriod)
+              const eveningStart = composeTime12(eveningStartHour, eveningStartMinute, eveningStartPeriod)
+              const eveningEnd = composeTime12(eveningEndHour, eveningEndMinute, eveningEndPeriod)
+              if (!morningStart || !morningEnd) {
+                setError('Please select complete OPD morning start and end time.')
+                return
+              }
+              if (eveningEnabled && (!eveningStart || !eveningEnd)) {
+                setError('Please select complete OPD evening start and end time.')
+                return
+              }
               if (password.length < 8) {
                 setError('Password must be at least 8 characters (same as server sign up).')
                 return
@@ -75,6 +108,11 @@ function SignupPage() {
                     full_name: fullName.trim(),
                     phone,
                     role,
+                    opd_morning_start: morningStart,
+                    opd_morning_end: morningEnd,
+                    opd_evening_enabled: eveningEnabled,
+                    opd_evening_start: eveningEnabled ? eveningStart : null,
+                    opd_evening_end: eveningEnabled ? eveningEnd : null,
                   })
                   persistAuthSession(res)
                   navigate('/dashboard', { replace: true })
@@ -174,6 +212,169 @@ function SignupPage() {
                     <option value="derm">Dermatologist</option>
                   </select>
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 pointer-events-none">stethoscope</span>
+                </div>
+              </div>
+
+              <div className="space-y-1 col-span-full">
+                <label className="text-sm font-semibold text-on-surface-variant">OPD Hours</label>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Morning Shift</p>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningStartHour(e.target.value)}
+                        value={morningStartHour}
+                      >
+                        <option value="">HH</option>
+                        {HOUR_OPTIONS_12H.map((opt) => (
+                          <option key={`msh-${opt}`} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningStartMinute(e.target.value)}
+                        value={morningStartMinute}
+                      >
+                        <option value="">MM</option>
+                        {MINUTE_OPTIONS.map((opt) => (
+                          <option key={`msm-${opt}`} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningStartPeriod(e.target.value)}
+                        value={morningStartPeriod}
+                      >
+                        <option value="">AM/PM</option>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                      <span className="px-1 text-slate-500">to</span>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningEndHour(e.target.value)}
+                        value={morningEndHour}
+                      >
+                        <option value="">HH</option>
+                        {HOUR_OPTIONS_12H.map((opt) => (
+                          <option key={`meh-${opt}`} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningEndMinute(e.target.value)}
+                        value={morningEndMinute}
+                      >
+                        <option value="">MM</option>
+                        {MINUTE_OPTIONS.map((opt) => (
+                          <option key={`mem-${opt}`} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        onChange={(e) => setMorningEndPeriod(e.target.value)}
+                        value={morningEndPeriod}
+                      >
+                        <option value="">AM/PM</option>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      checked={eveningEnabled}
+                      className="h-4 w-4"
+                      onChange={(e) => setEveningEnabled(e.target.checked)}
+                      type="checkbox"
+                    />
+                    Evening shift available
+                  </label>
+
+                  {eveningEnabled && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Evening Shift</p>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningStartHour(e.target.value)}
+                          value={eveningStartHour}
+                        >
+                          <option value="">HH</option>
+                          {HOUR_OPTIONS_12H.map((opt) => (
+                            <option key={`esh-${opt}`} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningStartMinute(e.target.value)}
+                          value={eveningStartMinute}
+                        >
+                          <option value="">MM</option>
+                          {MINUTE_OPTIONS.map((opt) => (
+                            <option key={`esm-${opt}`} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningStartPeriod(e.target.value)}
+                          value={eveningStartPeriod}
+                        >
+                          <option value="">AM/PM</option>
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                        <span className="px-1 text-slate-500">to</span>
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningEndHour(e.target.value)}
+                          value={eveningEndHour}
+                        >
+                          <option value="">HH</option>
+                          {HOUR_OPTIONS_12H.map((opt) => (
+                            <option key={`eeh-${opt}`} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningEndMinute(e.target.value)}
+                          value={eveningEndMinute}
+                        >
+                          <option value="">MM</option>
+                          {MINUTE_OPTIONS.map((opt) => (
+                            <option key={`eem-${opt}`} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          onChange={(e) => setEveningEndPeriod(e.target.value)}
+                          value={eveningEndPeriod}
+                        >
+                          <option value="">AM/PM</option>
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
