@@ -4,13 +4,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
-  fetchIntakeSession,
-  fetchLatestClinicalNote,
   fetchLatestPostVisitSummary,
   fetchLatestVitalsForVisit,
-  fetchPreVisitSummary,
   fetchTranscriptionStatus,
   fetchVisitDetail,
+  fetchVisitWorkspaceSummary,
   fetchVisitTranscriptionDialogue,
   translateDisplayPayload,
   structureVisitDialogue,
@@ -374,29 +372,12 @@ export default function VisitDetailPage() {
     setError(null)
     setSecondaryWarning(null)
     try {
-      const v = await fetchVisitDetail(visitId)
+      const summary = await fetchVisitWorkspaceSummary(visitId)
+      const v = summary.visit
       setVisit(v)
-      const pid = v.patient_id
-      const walkIn = isWalkInVisitType(v.visit_type)
-
-      const intakePromise = walkIn
-        ? Promise.resolve(null)
-        : fetchIntakeSession(visitId).catch(() => null)
-      const prePromise = walkIn
-        ? Promise.resolve(null)
-        : fetchPreVisitSummary(pid, visitId).catch((e) => {
-            setSecondaryWarning(getApiErrorMessage(e))
-            return null
-          })
-
-      const [intakeRes, preRes, noteRes] = await Promise.all([
-        intakePromise,
-        prePromise,
-        fetchLatestClinicalNote(pid, visitId).catch(() => null),
-      ])
-      setIntake(intakeRes)
-      setPreVisit(preRes)
-      setClinicalNote(noteRes)
+      setIntake(summary.intake_session ?? null)
+      setPreVisit(summary.pre_visit_summary ?? null)
+      setClinicalNote(summary.clinical_note ?? null)
       setRecapPhoneDraft(digitsOnlyPhone(v.patient?.phone_number ?? ''))
     } catch (e) {
       setError(getApiErrorMessage(e))

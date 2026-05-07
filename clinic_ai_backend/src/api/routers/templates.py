@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
+from src.core.ttl_cache import TTLCache
 from src.api.schemas.templates import (
     CreateTemplateRequest,
     ListTemplatesResponse,
@@ -19,6 +20,7 @@ from src.api.schemas.templates import (
 )
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
+_templates_cache = TTLCache(max_items=256)
 
 
 def _utc_now() -> datetime:
@@ -73,6 +75,7 @@ def create_template(body: CreateTemplateRequest) -> TemplateResponse:
     if not doc["name"]:
         raise HTTPException(status_code=422, detail="Template name is required")
     db.templates.insert_one(doc)
+    _templates_cache.delete_prefix("templates:list:")
     return TemplateResponse(**_serialize(doc))
 
 
@@ -86,6 +89,10 @@ def list_templates(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
 ) -> ListTemplatesResponse:
+    cache_key = f"templates:list:{type}:{category}:{specialty}:{search}:{is_favorite}:{page}:{page_size}"
+    cached = _templates_cache.get(cache_key)
+    if cached is not None:
+        return cached
     db = get_database()
     query: dict[str, Any] = {"is_active": {"$ne": False}}
     if type:
@@ -108,12 +115,14 @@ def list_templates(
     cursor = db.templates.find(query).sort("updated_at", -1).skip(skip).limit(page_size)
     items = [_serialize(dict(item)) for item in cursor]
     total = db.templates.count_documents(query)
-    return ListTemplatesResponse(
+    res = ListTemplatesResponse(
         items=[TemplateResponse(**item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
     )
+    _templates_cache.set(cache_key, res, ttl_sec=30.0)
+    return res
 
 
 @router.get("/{template_id}", response_model=TemplateResponse)
@@ -135,6 +144,7 @@ def update_template(template_id: str, body: UpdateTemplateRequest) -> TemplateRe
     patch["updated_at"] = _utc_now()
     db.templates.update_one({"id": template_id}, {"$set": patch})
     updated = db.templates.find_one({"id": template_id})
+    _templates_cache.delete_prefix("templates:list:")
     return TemplateResponse(**_serialize(dict(updated or {})))
 
 
@@ -144,6 +154,7 @@ def delete_template(template_id: str) -> OkResponse:
     result = db.templates.update_one({"id": template_id}, {"$set": {"is_active": False, "updated_at": _utc_now()}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Template not found")
+    _templates_cache.delete_prefix("templates:list:")
     return OkResponse(ok=True)
 
 
@@ -167,6 +178,7 @@ def record_template_usage(template_id: str, body: RecordTemplateUsageRequest | N
                 "created_at": now,
             }
         )
+    _templates_cache.delete_prefix("templates:list:")
     return OkResponse(ok=True)
 
 
@@ -178,4 +190,5 @@ def toggle_template_favorite(template_id: str) -> ToggleTemplateFavoriteResponse
         raise HTTPException(status_code=404, detail="Template not found")
     next_value = not bool(doc.get("is_favorite"))
     db.templates.update_one({"id": template_id}, {"$set": {"is_favorite": next_value, "updated_at": _utc_now()}})
+    _templates_cache.delete_prefix("templates:list:")
     return ToggleTemplateFavoriteResponse(id=template_id, is_favorite=next_value)

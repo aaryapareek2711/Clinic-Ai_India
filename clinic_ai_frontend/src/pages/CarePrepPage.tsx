@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { DEFAULT_PROVIDER_ID, fetchProviderVisits } from '../services/visitWorkflowApi'
-import type { ProviderVisitListItem } from '../services/visitWorkflowApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderCarePrep } from '../services/visitWorkflowApi'
+import type { CarePrepItem } from '../services/visitWorkflowApi'
 
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -62,13 +63,13 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
-function mapVisitAndIntake(visit: ProviderVisitListItem): QueueRow {
-  const visitId = visit.visit_id || visit.id
+function mapVisitAndIntake(visit: CarePrepItem): QueueRow {
+  const visitId = visit.visit_id
   const patientId = visit.patient_id || ''
   const name = toDisplayName(visit.patient_name)
   const qaLen = Number(visit.intake_question_count ?? 0)
   const st = String(visit.intake_status || 'not_started').toLowerCase()
-  const touchedAt = visit.intake_last_updated_at || visit.updated_at || visit.created_at
+  const touchedAt = visit.touched_at
 
   let statusKind: 'complete' | 'progress' = 'progress'
   let progressPct = Math.min(95, 10 + qaLen * 12)
@@ -114,12 +115,6 @@ function mapVisitAndIntake(visit: ProviderVisitListItem): QueueRow {
   }
 }
 
-function applyQueueFilter(rows: QueueRow[], filter: QueueFilter): QueueRow[] {
-  if (filter === 'ready') return rows.filter((p) => p.statusKind === 'complete')
-  if (filter === 'in_progress') return rows.filter((p) => p.statusKind === 'progress')
-  return rows
-}
-
 function StatusCell({ row }: { row: QueueRow }) {
   if (row.statusKind === 'complete') {
     return (
@@ -150,53 +145,31 @@ export default function CarePrepPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<CarePrepSort>('time_newest')
   const [currentPage, setCurrentPage] = useState(1)
-  const [rows, setRows] = useState<QueueRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        if (!cancelled) {
-          setLoading(true)
-          setError(null)
-        }
-        const visits = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
-        const candidate = [...visits]
-          .filter((v) => String(v.visit_id || v.id || '').trim().length > 0)
-          .sort((a, b) => {
-            const ta = new Date(a.scheduled_start || a.created_at || '').getTime()
-            const tb = new Date(b.scheduled_start || b.created_at || '').getTime()
-            return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta)
-          })
-
-        const mapped = candidate.map((v) => mapVisitAndIntake(v))
-        if (!cancelled) setRows(mapped)
-      } catch (e) {
-        if (!cancelled) setError(getApiErrorMessage(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data, isFetching, error } = useQuery({
+    queryKey: [
+      'careprep',
+      'rows',
+      DEFAULT_PROVIDER_ID,
+      { page: currentPage, pageSize: PAGE_SIZE, filter: queueFilter, search: searchQuery.trim() || undefined },
+    ],
+    queryFn: () =>
+      fetchProviderCarePrep(DEFAULT_PROVIDER_ID, {
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        filter: queueFilter,
+        search: searchQuery.trim() || undefined,
+      }),
+    staleTime: 10_000,
+  })
+  const loading = isFetching && !data
+  const errorMessage = error ? getApiErrorMessage(error) : null
+  const rows = useMemo(() => {
+    const visits: CarePrepItem[] = data?.items ?? []
+    return visits.map((v) => mapVisitAndIntake(v))
+  }, [data])
 
   const visiblePatients = useMemo(() => {
-    const base = applyQueueFilter(rows, queueFilter)
-    const q = searchQuery.trim().toLowerCase()
-    const filtered = base.filter((r) => {
-      if (!q) return true
-      return (
-        r.patientName.toLowerCase().includes(q) ||
-        r.patientId.toLowerCase().includes(q) ||
-        r.mobileNumber.toLowerCase().includes(q) ||
-        r.visitId.toLowerCase().includes(q)
-      )
-    })
-    const sorted = [...filtered]
+    const sorted = [...rows]
     sorted.sort((a, b) => {
       if (sortBy === 'time_newest') return a.submittedMinutesAgo - b.submittedMinutesAgo
       if (sortBy === 'time_oldest') return b.submittedMinutesAgo - a.submittedMinutesAgo
@@ -205,20 +178,9 @@ export default function CarePrepPage() {
       return a.visitId.localeCompare(b.visitId)
     })
     return sorted
-  }, [rows, queueFilter, searchQuery, sortBy])
-  const totalPages = Math.max(1, Math.ceil(visiblePatients.length / PAGE_SIZE))
-  const pagedPatients = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return visiblePatients.slice(start, start + PAGE_SIZE)
-  }, [visiblePatients, currentPage])
-
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [queueFilter, searchQuery, sortBy])
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages)
-  }, [currentPage, totalPages])
+  }, [rows, sortBy])
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
+  const pagedPatients = visiblePatients
 
   function goToIntake(vid: string): void {
     navigate(`/careprep/intake/${encodeURIComponent(vid)}`)
@@ -253,7 +215,11 @@ export default function CarePrepPage() {
         <div className="flex-1 p-8">
           <h2 className="mb-6 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep</h2>
 
-          {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+          {errorMessage && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {errorMessage}
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

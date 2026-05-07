@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { getApiErrorMessage } from '../lib/apiClient'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -212,60 +213,46 @@ function VisitsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<VisitSort>('time_newest')
   const [currentPage, setCurrentPage] = useState(1)
-  const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
-  const [totalVisits, setTotalVisits] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [listError, setListError] = useState<string | null>(null)
-  const loadInFlightRef = useRef(false)
-  const lastLoadAtRef = useRef(0)
-
-  const loadVisits = useCallback(async (opts?: { initial?: boolean }) => {
-    const initial = opts?.initial === true
-    if (loadInFlightRef.current) return
-    if (!initial && document.visibilityState !== 'visible') return
-    loadInFlightRef.current = true
-    try {
-      if (initial) setLoading(true)
-      setListError(null)
-      const data = await fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
+  const lastFocusRefetchAtRef = useRef(0)
+  const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: [
+      'visits',
+      'provider',
+      DEFAULT_PROVIDER_ID,
+      'paged',
+      { page: currentPage, pageSize: PAGE_SIZE, tab: activeTab, search, sort: sortBy },
+    ],
+    queryFn: () =>
+      fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
         page: currentPage,
         pageSize: PAGE_SIZE,
         statusFilter: statusFilterForTab(activeTab),
-        search: searchQuery.trim() || undefined,
+        search,
         sort: sortBy,
-      })
-      setVisits(data.items)
-      setTotalVisits(data.total)
-    } catch (e) {
-      setListError(getApiErrorMessage(e))
-    } finally {
-      lastLoadAtRef.current = Date.now()
-      loadInFlightRef.current = false
-      if (initial) setLoading(false)
-    }
-  }, [activeTab, currentPage, searchQuery, sortBy])
-
-  useEffect(() => {
-    void loadVisits({ initial: true })
-  }, [loadVisits])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadVisits()
-    }, AUTO_REFRESH_MS)
-    return () => window.clearInterval(timer)
-  }, [loadVisits])
+      }),
+    placeholderData: keepPreviousData,
+    refetchInterval: AUTO_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  })
+  const visits: ProviderVisitListItem[] = data?.items ?? []
+  const totalVisits = data?.total ?? 0
+  const loading = isFetching && !data
+  const listError = error ? getApiErrorMessage(error) : null
 
   useEffect(() => {
     const onFocus = () => {
-      if (Date.now() - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
-        void loadVisits()
-      }
+      const now = Date.now()
+      if (now - lastFocusRefetchAtRef.current < MIN_FOCUS_REFRESH_GAP_MS) return
+      lastFocusRefetchAtRef.current = now
+      void refetch()
     }
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastLoadAtRef.current >= MIN_FOCUS_REFRESH_GAP_MS) {
-        void loadVisits()
-      }
+      const now = Date.now()
+      if (document.visibilityState !== 'visible') return
+      if (now - lastFocusRefetchAtRef.current < MIN_FOCUS_REFRESH_GAP_MS) return
+      lastFocusRefetchAtRef.current = now
+      void refetch()
     }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
@@ -273,7 +260,7 @@ function VisitsPage() {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [loadVisits])
+  }, [refetch])
 
   const filteredRows = useMemo(() => visits.map(visitRowFromApi), [visits])
   const totalPages = Math.max(1, Math.ceil(totalVisits / PAGE_SIZE))
