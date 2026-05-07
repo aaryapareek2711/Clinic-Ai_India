@@ -56,6 +56,8 @@ class PromptVersionRegistry:
             self.db.prompt_versions.create_index([("scenario", 1)], unique=True)
             self.db.prompt_logs.create_index([("visit_id", 1), ("phase", 1), ("created_at", -1)])
             self.db.intake_logs.create_index([("visit_id", 1), ("patient_id", 1)], unique=True)
+            self.db.intake_prompt_logs.create_index([("visit_id", 1)], unique=True)
+            self.db.intake_prompt_logs.create_index([("patient_id", 1), ("updated_at", -1)])
         except Exception:
             logger.exception("prompt_registry_index_init_failed")
         for scenario in PROMPT_SCENARIOS:

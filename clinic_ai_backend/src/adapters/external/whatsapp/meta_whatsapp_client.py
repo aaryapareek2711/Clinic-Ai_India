@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from urllib import request
 from urllib.error import HTTPError
 
 from src.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class MetaWhatsAppClient:
@@ -13,28 +16,32 @@ class MetaWhatsAppClient:
 
     def send_typing_indicator(self, to_number: str, reply_to_message_id: str | None = None) -> None:
         """Show WhatsApp typing indicator for a recipient (best effort)."""
+        # WhatsApp Cloud typing indicator works with inbound message_id.
+        # Prefer canonical status payload first.
         payload: dict = {
+            "messaging_product": "whatsapp",
+            "status": "typing",
+            "message_id": str(reply_to_message_id or "").strip(),
+        }
+        if not payload["message_id"]:
+            # Typing indicator generally requires an inbound message context.
+            return
+        try:
+            self._post_message(payload)
+            return
+        except Exception:
+            logger.warning("whatsapp_typing_status_payload_failed")
+
+        # Fallback for API variants that accept typing_indicator payloads.
+        fallback_payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_number,
             "type": "typing_indicator",
             "typing_indicator": {"type": "text"},
+            "context": {"message_id": payload["message_id"]},
         }
-        if reply_to_message_id:
-            payload["context"] = {"message_id": reply_to_message_id}
-        try:
-            self._post_message(payload)
-        except Exception:
-            # Fallback for API variants that reject `type: typing_indicator`.
-            fallback_payload = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": to_number,
-                "typing_indicator": {"type": "text"},
-            }
-            if reply_to_message_id:
-                fallback_payload["context"] = {"message_id": reply_to_message_id}
-            self._post_message(fallback_payload)
+        self._post_message(fallback_payload)
 
     def send_text(self, to_number: str, message: str) -> None:
         """Send a text message via Meta WhatsApp Cloud API."""
