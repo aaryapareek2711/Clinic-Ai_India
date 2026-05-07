@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -16,38 +15,6 @@ type CalendarViewMode = 'month' | 'week' | 'day'
 const AUTO_REFRESH_MS = 20_000
 const CALENDAR_APPOINTMENTS_CACHE_KEY_PREFIX = 'calendar:appointments'
 const MIN_FOCUS_REFRESH_GAP_MS = 8_000
-
-function escapeCsvCell(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
-
-function downloadAppointmentsTemplateCsv(patients: PatientSummary[]): void {
-  const header = ['patient_name', 'age', 'mobile_number', 'gender', 'appointment_date', 'appointment_time']
-  const dataRows = patients.length
-    ? patients.map((p) => [
-        (p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Patient').trim(),
-        p.age != null ? String(p.age) : '',
-        (p.phone_number || '').trim(),
-        (p.gender || '').trim(),
-        '',
-        '',
-      ])
-    : [['Jane Doe', '35', '9876543210', 'female', '2026-05-15', '10:30']]
-  const csvLines = [header.map(escapeCsvCell).join(','), ...dataRows.map((r) => r.map(escapeCsvCell).join(','))]
-  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'medgenie-appointments-import-template.csv'
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
 
 function cloneMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1)
@@ -71,6 +38,13 @@ function formatShortTime(iso: string): string {
   const t = new Date(iso)
   if (Number.isNaN(t.getTime())) return ''
   return t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
+function canEditAppointment(scheduledIso: string | null | undefined): boolean {
+  if (!scheduledIso) return false
+  const t = new Date(scheduledIso).getTime()
+  if (Number.isNaN(t)) return false
+  return t >= Date.now()
 }
 
 function toDisplayName(value: string | null | undefined): string {
@@ -99,14 +73,10 @@ function CalendarPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [isImportCsvOpen, setIsImportCsvOpen] = useState(false)
-  const importCsvRef = useRef<HTMLDivElement>(null)
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
   const [focusDate, setFocusDate] = useState(() => new Date())
-  const [patients, setPatients] = useState<PatientSummary[]>([])
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
-  const [patientsLoading, setPatientsLoading] = useState(false)
   const [rescheduleTarget, setRescheduleTarget] = useState<ProviderUpcomingAppointment | null>(null)
   const [rescheduleDate, setRescheduleDate] = useState('')
   const [rescheduleTime, setRescheduleTime] = useState('')
@@ -128,32 +98,6 @@ function CalendarPage() {
       cacheKey: `${CALENDAR_APPOINTMENTS_CACHE_KEY_PREFIX}:${year}-${String(month + 1).padStart(2, '0')}`,
     }
   }, [month, year])
-
-  const ensurePatientsLoaded = useCallback(async () => {
-    if (patientsLoading || patients.length > 0) return
-    setPatientsLoading(true)
-    try {
-      const list = await fetchPatients()
-      if (!isMountedRef.current) return
-      setPatients(list)
-    } catch {
-      // Patients are used only for CSV template convenience.
-    } finally {
-      if (isMountedRef.current) setPatientsLoading(false)
-    }
-  }, [patients.length, patientsLoading])
-
-  useEffect(() => {
-    if (!isImportCsvOpen) return
-    void ensurePatientsLoaded()
-    function handlePointerDown(ev: MouseEvent) {
-      if (importCsvRef.current && !importCsvRef.current.contains(ev.target as Node)) {
-        setIsImportCsvOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [ensurePatientsLoaded, isImportCsvOpen])
 
   const loadCalendarData = useCallback(async (showSpinner: boolean) => {
     if (!isMountedRef.current) return
@@ -330,38 +274,6 @@ function CalendarPage() {
             <h2 className="text-[28px] font-bold">Calendar</h2>
           </div>
           <div className="flex flex-wrap gap-3">
-            <div className="relative" ref={importCsvRef}>
-              <button
-                className={`flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white ${isImportCsvOpen ? 'bg-[#15803d]' : 'bg-[#16a34a] hover:bg-[#15803d]'}`}
-                onClick={() => setIsImportCsvOpen((o) => !o)}
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[1.125rem]">upload_file</span>
-                Import CSV
-                <span className="material-symbols-outlined text-[1.125rem]">{isImportCsvOpen ? 'expand_less' : 'expand_more'}</span>
-              </button>
-              {isImportCsvOpen ? (
-                <div
-                  className="absolute left-0 top-[calc(100%+0.5rem)] z-50 w-[min(100vw-2rem,20rem)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg sm:right-0 sm:left-auto"
-                  role="dialog"
-                  aria-label="Import CSV options"
-                >
-                  <p className="mb-2 text-sm text-[#3e4a3d]">CSV columns: patient_name, age, mobile_number, gender, appointment_date, appointment_time</p>
-                  <button
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1e293b] disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => {
-                      downloadAppointmentsTemplateCsv(patients)
-                      setIsImportCsvOpen(false)
-                    }}
-                    disabled={patientsLoading}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[1.125rem]">download</span>
-                    {patientsLoading ? 'Preparing template…' : 'Download CSV template'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
             <button
               className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-5 py-2.5 font-medium text-white"
               onClick={() => navigate('/start-visit')}
@@ -564,13 +476,15 @@ function CalendarPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <p className="rounded-md bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{formatShortTime(a.scheduled_start)}</p>
-                        <button
-                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
-                          onClick={() => openRescheduleModal(a)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
+                        {canEditAppointment(a.scheduled_start) && (
+                          <button
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
+                            onClick={() => openRescheduleModal(a)}
+                            type="button"
+                          >
+                            Edit Appointment
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -610,13 +524,15 @@ function CalendarPage() {
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
                           {(a.status || '').replace(/_/g, ' ') || 'Scheduled'}
                         </span>
-                        <button
-                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
-                          onClick={() => openRescheduleModal(a)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
+                        {canEditAppointment(a.scheduled_start) && (
+                          <button
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
+                            onClick={() => openRescheduleModal(a)}
+                            type="button"
+                          >
+                            Edit Appointment
+                          </button>
+                        )}
                       </div>
                     </div>
                   )

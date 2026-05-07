@@ -276,7 +276,7 @@ function ProviderDashboardPage() {
             </div>
           </section>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-start gap-2">
             <button
               className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
                 upcomingDayFilter === 'today' ? 'bg-[#16a34a] text-white' : 'border border-gray-200 bg-white text-[#171d16]'
