@@ -67,6 +67,12 @@ function compose12HourTime(parts: { hour: string; minute: string; period: string
   return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
 }
 
+function composePartialTimeForApi(parts: { hour: string; minute: string; period: string }): string {
+  const composed = compose12HourTime(parts)
+  if (!composed) return ''
+  return to24HourTimeForApi(composed)
+}
+
 const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
@@ -132,8 +138,9 @@ export default function VisitClinicalNotePanel({
   const [draftDoctorNotes, setDraftDoctorNotes] = useState('')
   const [draftChief, setDraftChief] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
-  const [followUpTime, setFollowUpTime] = useState('')
-  const followUpTimeParts = useMemo(() => parse12HourTimeParts(followUpTime), [followUpTime])
+  const [followUpHour, setFollowUpHour] = useState('')
+  const [followUpMinute, setFollowUpMinute] = useState('')
+  const [followUpPeriod, setFollowUpPeriod] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
@@ -150,7 +157,10 @@ export default function VisitClinicalNotePanel({
   useEffect(() => {
     // Keep follow-up draft in sync with latest persisted note.
     setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
-    setFollowUpTime(to12HourTimeDisplay(payload?.follow_up_time?.toString().trim() || ''))
+    const parts = parse12HourTimeParts(payload?.follow_up_time?.toString().trim() || '')
+    setFollowUpHour(parts.hour)
+    setFollowUpMinute(parts.minute)
+    setFollowUpPeriod(parts.period)
   }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
 
   const displayPayload = useMemo((): IndiaClinicalNotePayload | null => {
@@ -172,7 +182,11 @@ export default function VisitClinicalNotePanel({
     setGenerating(true)
     setMessage(null)
     try {
-      const followUpTimeApi = to24HourTimeForApi(followUpTime.trim())
+      const followUpTimeApi = composePartialTimeForApi({
+        hour: followUpHour,
+        minute: followUpMinute,
+        period: followUpPeriod,
+      })
       const res = await generateClinicalNote(patientId, visitId, {
         follow_up_date: followUpDate.trim() || undefined,
         follow_up_time: followUpTimeApi || undefined,
@@ -186,7 +200,17 @@ export default function VisitClinicalNotePanel({
     } finally {
       setGenerating(false)
     }
-  }, [patientId, visitId, generating, followUpDate, followUpTime, selectedTemplate?.id, onNoteUpdated])
+  }, [
+    patientId,
+    visitId,
+    generating,
+    followUpDate,
+    followUpHour,
+    followUpMinute,
+    followUpPeriod,
+    selectedTemplate?.id,
+    onNoteUpdated,
+  ])
 
   const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
@@ -277,16 +301,8 @@ export default function VisitClinicalNotePanel({
             <div className="flex items-center gap-2">
               <select
                 className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) =>
-                  setFollowUpTime(
-                    compose12HourTime({
-                      hour: e.target.value,
-                      minute: followUpTimeParts.minute,
-                      period: followUpTimeParts.period,
-                    }),
-                  )
-                }
-                value={followUpTimeParts.hour}
+                onChange={(e) => setFollowUpHour(e.target.value)}
+                value={followUpHour}
               >
                 <option value="">HH</option>
                 {HOUR_OPTIONS_12H.map((opt) => (
@@ -297,16 +313,8 @@ export default function VisitClinicalNotePanel({
               </select>
               <select
                 className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) =>
-                  setFollowUpTime(
-                    compose12HourTime({
-                      hour: followUpTimeParts.hour,
-                      minute: e.target.value,
-                      period: followUpTimeParts.period,
-                    }),
-                  )
-                }
-                value={followUpTimeParts.minute}
+                onChange={(e) => setFollowUpMinute(e.target.value)}
+                value={followUpMinute}
               >
                 <option value="">MM</option>
                 {MINUTE_OPTIONS.map((opt) => (
@@ -317,16 +325,8 @@ export default function VisitClinicalNotePanel({
               </select>
               <select
                 className="w-24 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) =>
-                  setFollowUpTime(
-                    compose12HourTime({
-                      hour: followUpTimeParts.hour,
-                      minute: followUpTimeParts.minute,
-                      period: e.target.value,
-                    }),
-                  )
-                }
-                value={followUpTimeParts.period}
+                onChange={(e) => setFollowUpPeriod(e.target.value)}
+                value={followUpPeriod}
               >
                 <option value="">AM/PM</option>
                 <option value="AM">AM</option>
