@@ -373,7 +373,7 @@ function CalendarPage() {
                     <div
                       key={i}
                       className={`border-b border-r border-gray-100 px-3 py-2 transition-colors [&:nth-child(7n)]:border-r-0 ${
-                        isSelectedDay ? 'bg-[#eff6ea]' : 'hover:bg-[#eff6ea]'
+                        isSelectedDay ? 'bg-[#eff6ea]' : 'hover:bg-transparent'
                       } ${!isBlank ? 'cursor-pointer' : ''}`}
                       onClick={() => {
                         if (isBlank) return
@@ -394,7 +394,9 @@ function CalendarPage() {
                       {!isBlank && (
                         <>
                           <button
-                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md text-sm font-medium ${isToday ? 'bg-[#16a34a] px-1.5 py-0.5 text-white' : ''}`}
+                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
+                              isToday ? 'bg-[#16a34a] text-white hover:bg-[#15803d]' : 'text-[#171d16] hover:bg-[#eff6ea]'
+                            }`}
                             onClick={(e) => {
                               e.stopPropagation()
                               setSelectedDayKey(dayKey)
@@ -405,7 +407,7 @@ function CalendarPage() {
                           >
                             {dayNum}
                           </button>
-                          <div className="mt-1 space-y-1">
+                          <div className="mt-1 space-y-1 hover:bg-[#eff6ea]">
                             {dayAppts.slice(0, 3).map((a) => (
                               <button
                                 key={a.visit_id}
@@ -413,7 +415,7 @@ function CalendarPage() {
                                 className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-[10px] ${
                                   selectedVisitId === a.visit_id
                                     ? 'border-blue-600 bg-blue-600 text-white'
-                                    : 'border-blue-200 bg-blue-100 text-blue-700'
+                                    : 'border-blue-200 bg-blue-100 text-blue-700 hover:border-blue-300 hover:bg-blue-200'
                                 }`}
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -447,9 +449,11 @@ function CalendarPage() {
                   const isToday =
                     new Date().getFullYear() === d.getFullYear() && new Date().getMonth() === d.getMonth() && new Date().getDate() === d.getDate()
                   return (
-                    <div key={d.toISOString()} className="border-b border-r border-gray-100 p-2 transition-colors hover:bg-[#eff6ea] last:border-r-0">
+                    <div key={d.toISOString()} className="border-b border-r border-gray-100 p-2 transition-colors last:border-r-0">
                       <button
-                        className={`text-sm font-medium ${isToday ? 'rounded-md bg-[#2563eb] px-1.5 py-0.5 text-white' : ''}`}
+                        className={`rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
+                          isToday ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]' : 'text-[#171d16] hover:bg-[#eff6ea]'
+                        }`}
                         onClick={() => openDayAppointments(new Date(d))}
                         type="button"
                       >
@@ -529,9 +533,9 @@ function CalendarPage() {
                   const mon = Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { month: 'short' })
                   const day = Number.isNaN(dt.getTime()) ? '—' : String(dt.getDate())
                   return (
-                    <div key={a.visit_id} className="w-full p-5 text-left transition-colors hover:bg-[#eff6ea]">
+                    <div key={a.visit_id} className="w-full p-5 text-left">
                       <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-blue-50 font-bold text-blue-600">
+                        <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-blue-50 font-bold text-blue-600 transition-colors hover:bg-blue-100">
                           <span className="text-[10px] uppercase">{mon}</span>
                           <span className="text-lg leading-none">{day}</span>
                         </div>

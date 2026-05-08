@@ -261,7 +261,6 @@ export default function CarePrepPage() {
                     <option value="time_oldest">Time: oldest first</option>
                     <option value="name_az">Name: A → Z</option>
                     <option value="name_za">Name: Z → A</option>
-                    <option value="visit_id">Visit ID</option>
                   </select>
                   <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">
                     expand_more

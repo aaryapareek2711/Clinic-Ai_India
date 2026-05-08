@@ -120,7 +120,6 @@ function PatientsPage() {
               <option value="visit_oldest">Last visit: oldest first</option>
               <option value="name_az">Name: A → Z</option>
               <option value="name_za">Name: Z → A</option>
-              <option value="id_az">Patient ID: A → Z</option>
             </select>
             <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
               expand_more
