@@ -89,6 +89,15 @@ function isTemperatureCelsiusField(key: string, unit?: string | null): boolean {
   return k.includes('temperature_c') || (k.includes('temperature') && u.includes('c'))
 }
 
+function isBloodPressureField(key: string, label?: string | null): boolean {
+  const k = (key || '').toLowerCase()
+  const l = (label || '').toLowerCase()
+  if (k.includes('blood_pressure') || k.includes('bloodpressure')) return true
+  if (/(^|[^a-z])bp([^a-z]|$)/.test(k)) return true
+  if (l.includes('blood pressure')) return true
+  return false
+}
+
 function toCelsiusFromFahrenheit(raw: string): string {
   const n = Number(raw)
   if (!Number.isFinite(n)) return raw
@@ -1426,11 +1435,13 @@ export default function VisitDetailPage() {
                                 }))
                               }
                               placeholder={
-                                isTemperatureCelsiusField(field.key, field.unit)
-                                  ? 'Unit: F'
-                                  : field.unit
-                                    ? `Unit: ${field.unit}`
-                                    : 'Enter value'
+                                isBloodPressureField(field.key, field.label)
+                                  ? '120/80 mmHg'
+                                  : isTemperatureCelsiusField(field.key, field.unit)
+                                    ? 'Unit: F'
+                                    : field.unit
+                                      ? `Unit: ${field.unit}`
+                                      : 'Enter value'
                               }
                               value={vitalsValues[field.key] ?? ''}
                             />
