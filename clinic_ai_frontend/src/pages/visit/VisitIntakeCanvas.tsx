@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { getApiErrorMessage } from '../../lib/apiClient'
 import {
@@ -6,6 +6,7 @@ import {
   type ClinicalNoteLatest,
   type IntakeSessionResponse,
   type PreVisitSummaryResponse,
+  savePreVisitAdditionalDoctorNote,
   type VisitDetailResponse,
 } from '../../services/visitWorkflowApi'
 import { computeIntakeProgress, splitToChips } from './intakeUtils'
@@ -56,7 +57,6 @@ type Props = {
 
 export default function VisitIntakeCanvas({
   visitId,
-  patientName,
   visit,
   intake,
   preVisit,
@@ -70,6 +70,20 @@ export default function VisitIntakeCanvas({
   const { pct } = useMemo(() => computeIntakeProgress(intake), [intake])
 
   const sections = preVisit?.sections
+  const additionalDoctorNotePersisted = sections?.additional_doctor_note ?? null
+  const hasSavedAdditionalDoctorNote = Boolean(String(additionalDoctorNotePersisted ?? '').trim())
+  const [editingAdditionalDoctorNote, setEditingAdditionalDoctorNote] = useState(false)
+  const [additionalDoctorNoteDraft, setAdditionalDoctorNoteDraft] = useState<string>(
+    String(additionalDoctorNotePersisted ?? ''),
+  )
+  const [additionalDoctorNoteSaving, setAdditionalDoctorNoteSaving] = useState(false)
+  const [additionalDoctorNoteError, setAdditionalDoctorNoteError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (editingAdditionalDoctorNote) return
+    setAdditionalDoctorNoteDraft(String(additionalDoctorNotePersisted ?? ''))
+    setAdditionalDoctorNoteError(null)
+  }, [additionalDoctorNotePersisted, editingAdditionalDoctorNote])
   const allergyChips = useMemo(
     () => splitToChips(sections?.past_medical_history_allergies?.allergies ?? ''),
     [sections?.past_medical_history_allergies?.allergies],
@@ -85,6 +99,13 @@ export default function VisitIntakeCanvas({
     return raw.map((s) => String(s).trim()).filter(Boolean)
   }, [sections?.red_flag_indicators])
 
+  const clinicalNoteDoctorNotes = useMemo(() => {
+    const p = clinicalNote?.payload
+    if (!p || typeof p !== 'object') return ''
+    const o = p as Record<string, unknown>
+    return typeof o.doctor_notes === 'string' ? o.doctor_notes.trim() : ''
+  }, [clinicalNote?.note_id, clinicalNote?.payload])
+
   async function handleGenerate() {
     if (!patientId || !visitId) return
     setGenerating(true)
@@ -97,6 +118,25 @@ export default function VisitIntakeCanvas({
       onPreVisitUpdated(null)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleSaveAdditionalDoctorNote() {
+    if (!patientId || !visitId) return
+    const next = additionalDoctorNoteDraft.trim()
+    if (!next) return
+
+    setAdditionalDoctorNoteSaving(true)
+    setAdditionalDoctorNoteError(null)
+    try {
+      const updated = await savePreVisitAdditionalDoctorNote(patientId, visitId, next)
+      onPreVisitUpdated(updated)
+      setEditingAdditionalDoctorNote(false)
+      setAdditionalDoctorNoteDraft(next)
+    } catch (e) {
+      setAdditionalDoctorNoteError(getApiErrorMessage(e))
+    } finally {
+      setAdditionalDoctorNoteSaving(false)
     }
   }
 
@@ -269,9 +309,21 @@ export default function VisitIntakeCanvas({
                 </dl>
               </section>
 
+              <section className="rounded-xl border border-[#bdcaba] bg-white p-6">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#575e70]">5 · Clinical note</p>
+                <dl className="space-y-3 text-sm">
+                  <div>
+                    <dt className="text-xs font-semibold text-[#575e70]">Doctor notes</dt>
+                    <dd className="mt-1 leading-relaxed whitespace-pre-wrap text-[#171d16]">
+                      {displayLine(clinicalNoteDoctorNotes)}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
               <section className="rounded-xl border border-[#ba1a1a]/15 bg-[#fff8f7] p-6">
                 <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#ba1a1a]">
-                  <span className="material-symbols-outlined text-base">emergency</span>5 · Red flag indicators
+                  <span className="material-symbols-outlined text-base">emergency</span>6 · Red flag indicators
                 </p>
                 {redFlagItems.length > 0 ? (
                   <ul className="space-y-2 text-sm text-[#93000a]">
@@ -284,6 +336,72 @@ export default function VisitIntakeCanvas({
                   </ul>
                 ) : (
                   <p className="text-sm text-[#3e4a3d]">—</p>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-[#bdcaba] bg-white p-6">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#575e70]">Additional doctor note</p>
+                  {hasSavedAdditionalDoctorNote && !editingAdditionalDoctorNote ? (
+                    <button
+                      className="rounded-md border border-[#bdcaba] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#575e70] hover:bg-gray-50"
+                      onClick={() => setEditingAdditionalDoctorNote(true)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                </div>
+
+                {editingAdditionalDoctorNote || !hasSavedAdditionalDoctorNote ? (
+                  <div>
+                    <textarea
+                      className="w-full rounded-md border border-[#bdcaba] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#006b2c] resize-none"
+                      disabled={additionalDoctorNoteSaving}
+                      value={additionalDoctorNoteDraft}
+                      onChange={(e) => setAdditionalDoctorNoteDraft(e.target.value)}
+                      rows={4}
+                      placeholder="Add your additional doctor note…"
+                    />
+
+                    {additionalDoctorNoteError && (
+                      <p className="mt-2 text-sm text-red-800" role="alert">
+                        {additionalDoctorNoteError}
+                      </p>
+                    )}
+
+                    <div className="mt-3 flex items-center justify-end gap-2">
+                      {hasSavedAdditionalDoctorNote && editingAdditionalDoctorNote ? (
+                        <button
+                          className="rounded-lg border border-[#bdcaba] bg-white px-3 py-2 text-sm font-semibold text-[#575e70] hover:bg-gray-50"
+                          disabled={additionalDoctorNoteSaving}
+                          onClick={() => {
+                            setEditingAdditionalDoctorNote(false)
+                            setAdditionalDoctorNoteDraft(String(additionalDoctorNotePersisted ?? ''))
+                            setAdditionalDoctorNoteError(null)
+                          }}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      ) : null}
+                      <button
+                        className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={additionalDoctorNoteSaving || !additionalDoctorNoteDraft.trim()}
+                        onClick={() => void handleSaveAdditionalDoctorNote()}
+                        type="button"
+                      >
+                        {additionalDoctorNoteSaving ? 'Saving…' : 'Save note'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <dl className="space-y-3 text-sm">
+                    <div>
+                      <dt className="text-xs font-semibold text-[#575e70]">Note</dt>
+                      <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[#171d16]">{additionalDoctorNotePersisted}</dd>
+                    </div>
+                  </dl>
                 )}
               </section>
             </div>

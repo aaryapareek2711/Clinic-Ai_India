@@ -337,12 +337,8 @@ function VisitsPage() {
                 <p className="text-sm font-semibold">{provider.displayName}</p>
                 <p className="text-[10px] text-gray-500">{provider.title}</p>
               </div>
-              <div className="w-10 h-10 rounded-full overflow-hidden bg-[#e9f0e5] border border-[#bdcaba]">
-                <img
-                  alt="Dr. Profile"
-                  className="w-full h-full object-cover"
-                  src={provider.avatarUrl}
-                />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#bdcaba] bg-[#e9f0e5] text-[#3e4a3d]">
+                <span className="material-symbols-outlined text-[22px]">account_circle</span>
               </div>
             </div>
           </div>

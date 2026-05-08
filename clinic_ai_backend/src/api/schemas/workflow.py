@@ -34,13 +34,17 @@ class PastHistoryAllergiesSection(BaseModel):
 
 
 class PreVisitSections(BaseModel):
-    """All five pre-visit summary sections."""
+    """Pre-visit summary sections.
+
+    Note: older records may not have every optional key.
+    """
 
     chief_complaint: ChiefComplaintSection
     hpi: HPISection
     current_medication: CurrentMedicationSection
     past_medical_history_allergies: PastHistoryAllergiesSection
     red_flag_indicators: list[str]
+    additional_doctor_note: str | None = None
 
 
 class PreVisitSummaryResponse(BaseModel):

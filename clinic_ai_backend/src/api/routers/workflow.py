@@ -1,5 +1,8 @@
 """Workflow routes module."""
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
 
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.vitals import LatestVitalsResponse, VitalsFormResponse
@@ -15,6 +18,12 @@ from src.application.utils.patient_id_crypto import encode_patient_id, resolve_i
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/workflow", tags=["Workflow"])
+
+
+class SaveAdditionalDoctorNoteRequest(BaseModel):
+    """Request payload for saving the additional doctor note on pre-visit summary."""
+
+    note: str | None = None
 
 
 @router.post("/follow-up-reminders/run", response_model=FollowUpRemindersRunResponse)
@@ -72,6 +81,63 @@ def get_latest_pre_visit_summary(patient_id: str, visit_id: str) -> PreVisitSumm
     doc.pop("_id", None)
     doc["patient_id"] = encode_patient_id(str(doc.get("patient_id") or internal_patient_id))
     return PreVisitSummaryResponse(**doc)
+
+
+@router.patch(
+    "/pre-visit-summary/{patient_id}/{visit_id}/additional-doctor-note",
+    response_model=PreVisitSummaryResponse,
+)
+def save_additional_doctor_note(
+    patient_id: str,
+    visit_id: str,
+    body: SaveAdditionalDoctorNoteRequest,
+) -> PreVisitSummaryResponse:
+    """Persist the additional doctor note (right below red flags) in the pre-visit summary."""
+
+    internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    note = body.note
+    if note is not None:
+        note = str(note).strip() or None
+
+    db = get_database()
+    now = datetime.now(timezone.utc)
+
+    # Prefer embedded single-source-of-truth document on the visit.
+    embedded_update = db.visits.update_one(
+        {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": internal_patient_id},
+        {
+            "$set": {
+                "pre_visit_summary.sections.additional_doctor_note": note,
+                "pre_visit_summary.updated_at": now,
+            },
+        },
+    )
+    if embedded_update.matched_count > 0:
+        visit = db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": internal_patient_id},
+            {"_id": 0, "pre_visit_summary": 1},
+        ) or {}
+        embedded = dict(visit.get("pre_visit_summary") or {})
+        embedded["patient_id"] = encode_patient_id(str(embedded.get("patient_id") or internal_patient_id))
+        return PreVisitSummaryResponse(**embedded)
+
+    # Fallback: legacy collection.
+    legacy_update = db.pre_visit_summaries.update_one(
+        {"patient_id": internal_patient_id, "visit_id": visit_id},
+        {"$set": {"sections.additional_doctor_note": note, "updated_at": now}},
+    )
+    if legacy_update.matched_count > 0:
+        doc = db.pre_visit_summaries.find_one(
+            {"patient_id": internal_patient_id, "visit_id": visit_id},
+            sort=[("updated_at", -1)],
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Pre-visit summary not found after update")
+        doc.pop("_id", None)
+        doc["patient_id"] = encode_patient_id(str(doc.get("patient_id") or internal_patient_id))
+        return PreVisitSummaryResponse(**doc)
+
+    raise HTTPException(status_code=404, detail="Pre-visit summary not found")
 
 
 @router.get("/doctor-appointment-view/{patient_id}/{visit_id}", response_model=DoctorAppointmentViewResponse)

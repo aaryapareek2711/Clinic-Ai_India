@@ -19,8 +19,22 @@ class GeneratePreVisitSummaryUseCase:
         """Create pre-visit summary from the intake session for this visit."""
         visit = self.db.visits.find_one(
             {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
-            {"_id": 0, "intake_session": 1},
+            {"_id": 0, "intake_session": 1, "pre_visit_summary": 1},
         ) or {}
+
+        # Preserve any doctor-saved note across refresh/regeneration.
+        existing_note = (((visit.get("pre_visit_summary") or {}).get("sections") or {}).get("additional_doctor_note"))
+        if existing_note is None:
+            try:
+                legacy_doc = self.db.pre_visit_summaries.find_one(
+                    {"patient_id": patient_id, "visit_id": visit_id},
+                    sort=[("updated_at", -1)],
+                )
+                if legacy_doc:
+                    existing_note = ((legacy_doc.get("sections") or {}).get("additional_doctor_note"))
+            except Exception:
+                # Best-effort preservation only.
+                existing_note = None
         session = dict(visit.get("intake_session") or {})
         if not session:
             raise ValueError("No intake session found for patient and visit")
@@ -37,6 +51,10 @@ class GeneratePreVisitSummaryUseCase:
                 summary = ai_summary
         except Exception:
             pass
+
+        # Ensure our custom field survives AI regeneration.
+        if isinstance(summary, dict):
+            summary["additional_doctor_note"] = existing_note
 
         now = datetime.now(timezone.utc)
         # When doctor generates pre-visit summary, we treat intake as completed for display/workflow.

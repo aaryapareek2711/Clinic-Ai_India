@@ -173,14 +173,6 @@ function ProviderDashboardPage() {
 
   const dayLabel = upcomingDayFilter === 'today' ? 'Today' : 'Tomorrow'
 
-  const selectedDayAllSlots = useMemo(() => {
-    const now = new Date()
-    if (upcomingDayFilter === 'today') {
-      return mergedUpcoming.filter((a) => isSameCalendarDay(a.scheduled_start, now))
-    }
-    return mergedUpcoming.filter((a) => isTomorrowSlot(a.scheduled_start, now))
-  }, [mergedUpcoming, upcomingDayFilter])
-
   const selectedDayAllVisits = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
