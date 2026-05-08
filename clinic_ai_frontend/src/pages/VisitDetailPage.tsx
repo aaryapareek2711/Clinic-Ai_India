@@ -32,7 +32,7 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
 import VisitClinicalNotePanel from './visit/VisitClinicalNotePanel'
-import VisitIntakeCanvas, { patientPortraitSrc } from './visit/VisitIntakeCanvas'
+import VisitIntakeCanvas from './visit/VisitIntakeCanvas'
 
 export type VisitWorkflowTab = 'pre-visit' | 'vitals' | 'transcription' | 'clinical-note' | 'post-visit'
 
@@ -557,7 +557,6 @@ export default function VisitDetailPage() {
     effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
-  const queueBadge = visitId ? `#${visitId.slice(-3).toUpperCase()}` : '#—'
   const scheduledBadge = showScheduledPreVisitBadge(visit)
   const visitStatus = visitStatusChip(visit?.status)
 
@@ -1334,15 +1333,10 @@ export default function VisitDetailPage() {
 
               <div className="flex flex-col gap-6 rounded-xl bg-[#111827] p-8 text-white md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-6">
-                  <div className="relative shrink-0">
-                    <img
-                      alt=""
-                      className="h-20 w-20 rounded-xl border-2 border-[#006b2c] object-cover"
-                      src={patientPortraitSrc(visit?.patient?.gender)}
-                    />
-                    <span className="absolute -bottom-2 -right-2 rounded border-2 border-[#111827] bg-amber-500 px-2 py-1 text-xs font-bold text-[#171d16]">
-                      {queueBadge}
-                    </span>
+                  <div className="shrink-0">
+                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-[#dbe3d7] text-[#3e4a3d]">
+                      <span className="material-symbols-outlined text-[52px]">account_circle</span>
+                    </div>
                   </div>
                   <div>
                     <div className="mb-1 flex flex-wrap items-center gap-3">

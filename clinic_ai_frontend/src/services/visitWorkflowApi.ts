@@ -65,6 +65,7 @@ export type PreVisitSections = {
     allergies: string
   }
   red_flag_indicators: string[]
+  additional_doctor_note?: string | null
 }
 
 export type PreVisitSummaryResponse = {
@@ -265,6 +266,18 @@ export async function generatePreVisitSummary(
 ): Promise<PreVisitSummaryResponse> {
   const { data } = await apiClient.post<PreVisitSummaryResponse>(
     `/api/workflow/pre-visit-summary/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`,
+  )
+  return data
+}
+
+export async function savePreVisitAdditionalDoctorNote(
+  patientId: string,
+  visitId: string,
+  note: string | null,
+): Promise<PreVisitSummaryResponse> {
+  const { data } = await apiClient.patch<PreVisitSummaryResponse>(
+    `/api/workflow/pre-visit-summary/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}/additional-doctor-note`,
+    { note },
   )
   return data
 }
