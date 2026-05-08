@@ -144,10 +144,18 @@ function NewVisitPage() {
   const minDate = localDateInputMin()
 
   useEffect(() => {
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) {
+      setUpcoming([])
+      return
+    }
     let cancelled = false
     void (async () => {
       try {
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+          fromDate: `${dateStr}T00:00:00`,
+          toDate: `${dateStr}T23:59:59`,
+        })
         if (!cancelled) setUpcoming(data)
       } catch {
         if (!cancelled) setUpcoming([])
@@ -156,7 +164,7 @@ function NewVisitPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [appointmentDate])
 
   const slotBlocks = useMemo<SlotBlock[]>(() => {
     const dateStr = appointmentDate.trim()

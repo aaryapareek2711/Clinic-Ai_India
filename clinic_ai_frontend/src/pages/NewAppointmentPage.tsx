@@ -226,13 +226,9 @@ function NewAppointmentPage() {
           setListLoading(true)
           setError(null)
         }
-        const [patientsData, upcomingData] = await Promise.all([
-          fetchPatients(),
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-        ])
+        const patientsData = await fetchPatients()
         if (!cancelled) {
           setPatients(patientsData)
-          setUpcoming(upcomingData)
           if (requestedPatientId && patientsData.some((p) => p.id === requestedPatientId)) {
             setSelectedId(requestedPatientId)
           }
@@ -247,6 +243,29 @@ function NewAppointmentPage() {
       cancelled = true
     }
   }, [requestedPatientId])
+
+  useEffect(() => {
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) {
+      setUpcoming([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+          fromDate: `${dateStr}T00:00:00`,
+          toDate: `${dateStr}T23:59:59`,
+        })
+        if (!cancelled) setUpcoming(data)
+      } catch {
+        if (!cancelled) setUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [appointmentDate])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
