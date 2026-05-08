@@ -176,7 +176,6 @@ def list_patients_paged(
         query["name"] = {"$regex": escaped, "$options": "i"}
 
     total = int(db.patients.count_documents(query))
-    skip = (page - 1) * page_size
     records = list(
         db.patients.find(
             query,
@@ -194,8 +193,6 @@ def list_patients_paged(
             },
         )
         .sort("updated_at", -1)
-        .skip(skip)
-        .limit(page_size)
     )
     patient_ids = [str(record.get("patient_id") or "").strip() for record in records if str(record.get("patient_id") or "").strip()]
     latest_visit_by_patient: dict[str, dict] = {}
@@ -253,10 +250,37 @@ def list_patients_paged(
                 "latest_visit_scheduled_start": latest_visit_scheduled_start,
             }
         )
+    def _safe_dt(value: object) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            if s.endswith("Z"):
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(s)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    def _created_dt(row: dict) -> datetime | None:
+        return _safe_dt(row.get("created_at"))
+
+    def _last_visit_dt(row: dict) -> datetime | None:
+        return _safe_dt(row.get("latest_visit_scheduled_start"))
+
     if sort == "created_newest":
-        items.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        items.sort(
+            key=lambda row: (_created_dt(row) is not None, _created_dt(row) or datetime.min.replace(tzinfo=timezone.utc)),
+            reverse=True,
+        )
     elif sort == "created_oldest":
-        items.sort(key=lambda row: str(row.get("created_at") or ""))
+        items.sort(
+            key=lambda row: (_created_dt(row) is None, _created_dt(row) or datetime.max.replace(tzinfo=timezone.utc)),
+        )
     elif sort == "name_az":
         items.sort(key=lambda row: str(row.get("full_name") or "").lower())
     elif sort == "name_za":
@@ -264,10 +288,18 @@ def list_patients_paged(
     elif sort == "id_az":
         items.sort(key=lambda row: str(row.get("id") or "").lower())
     elif sort == "visit_oldest":
-        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""))
-    else:
-        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""), reverse=True)
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+        items.sort(
+            key=lambda row: (_last_visit_dt(row) is None, _last_visit_dt(row) or datetime.max.replace(tzinfo=timezone.utc)),
+        )
+    else:  # visit_latest
+        items.sort(
+            key=lambda row: (_last_visit_dt(row) is not None, _last_visit_dt(row) or datetime.min.replace(tzinfo=timezone.utc)),
+            reverse=True,
+        )
+
+    skip = (page - 1) * page_size
+    paged_items = items[skip : skip + page_size]
+    return {"items": paged_items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/{patient_id}/latest-visit")
