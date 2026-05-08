@@ -28,6 +28,20 @@ let profileCache: ProviderProfile | null = null
 let profileCacheAt = 0
 let profileInFlight: Promise<ProviderProfile> | null = null
 
+/** Dispatched after a successful profile PATCH so mounted UI (e.g. sidebar) can refresh. */
+export const PROVIDER_PROFILE_UPDATED_EVENT = 'clinic-provider-profile-updated'
+
+function persistProfileToLocalStorage(data: ProviderProfile): void {
+  try {
+    localStorage.setItem('auth_user_full_name', (data.full_name || '').trim())
+    localStorage.setItem('auth_user_username', (data.username || '').trim())
+    localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
+    localStorage.setItem('auth_user_role', (data.role || '').trim())
+  } catch {
+    /* ignore */
+  }
+}
+
 function authHeaders(): Record<string, string> {
   const token =
     typeof localStorage !== 'undefined'
@@ -49,14 +63,7 @@ export async function fetchMyProfile(): Promise<ProviderProfile> {
     })
     profileCache = data
     profileCacheAt = Date.now()
-    try {
-      localStorage.setItem('auth_user_full_name', (data.full_name || '').trim())
-      localStorage.setItem('auth_user_username', (data.username || '').trim())
-      localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
-      localStorage.setItem('auth_user_role', (data.role || '').trim())
-    } catch {
-      /* ignore */
-    }
+    persistProfileToLocalStorage(data)
     return data
   })()
   try {
@@ -72,6 +79,10 @@ export async function patchMyProfile(body: ProviderProfilePatch): Promise<Provid
   })
   profileCache = data
   profileCacheAt = Date.now()
+  persistProfileToLocalStorage(data)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PROVIDER_PROFILE_UPDATED_EVENT))
+  }
   return data
 }
 

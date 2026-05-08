@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -216,6 +217,9 @@ export default function CarePrepIntakeDetailPage() {
       </header>
 
       <main className="relative flex-1 p-8 pt-24">
+        <div className="mb-4 -ml-2">
+          <BackButton fallback="/careprep" />
+        </div>
         {loading && <p className="text-sm text-slate-600">Loading intake…</p>}
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

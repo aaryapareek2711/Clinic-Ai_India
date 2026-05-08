@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -272,7 +273,8 @@ function CalendarPage() {
 
       <main className="min-h-screen p-8 pt-24">
         <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-          <div>
+          <div className="flex items-center gap-2">
+            <BackButton to="/dashboard" className="-ml-2" />
             <h2 className="text-[28px] font-bold">Calendar</h2>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -292,21 +294,6 @@ function CalendarPage() {
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white xl:col-span-8">
-            {viewMode === 'day' && (
-              <div className="border-b border-gray-100 px-6 py-2">
-                <button
-                  aria-label="Back to calendar"
-                  className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100"
-                  onClick={() => {
-                    setViewMonth(cloneMonth(focusDate))
-                    setViewMode('month')
-                  }}
-                  type="button"
-                >
-                  <span className="material-symbols-outlined">arrow_back</span>
-                </button>
-              </div>
-            )}
             <div className="flex items-center justify-between border-b border-gray-100 p-6">
               <div className="flex items-center gap-3">
                 <button aria-label="Previous month" className="rounded-md p-1 text-[#006b2c] hover:bg-gray-100" onClick={prevMonth} type="button">
@@ -485,15 +472,21 @@ function CalendarPage() {
                   <p className="px-6 py-10 text-sm text-[#575e70]">No appointments for this day.</p>
                 ) : (
                   appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).map((a) => (
-                    <div key={a.visit_id} className="flex items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]">
+                    <div
+                      key={a.visit_id}
+                      className="flex cursor-pointer items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]"
+                      onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <div>
-                        <button
-                          className="block text-left font-semibold hover:underline"
-                          onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)}
-                          type="button"
-                        >
-                          {toDisplayName(a.patient_name)}
-                        </button>
+                        <p className="font-semibold">{toDisplayName(a.patient_name)}</p>
                         <p className="text-sm text-[#3e4a3d]">{a.chief_complaint || a.appointment_type || 'Visit'}</p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -501,7 +494,10 @@ function CalendarPage() {
                         {canEditAppointment(a.scheduled_start) && (
                           <button
                             className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
-                            onClick={() => openRescheduleModal(a)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openRescheduleModal(a)
+                            }}
                             type="button"
                           >
                             Edit Appointment
@@ -532,8 +528,22 @@ function CalendarPage() {
                   const dt = new Date(a.scheduled_start)
                   const mon = Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { month: 'short' })
                   const day = Number.isNaN(dt.getTime()) ? '—' : String(dt.getDate())
+                  const goToVisit = () =>
+                    navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
                   return (
-                    <div key={a.visit_id} className="w-full p-5 text-left">
+                    <div
+                      key={a.visit_id}
+                      className="w-full cursor-pointer p-5 text-left transition-colors hover:bg-slate-50"
+                      onClick={goToVisit}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          goToVisit()
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <div className="flex items-center gap-4">
                         <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-blue-50 font-bold text-blue-600 transition-colors hover:bg-blue-100">
                           <span className="text-[10px] uppercase">{mon}</span>
@@ -549,7 +559,10 @@ function CalendarPage() {
                         {canEditAppointment(a.scheduled_start) && (
                           <button
                             className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-[#171d16] hover:bg-slate-50"
-                            onClick={() => openRescheduleModal(a)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openRescheduleModal(a)
+                            }}
                             type="button"
                           >
                             Edit Appointment

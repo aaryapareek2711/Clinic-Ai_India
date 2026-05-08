@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
 
+import BackButton from './BackButton'
+
 const tabs = [
   { to: '/settings/edit-profile', label: 'Profile' },
   { to: '/settings/organization', label: 'Organization' },
@@ -11,16 +13,23 @@ type Props = {
   variant?: 'wide' | 'narrow'
   /** Pill tabs (Profile / Organization / Team). Hide on `/settings` until user opens Edit Profile. */
   showTabs?: boolean
+  /** Render an inline back button to the left of the "Settings" heading. */
+  backTo?: string
 }
 
-export default function SettingsHeadingNav({ variant = 'narrow', showTabs = true }: Props) {
+export default function SettingsHeadingNav({ variant = 'narrow', showTabs = true, backTo }: Props) {
   const width = variant === 'wide' ? 'max-w-7xl' : 'max-w-6xl'
 
   return (
     <div className={`${width} mx-auto`}>
       <div className={showTabs ? 'mb-6' : ''}>
-        <h2 className="mb-2 text-[28px] font-bold tracking-tight text-[#171d16]">Settings</h2>
-        <p className="text-gray-500">Manage your clinical profile, organization data, and medical team.</p>
+        <div className="flex items-start gap-2">
+          {backTo ? <BackButton className="-ml-2 mt-1" to={backTo} /> : null}
+          <div>
+            <h2 className="mb-2 text-[28px] font-bold tracking-tight text-[#171d16]">Settings</h2>
+            <p className="text-gray-500">Manage your clinical profile, organization data, and medical team.</p>
+          </div>
+        </div>
       </div>
 
       {showTabs ? (

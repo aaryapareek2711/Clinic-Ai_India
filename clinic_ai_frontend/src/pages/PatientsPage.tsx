@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -79,9 +81,12 @@ function PatientsPage() {
 
       <main className="p-8 min-h-[calc(100vh-4rem)]">
         <div className="mb-8 flex justify-between items-end">
-          <div>
-            <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">Patient Directory</h2>
-            <p className="text-slate-500 mt-1">Manage and monitor registered medical profiles.</p>
+          <div className="flex items-start gap-2">
+            <BackButton to="/dashboard" className="-ml-2 mt-1" />
+            <div>
+              <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">Patient Directory</h2>
+              <p className="text-slate-500 mt-1">Manage and monitor registered medical profiles.</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -116,8 +121,8 @@ function PatientsPage() {
             >
               <option value="created_newest">New patient: newest first</option>
               <option value="created_oldest">New patient: oldest first</option>
-              <option value="visit_latest">Last visit: newest first</option>
-              <option value="visit_oldest">Last visit: oldest first</option>
+              <option value="visit_latest">Latest visit: newest first</option>
+              <option value="visit_oldest">Latest visit: oldest first</option>
               <option value="name_az">Name: A → Z</option>
               <option value="name_za">Name: Z → A</option>
             </select>
@@ -164,7 +169,9 @@ function PatientsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="font-mono text-sm text-slate-500">...{patient.id.slice(-10)}</span>
+                    <span className="text-sm text-slate-700 break-all">
+                      {formatPatientDisplayId(toDisplayName(patient.full_name), patient.phone_number)}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">

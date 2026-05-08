@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -124,65 +125,6 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   if (c.startsWith('hi')) return 'hi'
   return 'en'
 }
-
-function to12HourTimeDisplay(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const hh = Number(m12[1])
-    const mm = m12[2]
-    const mer = m12[3].toUpperCase()
-    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
-  }
-  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m24) return text
-  const h = Number(m24[1])
-  const mm = m24[2]
-  if (!Number.isFinite(h) || h < 0 || h > 23) return text
-  const mer = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${mm} ${mer}`
-}
-
-function to24HourTimeForApi(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const h12 = Number(m12[1])
-    const mm = Number(m12[2])
-    const mer = m12[3].toUpperCase()
-    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
-      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
-      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    }
-  }
-  return text
-}
-
-function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
-  const text = to12HourTimeDisplay(raw)
-  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (!m) return { hour: '', minute: '', period: '' }
-  return {
-    hour: String(Number(m[1])).padStart(2, '0'),
-    minute: m[2],
-    period: m[3].toUpperCase(),
-  }
-}
-
-function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
-  if (!parts.hour || !parts.minute || !parts.period) return ''
-  const hh = Number(parts.hour)
-  const mm = Number(parts.minute)
-  const pp = parts.period.toUpperCase()
-  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
-  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
-}
-
-const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
-const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
@@ -360,11 +302,6 @@ export default function VisitDetailPage() {
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
   const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
-  const [recapFollowUpTimePartsDraft, setRecapFollowUpTimePartsDraft] = useState<{
-    hour: string
-    minute: string
-    period: string
-  }>({ hour: '', minute: '', period: '' })
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -473,7 +410,6 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPhoneDraft('')
     setRecapFollowUpDateDraft('')
-    setRecapFollowUpTimePartsDraft({ hour: '', minute: '', period: '' })
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -491,12 +427,7 @@ export default function VisitDetailPage() {
     if (!p || typeof p !== 'object') return
     const o = p as Record<string, unknown>
     const noteDate = (o.follow_up_date != null ? String(o.follow_up_date) : '').trim()
-    const noteTime = (o.follow_up_time != null ? String(o.follow_up_time) : '').trim()
     if (noteDate) setRecapFollowUpDateDraft(noteDate)
-    if (noteTime) {
-      const initialTime = to12HourTimeDisplay(noteTime)
-      setRecapFollowUpTimePartsDraft(parse12HourTimeParts(initialTime))
-    }
   }, [clinicalNote?.note_id, clinicalNote?.payload])
 
   useEffect(() => {
@@ -651,7 +582,7 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
-  const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
+  const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -1306,15 +1237,17 @@ export default function VisitDetailPage() {
         {visitId && !error && (
           <>
             <div className="p-8 pb-0">
-              <nav className="mb-4 flex items-center space-x-2 text-sm text-[#575e70]">
+              <nav className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-[#575e70]">
+                <BackButton ariaLabel="Go back" fallback="/visits" className="-ml-2 shrink-0" />
+                <span aria-hidden className="hidden h-4 w-px shrink-0 bg-slate-300 sm:block" />
                 <button className="hover:text-[#006b2c]" onClick={() => navigate('/dashboard')} type="button">
                   Dashboard
                 </button>
-                <span className="material-symbols-outlined text-xs">chevron_right</span>
+                <span className="material-symbols-outlined shrink-0 text-xs">chevron_right</span>
                 <button className="hover:text-[#006b2c]" onClick={() => navigate('/visits')} type="button">
                   Visits
                 </button>
-                <span className="material-symbols-outlined text-xs">chevron_right</span>
+                <span className="material-symbols-outlined shrink-0 text-xs">chevron_right</span>
                 <span className="font-semibold text-[#171d16]">{breadcrumbTitle}</span>
               </nav>
 
@@ -1891,71 +1824,11 @@ export default function VisitDetailPage() {
                       Next visit date (optional)
                       <input
                         className="mt-2 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                        min={recapFollowUpDateMin}
                         onChange={(e) => setRecapFollowUpDateDraft(e.target.value)}
                         type="date"
                         value={recapFollowUpDateDraft}
                       />
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                      Follow-up time (optional)
-                      <div className="mt-2 flex w-full max-w-xs items-center gap-2">
-                        <select
-                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) => {
-                            const nextParts = {
-                              hour: e.target.value,
-                              minute: recapFollowUpTimeParts.minute,
-                              period: recapFollowUpTimeParts.period,
-                            }
-                            setRecapFollowUpTimePartsDraft(nextParts)
-                          }}
-                          value={recapFollowUpTimeParts.hour}
-                        >
-                          <option value="">HH</option>
-                          {HOUR_OPTIONS_12H.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) => {
-                            const nextParts = {
-                              hour: recapFollowUpTimeParts.hour,
-                              minute: e.target.value,
-                              period: recapFollowUpTimeParts.period,
-                            }
-                            setRecapFollowUpTimePartsDraft(nextParts)
-                          }}
-                          value={recapFollowUpTimeParts.minute}
-                        >
-                          <option value="">MM</option>
-                          {MINUTE_OPTIONS.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) => {
-                            const nextParts = {
-                              hour: recapFollowUpTimeParts.hour,
-                              minute: recapFollowUpTimeParts.minute,
-                              period: e.target.value,
-                            }
-                            setRecapFollowUpTimePartsDraft(nextParts)
-                          }}
-                          value={recapFollowUpTimeParts.period}
-                        >
-                          <option value="">AM/PM</option>
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
-                      </div>
                     </label>
                   </div>
 
@@ -1981,11 +1854,9 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
-                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
                               follow_up_date: nextVisitDate || undefined,
-                              follow_up_time: nextVisitTime || undefined,
                             })
                             setPostVisitSummary(res)
                             setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')

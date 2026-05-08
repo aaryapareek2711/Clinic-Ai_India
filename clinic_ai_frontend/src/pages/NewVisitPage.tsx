@@ -240,6 +240,26 @@ function NewVisitPage() {
     setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((s) => !s.booked && s.startIso === iso)))
   }, [slotBlocks])
 
+  // When Walk-in is chosen, force the calendar onto today: auto-select today's
+  // date and snap the visible month back to the current month so the only
+  // enabled cell is visible.
+  useEffect(() => {
+    if (visitKind !== 'walk_in') return
+    if (appointmentDate !== minDate) {
+      setAppointmentDate(minDate)
+      setSelectedStartIsos([])
+    }
+    const today = new Date()
+    setVisibleMonth((prev) => {
+      if (prev.getFullYear() === today.getFullYear() && prev.getMonth() === today.getMonth()) {
+        return prev
+      }
+      const next = new Date(today)
+      next.setDate(1)
+      return next
+    })
+  }, [visitKind, appointmentDate, minDate])
+
   const monthCells = useMemo(() => {
     const year = visibleMonth.getFullYear()
     const month = visibleMonth.getMonth()
@@ -249,16 +269,18 @@ function NewVisitPage() {
     for (let i = 0; i < firstWeekday; i += 1) cells.push({ key: `empty-${i}`, day: null, dateStr: null, disabled: true, selected: false })
     for (let day = 1; day <= daysInMonth; day += 1) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      // Walk-in visits are only valid today, so freeze every other date.
+      const disabled = visitKind === 'walk_in' ? dateStr !== minDate : dateStr < minDate
       cells.push({
         key: dateStr,
         day,
         dateStr,
-        disabled: dateStr < minDate,
+        disabled,
         selected: appointmentDate === dateStr,
       })
     }
     return cells
-  }, [visibleMonth, appointmentDate, minDate])
+  }, [visibleMonth, appointmentDate, minDate, visitKind])
 
   async function handleConfirm(): Promise<void> {
     setFormError(null)
@@ -581,7 +603,8 @@ function NewVisitPage() {
                         <p className="text-sm font-semibold">{formatMonthLabel(visibleMonth)}</p>
                         <div className="flex items-center gap-2">
                           <button
-                            className="rounded-md p-1 hover:bg-white/20"
+                            className="rounded-md p-1 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={visitKind === 'walk_in'}
                             onClick={() => {
                               const d = new Date(visibleMonth)
                               d.setMonth(d.getMonth() - 1)
@@ -592,7 +615,8 @@ function NewVisitPage() {
                             <span className="material-symbols-outlined text-base">chevron_left</span>
                           </button>
                           <button
-                            className="rounded-md p-1 hover:bg-white/20"
+                            className="rounded-md p-1 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={visitKind === 'walk_in'}
                             onClick={() => {
                               const d = new Date(visibleMonth)
                               d.setMonth(d.getMonth() + 1)
