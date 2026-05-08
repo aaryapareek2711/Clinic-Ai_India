@@ -135,75 +135,6 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   return 'en'
 }
 
-<<<<<<< HEAD
-function to12HourTimeDisplay(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const hh = Number(m12[1])
-    const mm = m12[2]
-    const mer = m12[3].toUpperCase()
-    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
-  }
-  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m24) return text
-  const h = Number(m24[1])
-  const mm = m24[2]
-  if (!Number.isFinite(h) || h < 0 || h > 23) return text
-  const mer = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${mm} ${mer}`
-}
-
-function to24HourTimeForApi(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const h12 = Number(m12[1])
-    const mm = Number(m12[2])
-    const mer = m12[3].toUpperCase()
-    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
-      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
-      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    }
-  }
-  return text
-}
-
-function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
-  const text = to12HourTimeDisplay(raw)
-  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (!m) return { hour: '', minute: '', period: '' }
-  return {
-    hour: String(Number(m[1])).padStart(2, '0'),
-    minute: m[2],
-    period: m[3].toUpperCase(),
-  }
-}
-
-function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
-  if (!parts.hour || !parts.minute || !parts.period) return ''
-  const hh = Number(parts.hour)
-  const mm = Number(parts.minute)
-  const pp = parts.period.toUpperCase()
-  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
-  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
-}
-
-function extractClinicalFollowUpIn(note: ClinicalNoteLatest | null): string {
-  const payload = note?.payload
-  if (!payload || typeof payload !== 'object') return ''
-  const raw = (payload as Record<string, unknown>).follow_up_in
-  return raw == null ? '' : String(raw).trim()
-}
-
-const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
-const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
-
-=======
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -660,12 +591,7 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
-<<<<<<< HEAD
-  const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
-  const clinicalFollowUpIn = extractClinicalFollowUpIn(clinicalNote)
-=======
   const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
