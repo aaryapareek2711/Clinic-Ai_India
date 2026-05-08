@@ -15,9 +15,6 @@ import { languageLabel } from './visit/intakeUtils'
 
 import NotificationsDrawer from './NotificationsDrawer'
 
-const PLACEHOLDER_AVATAR =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDuf-HN86fQgEHctIXwh9Z2w87vAKMWCHYzKZZvbLzbuloRusDAWwskLCOkxb-mmuQLRZnH0dw_PNN9K-1JcmklQAxhXkEPNRlylrN3Ag7hs080ROaWkl1ifzouS1DlIiZsDh63hw92ES8XthAQXplemwu2sckV9YybILuSaklmCdlZF6cc6Anda__Dv1XCO4ab-_kjSpfz46x_3hVdRJSrZsdjhkEM164UBAYqNcyZbQkMq8outewVuB46T2eUg_87XzTbNyfbO3E5i'
-
 function shouldHideQuestionLabel(raw: string | null | undefined): boolean {
   const q = (raw || '').trim().toLowerCase()
   return !q || q.startsWith('unmapped_')
@@ -246,7 +243,7 @@ export default function CarePrepIntakeDetailPage() {
             <div className="mb-8 flex flex-col items-start justify-between gap-6 rounded-xl border border-slate-200 bg-white p-6 md:flex-row md:items-center">
               <div className="flex items-center gap-5">
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#d9dff5] shadow-sm">
-                  <img alt="" className="h-full w-full object-cover" src={PLACEHOLDER_AVATAR} />
+                  <span className="material-symbols-outlined text-[34px] text-[#5b6280]">person</span>
                 </div>
                 <div>
                   <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">{patientName}</h2>

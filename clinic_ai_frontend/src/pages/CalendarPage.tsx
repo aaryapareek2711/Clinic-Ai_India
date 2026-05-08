@@ -76,6 +76,8 @@ function CalendarPage() {
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
   const [focusDate, setFocusDate] = useState(() => new Date())
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null)
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null)
   const [appointments, setAppointments] = useState<ProviderUpcomingAppointment[]>([])
   const [rescheduleTarget, setRescheduleTarget] = useState<ProviderUpcomingAppointment | null>(null)
   const [rescheduleDate, setRescheduleDate] = useState('')
@@ -358,6 +360,8 @@ function CalendarPage() {
                   const dayNum = i - blanks + 1
                   const isBlank = dayNum < 1 || dayNum > daysInMonth
                   const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
+                  const dayKey = isBlank ? '' : `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+                  const isSelectedDay = !isBlank && selectedDayKey === dayKey
 
                   const isToday = (() => {
                     if (isBlank) return false
@@ -368,9 +372,13 @@ function CalendarPage() {
                   return (
                     <div
                       key={i}
-                      className={`border-b border-r border-gray-100 px-3 py-2 transition-colors hover:bg-[#eff6ea] [&:nth-child(7n)]:border-r-0 ${!isBlank ? 'cursor-pointer' : ''}`}
+                      className={`border-b border-r border-gray-100 px-3 py-2 transition-colors [&:nth-child(7n)]:border-r-0 ${
+                        isSelectedDay ? 'bg-[#eff6ea]' : 'hover:bg-[#eff6ea]'
+                      } ${!isBlank ? 'cursor-pointer' : ''}`}
                       onClick={() => {
                         if (isBlank) return
+                        setSelectedDayKey(dayKey)
+                        setSelectedVisitId(null)
                         openDayAppointments(new Date(year, month, dayNum))
                       }}
                       role={!isBlank ? 'button' : undefined}
@@ -389,6 +397,8 @@ function CalendarPage() {
                             className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md text-sm font-medium ${isToday ? 'bg-[#16a34a] px-1.5 py-0.5 text-white' : ''}`}
                             onClick={(e) => {
                               e.stopPropagation()
+                              setSelectedDayKey(dayKey)
+                              setSelectedVisitId(null)
                               openDayAppointments(new Date(year, month, dayNum))
                             }}
                             type="button"
@@ -399,9 +409,15 @@ function CalendarPage() {
                             {dayAppts.slice(0, 3).map((a) => (
                               <button
                                 key={a.visit_id}
-                                className="block w-full truncate rounded border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-left text-[10px] text-blue-700"
+                                className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-[10px] ${
+                                  selectedVisitId === a.visit_id
+                                    ? 'border-blue-600 bg-blue-600 text-white'
+                                    : 'border-blue-200 bg-blue-100 text-blue-700'
+                                }`}
                                 onClick={(e) => {
                                   e.stopPropagation()
+                                  setSelectedVisitId(a.visit_id)
+                                  setSelectedDayKey(null)
                                   navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
                                 }}
                                 title={a.chief_complaint}
