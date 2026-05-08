@@ -6,7 +6,13 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
-import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
+import {
+  DEFAULT_PROVIDER_ID,
+  fetchProviderUpcoming,
+  fetchProviderVisits,
+  type ProviderUpcomingAppointment,
+  type ProviderVisitListItem,
+} from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function localDateInputMin(d = new Date()): string {
@@ -119,6 +125,45 @@ type SlotBlock = {
   booked: boolean
 }
 
+function toUpcomingFromVisit(v: ProviderVisitListItem): ProviderUpcomingAppointment | null {
+  const visitId = String(v.visit_id || v.id || '').trim()
+  const scheduledStart = String(v.scheduled_start || '').trim()
+  const status = String(v.status || '').trim().toLowerCase()
+  if (!visitId || !scheduledStart) return null
+  if (['cancelled', 'canceled', 'completed', 'closed', 'ended'].includes(status)) return null
+  return {
+    appointment_id: visitId,
+    patient_id: v.patient_id,
+    patient_name: v.patient_name,
+    scheduled_start: scheduledStart,
+    chief_complaint: v.chief_complaint || 'Visit',
+    appointment_type: v.visit_type || 'visit',
+    previsit_completed: false,
+    visit_id: visitId,
+    status: v.status || '',
+  }
+}
+
+function mergeUpcomingSources(
+  upcomingRows: ProviderUpcomingAppointment[],
+  visitRows: ProviderVisitListItem[],
+): ProviderUpcomingAppointment[] {
+  const byVisitId = new Map<string, ProviderUpcomingAppointment>()
+  for (const row of upcomingRows) {
+    const visitId = String(row.visit_id || '').trim()
+    const scheduledStart = String(row.scheduled_start || '').trim()
+    if (!visitId || !scheduledStart) continue
+    byVisitId.set(visitId, row)
+  }
+  for (const visit of visitRows) {
+    const converted = toUpcomingFromVisit(visit)
+    if (!converted) continue
+    // Prefer visits API as authoritative source for current scheduled_start/status.
+    byVisitId.set(converted.visit_id, converted)
+  }
+  return [...byVisitId.values()]
+}
+
 function NewVisitPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -147,8 +192,11 @@ function NewVisitPage() {
     let cancelled = false
     void (async () => {
       try {
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
-        if (!cancelled) setUpcoming(data)
+        const [upcomingRows, visitRows] = await Promise.all([
+          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+          fetchProviderVisits(DEFAULT_PROVIDER_ID),
+        ])
+        if (!cancelled) setUpcoming(mergeUpcomingSources(upcomingRows, visitRows))
       } catch {
         if (!cancelled) setUpcoming([])
       }
