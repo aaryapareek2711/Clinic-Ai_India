@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
+import {
+  getAppointmentDurationMap,
+  setAppointmentDuration as persistAppointmentDuration,
+} from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -137,6 +140,7 @@ function NewVisitPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const schedule = useMemo(() => getDoctorScheduleSettings(), [])
+  const durationMap = useMemo(() => getAppointmentDurationMap(), [])
   const minDate = localDateInputMin()
 
   useEffect(() => {
@@ -167,30 +171,52 @@ function NewVisitPage() {
       const evEnd = minutesFromHHmm(schedule.eveningEnd)
       if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
     }
-    const bookedStarts = new Set(
-      upcoming
-        .filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
-        .map((a) => localSlotKeyFromIso(a.scheduled_start)),
-    )
+    const selectedDateBooked = upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
+    const bookedIntervals = selectedDateBooked
+      .map((a) => {
+        const bookedKey = localSlotKeyFromIso(a.scheduled_start)
+        if (!bookedKey) return null
+        const [bookedDate, bookedHm] = bookedKey.split('T')
+        if (!bookedDate || !bookedHm) return null
+        const startTime = localSlotTimestamp(bookedDate, bookedHm)
+        if (Number.isNaN(startTime)) return null
+        const d = new Date(a.scheduled_start)
+        if (Number.isNaN(d.getTime())) return null
+        const startMin = d.getHours() * 60 + d.getMinutes()
+        const startIsoWithSeconds = `${bookedDate}T${bookedHm}:00`
+        const duration = durationMap[a.scheduled_start] ?? schedule.defaultSlotMinutes ?? 15
+        const endMin = startMin + duration
+        return { startMin, endMin, startTime, startIso: startIsoWithSeconds }
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .sort((a, b) => a.startMin - b.startMin)
     const out: SlotBlock[] = []
+    const now = Date.now()
     for (const w of windows) {
       let pointer = w.startMin
       while (pointer + step <= w.endMin) {
+        const overlap = bookedIntervals.find((iv) => pointer < iv.endMin && pointer + step > iv.startMin)
+        if (overlap) {
+          if (overlap.startTime >= now - 60_000) {
+            out.push({
+              startIso: overlap.startIso,
+              booked: true,
+            })
+          }
+          pointer = Math.max(pointer + step, overlap.endMin)
+          continue
+        }
         const slotHhmm = hhmmFromMinutes(pointer)
         const startIso = `${dateStr}T${slotHhmm}:00`
         const startTime = localSlotTimestamp(dateStr, slotHhmm)
-        const now = Date.now()
-        if (!Number.isNaN(startTime) && startTime >= now - 60_000) {
-          out.push({
-            startIso,
-            booked: bookedStarts.has(`${dateStr}T${slotHhmm}`),
-          })
-        }
+        if (!Number.isNaN(startTime) && startTime >= now - 60_000) out.push({ startIso, booked: false })
         pointer += step
       }
     }
     return out
-  }, [appointmentDate, schedule, upcoming])
+      .sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime())
+      .filter((slot, idx, arr) => arr.findIndex((x) => x.startIso === slot.startIso) === idx)
+  }, [appointmentDate, durationMap, schedule, upcoming])
 
   const selectedSlots = useMemo(
     () =>

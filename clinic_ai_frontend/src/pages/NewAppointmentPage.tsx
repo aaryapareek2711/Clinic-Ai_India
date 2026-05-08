@@ -169,7 +169,7 @@ function computeSlotsForDate(params: {
     while (pointer + appointmentDuration <= w.endMin) {
       const overlap = bookedIntervals.find((iv) => pointer < iv.endMin && pointer + appointmentDuration > iv.startMin)
       if (overlap) {
-        if (!blocks.some((b) => b.startIso === overlap.startIso)) {
+        if (overlap.startTime >= now - 60_000 && !blocks.some((b) => b.startIso === overlap.startIso)) {
           blocks.push({ startIso: overlap.startIso, endIso: overlap.endIso, booked: true })
         }
         pointer = Math.max(pointer + (schedule.defaultSlotMinutes || 15), overlap.endMin)
