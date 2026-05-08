@@ -35,16 +35,6 @@ function normalizeIndiaMobileForApi(raw: string): string | null {
   return null
 }
 
-function dateKeyLocal(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function minutesFromHHmm(v: string): number {
   const [h, m] = v.split(':').map((n) => Number(n))
   if (Number.isNaN(h) || Number.isNaN(m)) return 0
@@ -82,16 +72,30 @@ function localSlotTimestamp(dateStr: string, hhmm: string): number {
   return new Date(year, month - 1, day, hour, minute, 0, 0).getTime()
 }
 
-function localSlotKeyFromIso(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
+function extractDateAndTime(raw: string | null | undefined): { dateStr: string; hhmm: string } | null {
+  const text = String(raw ?? '').trim()
+  if (!text) return null
+  const m = text.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/)
+  if (m) return { dateStr: m[1], hhmm: m[2] }
+  const d = new Date(text)
+  if (Number.isNaN(d.getTime())) return null
   const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${day}T${hh}:${mm}`
+  return { dateStr: `${y}-${mo}-${day}`, hhmm: `${hh}:${mm}` }
+}
+
+function dateKeyFromRaw(raw: string | null | undefined): string {
+  const parts = extractDateAndTime(raw)
+  return parts?.dateStr ?? ''
+}
+
+function localSlotKeyFromIso(iso: string | null | undefined): string {
+  const parts = extractDateAndTime(iso)
+  if (!parts) return ''
+  return `${parts.dateStr}T${parts.hhmm}`
 }
 
 function formatMonthLabel(d: Date): string {
@@ -169,7 +173,7 @@ function NewVisitPage() {
     }
     const bookedStarts = new Set(
       upcoming
-        .filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
+        .filter((a) => dateKeyFromRaw(a.scheduled_start) === dateStr)
         .map((a) => localSlotKeyFromIso(a.scheduled_start)),
     )
     const out: SlotBlock[] = []
@@ -180,10 +184,10 @@ function NewVisitPage() {
         const startIso = `${dateStr}T${slotHhmm}:00`
         const startTime = localSlotTimestamp(dateStr, slotHhmm)
         const now = Date.now()
-        if (!Number.isNaN(startTime) && startTime >= now - 60_000) {
+        if (!Number.isNaN(startTime) && startTime >= now - 60_000 && !bookedStarts.has(`${dateStr}T${slotHhmm}`)) {
           out.push({
             startIso,
-            booked: bookedStarts.has(`${dateStr}T${slotHhmm}`),
+            booked: false,
           })
         }
         pointer += step

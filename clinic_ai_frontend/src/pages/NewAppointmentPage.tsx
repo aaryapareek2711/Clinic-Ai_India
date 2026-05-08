@@ -82,16 +82,24 @@ function localSlotTimestamp(dateStr: string, hhmm: string): number {
   return new Date(year, month - 1, day, hour, minute, 0, 0).getTime()
 }
 
-function localSlotKeyFromIso(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
+function extractDateAndTime(raw: string | null | undefined): { dateStr: string; hhmm: string } | null {
+  const text = String(raw ?? '').trim()
+  if (!text) return null
+  const m = text.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/)
+  if (m) return { dateStr: m[1], hhmm: m[2] }
+  const d = new Date(text)
+  if (Number.isNaN(d.getTime())) return null
   const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${day}T${hh}:${mm}`
+  return { dateStr: `${y}-${mo}-${day}`, hhmm: `${hh}:${mm}` }
+}
+
+function dateKeyFromRaw(raw: string | null | undefined): string {
+  const parts = extractDateAndTime(raw)
+  return parts?.dateStr ?? ''
 }
 
 function addMinutesToIsoLocal(isoLocal: string, mins: number): string {
@@ -145,15 +153,13 @@ function computeSlotsForDate(params: {
   const bookedIntervals = selectedDateBooked
     .map((a) => {
       const startIso = a.scheduled_start
-      const bookedKey = localSlotKeyFromIso(startIso)
-      if (!bookedKey) return null
-      const [bookedDate, bookedHm] = bookedKey.split('T')
-      if (!bookedDate || !bookedHm) return null
+      const parts = extractDateAndTime(startIso)
+      if (!parts) return null
+      const bookedDate = parts.dateStr
+      const bookedHm = parts.hhmm
       const startTime = localSlotTimestamp(bookedDate, bookedHm)
       if (Number.isNaN(startTime)) return null
-      const d = new Date(startIso)
-      if (Number.isNaN(d.getTime())) return null
-      const startMin = d.getHours() * 60 + d.getMinutes()
+      const startMin = minutesFromHHmm(bookedHm)
       const duration = durationMap[startIso] ?? schedule.defaultSlotMinutes ?? 15
       const endMin = startMin + duration
       const endIso = addMinutesToIsoLocal(`${bookedDate}T${bookedHm}:00`, duration)
@@ -169,9 +175,7 @@ function computeSlotsForDate(params: {
     while (pointer + appointmentDuration <= w.endMin) {
       const overlap = bookedIntervals.find((iv) => pointer < iv.endMin && pointer + appointmentDuration > iv.startMin)
       if (overlap) {
-        if (!blocks.some((b) => b.startIso === overlap.startIso)) {
-          blocks.push({ startIso: overlap.startIso, endIso: overlap.endIso, booked: true })
-        }
+        // Hide booked overlaps entirely from the selectable slot list.
         pointer = Math.max(pointer + (schedule.defaultSlotMinutes || 15), overlap.endMin)
         continue
       }
@@ -262,7 +266,7 @@ function NewAppointmentPage() {
   const selectedDateBooked = useMemo(() => {
     const key = appointmentDate.trim()
     if (!key) return []
-    return upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === key)
+    return upcoming.filter((a) => dateKeyFromRaw(a.scheduled_start) === key)
   }, [appointmentDate, upcoming])
 
   const dayAtCapacity = appointmentDate.trim().length > 0 && selectedDateBooked.length >= DAILY_SLOT_LIMIT
@@ -317,7 +321,7 @@ function NewAppointmentPage() {
     return cells
   }, [visibleMonth, appointmentDate, minAppointmentDate, appointmentDuration, schedule, upcoming, durationMap])
 
-  const availableSlots = useMemo(() => slotBlocks.filter((s) => !s.booked), [slotBlocks])
+  const availableSlots = useMemo(() => slotBlocks, [slotBlocks])
 
   useEffect(() => {
     setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((b) => !b.booked && b.startIso === iso)))
@@ -594,20 +598,16 @@ function NewAppointmentPage() {
                   <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
                   <div className="flex flex-wrap gap-2">
                     {slotBlocks.map((slot) => {
-                      const active = selectedStartIsos.includes(slot.startIso) && !slot.booked
+                      const active = selectedStartIsos.includes(slot.startIso)
                       return (
                         <button
                           key={slot.startIso}
                           className={`rounded-xl border px-4 py-2 text-sm font-medium ${
-                            slot.booked
-                              ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 line-through'
-                              : active
-                                ? 'border-[#6366f1] bg-[#6366f1] text-white'
-                                : 'border-gray-200 bg-white text-[#171d16] hover:border-[#6366f1]/40'
+                            active
+                              ? 'border-[#6366f1] bg-[#6366f1] text-white'
+                              : 'border-gray-200 bg-white text-[#171d16] hover:border-[#6366f1]/40'
                           }`}
-                          disabled={slot.booked}
                           onClick={() => {
-                            if (slot.booked) return
                             setSelectedStartIsos((prev) =>
                               prev.includes(slot.startIso)
                                 ? prev.filter((x) => x !== slot.startIso)
