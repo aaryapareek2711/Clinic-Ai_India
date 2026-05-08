@@ -57,6 +57,43 @@ function hhmmFromMinutes(total: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+function localSlotTimestamp(dateStr: string, hhmm: string): number {
+  const [yearStr, monthStr, dayStr] = dateStr.split('-')
+  const [hourStr, minuteStr] = hhmm.split(':')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  const hour = Number(hourStr)
+  const minute = Number(minuteStr)
+  if (
+    [year, month, day, hour, minute].some(Number.isNaN) ||
+    year < 1970 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return Number.NaN
+  }
+  return new Date(year, month - 1, day, hour, minute, 0, 0).getTime()
+}
+
+function localSlotKeyFromIso(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${day}T${hh}:${mm}`
+}
+
 function formatMonthLabel(d: Date): string {
   return d.toLocaleDateString([], { month: 'long', year: 'numeric' })
 }
@@ -130,18 +167,23 @@ function NewVisitPage() {
       const evEnd = minutesFromHHmm(schedule.eveningEnd)
       if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
     }
-    const bookedStarts = new Set(upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr).map((a) => a.scheduled_start))
+    const bookedStarts = new Set(
+      upcoming
+        .filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
+        .map((a) => localSlotKeyFromIso(a.scheduled_start)),
+    )
     const out: SlotBlock[] = []
     for (const w of windows) {
       let pointer = w.startMin
       while (pointer + step <= w.endMin) {
-        const startIso = `${dateStr}T${hhmmFromMinutes(pointer)}:00`
-        const startTime = new Date(startIso).getTime()
+        const slotHhmm = hhmmFromMinutes(pointer)
+        const startIso = `${dateStr}T${slotHhmm}:00`
+        const startTime = localSlotTimestamp(dateStr, slotHhmm)
         const now = Date.now()
-        if (startTime >= now - 60_000) {
+        if (!Number.isNaN(startTime) && startTime >= now - 60_000) {
           out.push({
             startIso,
-            booked: bookedStarts.has(startIso),
+            booked: bookedStarts.has(`${dateStr}T${slotHhmm}`),
           })
         }
         pointer += step
