@@ -86,6 +86,8 @@ export type ProviderVisitListItem = {
   mobile_number?: string | null
   /** From patients.created_at — not visit created time. */
   patient_created_at?: string | null
+  /** Most recent known visit datetime for this patient. */
+  patient_last_visit_at?: string | null
   visit_type?: string
   status: string
   previous_workflow_stage?: string | null
@@ -116,6 +118,8 @@ export type CarePrepItem = {
   patient_name: string
   mobile_number?: string | null
   patient_created_at?: string | null
+  patient_last_visit_at?: string | null
+  scheduled_start?: string | null
   intake_status: string
   intake_question_count: number
   touched_at?: string | null
@@ -146,7 +150,16 @@ export async function fetchProviderVisitsPaged(
     pageSize: number
     statusFilter?: string
     search?: string
-    sort?: 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+    sort?:
+      | 'patient_newest'
+      | 'patient_oldest'
+      | 'visit_latest'
+      | 'visit_oldest'
+      | 'time_newest'
+      | 'time_oldest'
+      | 'name_az'
+      | 'name_za'
+      | 'visit_id'
   },
 ): Promise<PagedVisitResponse> {
   const { data } = await apiClient.get<PagedVisitResponse>(
@@ -166,7 +179,22 @@ export async function fetchProviderVisitsPaged(
 
 export async function fetchProviderCarePrep(
   providerId: string,
-  opts: { page: number; pageSize: number; filter?: 'all' | 'ready' | 'in_progress'; search?: string },
+  opts: {
+    page: number
+    pageSize: number
+    filter?: 'all' | 'ready' | 'in_progress'
+    search?: string
+    sort?:
+      | 'patient_newest'
+      | 'patient_oldest'
+      | 'visit_latest'
+      | 'visit_oldest'
+      | 'time_newest'
+      | 'time_oldest'
+      | 'name_az'
+      | 'name_za'
+      | 'visit_id'
+  },
 ): Promise<CarePrepResponse> {
   const { data } = await apiClient.get<CarePrepResponse>(
     `/api/visits/provider/${encodeURIComponent(providerId)}/careprep`,
@@ -176,6 +204,7 @@ export async function fetchProviderCarePrep(
         page_size: opts.pageSize,
         filter: opts.filter || 'all',
         search: opts.search || undefined,
+        sort: opts.sort || 'patient_newest',
       },
     },
   )

@@ -20,6 +20,8 @@ make dev
 | OPENAI_MODEL | No | OpenAI model for chat/note generation | gpt-4o-mini |
 | MONGODB_URL | Yes | MongoDB connection URI | mongodb://localhost:27017/clinic_ai |
 | MONGODB_DB_NAME | Yes | MongoDB database name | clinic_ai |
+| CORS_ORIGINS | Yes (for browser clients) | Comma-separated allowed frontend origins | http://localhost:5173,https://your-app.vercel.app |
+| CORS_ORIGIN_REGEX | No | Optional regex for dynamic preview domains (e.g., Vercel previews) | https://your-app-.*\\.vercel\\.app |
 | AZURE_SPEECH_KEY | Yes | Azure Speech Service API key | your-azure-speech-key |
 | AZURE_SPEECH_REGION | Yes* | Azure Speech region (required if endpoint not fully set) | centralindia |
 | AZURE_SPEECH_ENDPOINT | No | Optional explicit Speech endpoint | https://<region>.api.cognitive.microsoft.com/ |

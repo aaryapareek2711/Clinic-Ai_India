@@ -9,8 +9,16 @@ import type { CarePrepItem } from '../services/visitWorkflowApi'
 
 import NotificationsDrawer from './NotificationsDrawer'
 
-type QueueFilter = 'all' | 'ready' | 'in_progress'
-type CarePrepSort = 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+type CarePrepSort =
+  | 'patient_newest'
+  | 'patient_oldest'
+  | 'visit_latest'
+  | 'visit_oldest'
+  | 'time_newest'
+  | 'time_oldest'
+  | 'name_az'
+  | 'name_za'
+  | 'visit_id'
 const PAGE_SIZE = 10
 
 type QueueRow = {
@@ -145,7 +153,6 @@ export default function CarePrepPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
-  const [queueFilter, setQueueFilter] = useState<QueueFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<CarePrepSort>('patient_newest')
   const [currentPage, setCurrentPage] = useState(1)
@@ -154,14 +161,19 @@ export default function CarePrepPage() {
       'careprep',
       'rows',
       DEFAULT_PROVIDER_ID,
-      { page: currentPage, pageSize: PAGE_SIZE, filter: queueFilter, search: searchQuery.trim() || undefined },
+      {
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        search: searchQuery.trim() || undefined,
+        sort: sortBy,
+      },
     ],
     queryFn: () =>
       fetchProviderCarePrep(DEFAULT_PROVIDER_ID, {
         page: currentPage,
         pageSize: PAGE_SIZE,
-        filter: queueFilter,
         search: searchQuery.trim() || undefined,
+        sort: sortBy,
       }),
     staleTime: 10_000,
   })
@@ -172,19 +184,7 @@ export default function CarePrepPage() {
     return visits.map((v) => mapVisitAndIntake(v))
   }, [data])
 
-  const visiblePatients = useMemo(() => {
-    const sorted = [...rows]
-    sorted.sort((a, b) => {
-      if (sortBy === 'patient_newest') return b.patientCreatedAt.localeCompare(a.patientCreatedAt)
-      if (sortBy === 'patient_oldest') return a.patientCreatedAt.localeCompare(b.patientCreatedAt)
-      if (sortBy === 'time_newest') return a.submittedMinutesAgo - b.submittedMinutesAgo
-      if (sortBy === 'time_oldest') return b.submittedMinutesAgo - a.submittedMinutesAgo
-      if (sortBy === 'name_az') return a.patientName.localeCompare(b.patientName)
-      if (sortBy === 'name_za') return b.patientName.localeCompare(a.patientName)
-      return a.visitId.localeCompare(b.visitId)
-    })
-    return sorted
-  }, [rows, sortBy])
+  const visiblePatients = useMemo(() => rows, [rows])
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
   const pagedPatients = visiblePatients
 
@@ -243,20 +243,6 @@ export default function CarePrepPage() {
                     value={searchQuery}
                   />
                 </div>
-                <div className="relative min-w-[170px]">
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-500">tune</span>
-                  <select
-                    aria-label="Filter queue"
-                    className="cursor-pointer appearance-none rounded-lg border border-[#bdcaba] bg-white py-2 pr-9 pl-9 text-xs font-semibold text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#006b2c] focus:ring-2 focus:ring-[#006b2c]/20 focus:outline-none"
-                    value={queueFilter}
-                    onChange={(e) => setQueueFilter(e.target.value as QueueFilter)}
-                  >
-                    <option value="all">All intakes</option>
-                    <option value="ready">Ready heuristic</option>
-                    <option value="in_progress">In progress</option>
-                  </select>
-                  <span className="material-symbols-outlined pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-slate-400">expand_more</span>
-                </div>
                 <div className="relative min-w-[220px]">
                   <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">
                     sort
@@ -269,6 +255,8 @@ export default function CarePrepPage() {
                   >
                     <option value="patient_newest">New patient: newest first</option>
                     <option value="patient_oldest">New patient: oldest first</option>
+                    <option value="visit_latest">Last visit: newest first</option>
+                    <option value="visit_oldest">Last visit: oldest first</option>
                     <option value="time_newest">Time: newest first</option>
                     <option value="time_oldest">Time: oldest first</option>
                     <option value="name_az">Name: A → Z</option>
