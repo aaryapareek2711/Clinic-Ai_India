@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,8 @@ from urllib import request
 from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
 from src.core.language_support import normalize_intake_language
+
+logger = logging.getLogger(__name__)
 
 
 # Canonical intake taxonomy.
@@ -488,12 +491,12 @@ class OpenAIQuestionClient:
         Persist full intake prompt/response and agent-wise question trails in MongoDB.
         Logging must never block intake flow.
         """
+        visit_id = str(context.get("visit_id") or "").strip()
+        patient_id = str(context.get("patient_id") or "").strip()
+        session_id = str(context.get("session_id") or "").strip()
+        if not visit_id:
+            return
         try:
-            visit_id = str(context.get("visit_id") or "").strip()
-            patient_id = str(context.get("patient_id") or "").strip()
-            session_id = str(context.get("session_id") or "").strip()
-            if not visit_id:
-                return
             now = datetime.now(timezone.utc)
             question_number = int(model_json.get("question_number", context.get("question_number", 1)) or 1)
             question_key = f"q{question_number}"
@@ -549,6 +552,13 @@ class OpenAIQuestionClient:
                     },
                 )
         except Exception:
+            # Reliability rule: logging should never break intake flow, but failures must be visible.
+            logger.exception(
+                "intake_prompt_log_failed visit_id=%s patient_id=%s session_id=%s",
+                visit_id,
+                patient_id,
+                session_id,
+            )
             return
 
     def detect_patient_opt_out(
