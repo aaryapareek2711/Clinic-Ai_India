@@ -1647,7 +1647,7 @@ class IntakeChatService:
         try:
             self.whatsapp.send_typing_indicator(to_number, reply_to_message_id=reply_to_message_id)
         except Exception:
-            logger.warning(
+            logger.exception(
                 "whatsapp_typing_indicator_failed to=%s",
                 self._mask_phone_number(str(to_number or "")),
             )
