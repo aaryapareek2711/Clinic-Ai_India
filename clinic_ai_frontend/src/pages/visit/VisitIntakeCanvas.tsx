@@ -2,14 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { getApiErrorMessage } from '../../lib/apiClient'
 import {
-  generatePreVisitSummary,
-  type ClinicalNoteLatest,
   type IntakeSessionResponse,
   type PreVisitSummaryResponse,
   savePreVisitAdditionalDoctorNote,
   type VisitDetailResponse,
 } from '../../services/visitWorkflowApi'
-import { computeIntakeProgress, splitToChips } from './intakeUtils'
+import { splitToChips } from './intakeUtils'
 
 function isNotProvidedText(raw: string | undefined | null): boolean {
   const t = (raw ?? '').trim()
@@ -51,23 +49,16 @@ type Props = {
   visit: VisitDetailResponse | null
   intake: IntakeSessionResponse | null
   preVisit: PreVisitSummaryResponse | null
-  clinicalNote: ClinicalNoteLatest | null
   onPreVisitUpdated: (doc: PreVisitSummaryResponse | null) => void
 }
 
 export default function VisitIntakeCanvas({
   visitId,
   visit,
-  intake,
   preVisit,
-  clinicalNote,
   onPreVisitUpdated,
 }: Props) {
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
   const patientId = visit?.patient_id ?? ''
-  const { pct } = useMemo(() => computeIntakeProgress(intake), [intake])
 
   const sections = preVisit?.sections
   const additionalDoctorNotePersisted = sections?.additional_doctor_note ?? null
@@ -99,28 +90,6 @@ export default function VisitIntakeCanvas({
     return raw.map((s) => String(s).trim()).filter(Boolean)
   }, [sections?.red_flag_indicators])
 
-  const clinicalNoteDoctorNotes = useMemo(() => {
-    const p = clinicalNote?.payload
-    if (!p || typeof p !== 'object') return ''
-    const o = p as Record<string, unknown>
-    return typeof o.doctor_notes === 'string' ? o.doctor_notes.trim() : ''
-  }, [clinicalNote?.note_id, clinicalNote?.payload])
-
-  async function handleGenerate() {
-    if (!patientId || !visitId) return
-    setGenerating(true)
-    setError(null)
-    try {
-      const doc = await generatePreVisitSummary(patientId, visitId)
-      onPreVisitUpdated(doc)
-    } catch (e) {
-      setError(getApiErrorMessage(e))
-      onPreVisitUpdated(null)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
   async function handleSaveAdditionalDoctorNote() {
     if (!patientId || !visitId) return
     const next = additionalDoctorNoteDraft.trim()
@@ -145,74 +114,10 @@ export default function VisitIntakeCanvas({
   return (
     <div className="space-y-8">
       <div className="space-y-8">
-        <div className="rounded-xl border border-[#bdcaba] bg-white p-6">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-[18px] font-semibold text-[#171d16]">Initial Intake Progress</h3>
-            <span className="text-sm font-semibold text-[#006b2c]">{pct}% Completed</span>
-          </div>
-          <div className="mb-6 h-2.5 w-full rounded-full bg-[#e9f0e5]">
-            <div className="h-2.5 rounded-full bg-[#006b2c] transition-all" style={{ width: `${pct}%` }} />
-          </div>
-
-          {!showSummary && (
-            <p className="text-sm leading-relaxed text-[#575e70]">
-              After intake responses are saved, generate the summary to populate the five pre-visit sections: chief complaint,
-              HPI, current medications and remedies, past history and allergies, and red-flag indicators.
-            </p>
-          )}
-
-          {error && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
-              {error}
-            </div>
-          )}
-
-          {!showSummary && (
-            <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border border-[#bdcaba] bg-[#eff6ea] px-4 py-3 text-sm">
-              <span className="material-symbols-outlined text-[#006b2c] text-base">info</span>
-              <span className="flex-1 text-[#171d16]">Generate a pre-visit summary after intake answers exist.</span>
-              <button
-                className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#00873a] disabled:opacity-60"
-                disabled={generating || !patientId}
-                onClick={() => void handleGenerate()}
-                type="button"
-              >
-                {generating ? 'Generating…' : 'Generate summary'}
-              </button>
-            </div>
-          )}
-          {showSummary && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                className="rounded-lg border border-[#bdcaba] bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-gray-50 disabled:opacity-60"
-                disabled={generating || !patientId}
-                onClick={() => void handleGenerate()}
-                type="button"
-              >
-                {generating ? 'Refreshing…' : 'Refresh summary'}
-              </button>
-              {preVisit?.language && (
-                <span className="text-xs text-[#575e70]">
-                  Summary language: <span className="font-medium text-[#171d16]">{preVisit.language}</span>
-                  {preVisit.status ? (
-                    <>
-                      {' '}
-                      · Intake status: <span className="font-medium text-[#171d16]">{preVisit.status}</span>
-                    </>
-                  ) : null}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
         {showSummary && sections && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <h3 className="text-[18px] font-semibold text-[#171d16]">Pre-visit summary</h3>
-              <p className="max-w-xl text-xs text-[#575e70]">
-                Doctor-facing structured summary aligned with the visit pre-visit record (five sections).
-              </p>
             </div>
 
             <div className="space-y-4">
@@ -309,21 +214,9 @@ export default function VisitIntakeCanvas({
                 </dl>
               </section>
 
-              <section className="rounded-xl border border-[#bdcaba] bg-white p-6">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#575e70]">5 · Clinical note</p>
-                <dl className="space-y-3 text-sm">
-                  <div>
-                    <dt className="text-xs font-semibold text-[#575e70]">Doctor notes</dt>
-                    <dd className="mt-1 leading-relaxed whitespace-pre-wrap text-[#171d16]">
-                      {displayLine(clinicalNoteDoctorNotes)}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
               <section className="rounded-xl border border-[#ba1a1a]/15 bg-[#fff8f7] p-6">
                 <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#ba1a1a]">
-                  <span className="material-symbols-outlined text-base">emergency</span>6 · Red flag indicators
+                  <span className="material-symbols-outlined text-base">emergency</span>5 · Red flag indicators
                 </p>
                 {redFlagItems.length > 0 ? (
                   <ul className="space-y-2 text-sm text-[#93000a]">

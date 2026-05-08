@@ -249,13 +249,20 @@ class GeneratePostVisitSummaryUseCase:
     def _build_whatsapp_payload(*, payload: dict) -> str:
         medicines = payload.get("medicines_to_take") or []
         tests = payload.get("tests_recommended") or []
+        self_care = payload.get("self_care") or []
         warnings = payload.get("warning_signs") or []
+        follow_up_text = str(payload.get("follow_up") or "").strip()
+        next_visit_date = str(payload.get("next_visit_date") or "").strip()
+        follow_up_line = follow_up_text
+        if next_visit_date:
+            follow_up_line = f"{follow_up_text} (Next visit date: {next_visit_date})".strip()
         lines = [
             "Post-visit summary",
             f"🩺 Finding: {payload.get('what_doctor_found', '')}",
             f"💊 Medicines: {', '.join(medicines) if medicines else 'As advised by doctor'}",
             f"🔬 Tests: {', '.join(tests) if tests else 'No additional tests'}",
-            f"📅 Follow-up: {payload.get('follow_up', '')}",
+            f"📅 Follow-up: {follow_up_line}",
+            f"🛟 Self-care: {', '.join(self_care) if self_care else 'Rest, hydration, and follow medicine instructions'}",
             f"⚠️ Warning signs: {', '.join(warnings) if warnings else 'If symptoms worsen, contact your doctor'}",
         ]
         return "\n".join(line.strip() for line in lines if line.strip())

@@ -200,13 +200,6 @@ function formatRecordingElapsed(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-/** Pre-visit step is aimed at visits that have a scheduled slot (board-style workflow). */
-function showScheduledPreVisitBadge(v: VisitDetailResponse | null): boolean {
-  if (!v?.scheduled_start) return false
-  const s = (v.status || '').toLowerCase()
-  return ['scheduled', 'open', 'queued', 'in_queue', 'in_progress'].includes(s)
-}
-
 function visitStatusChip(statusRaw: string | undefined | null): {
   label: string
   className: string
@@ -367,7 +360,11 @@ export default function VisitDetailPage() {
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
   const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
-  const [recapFollowUpTimeDraft, setRecapFollowUpTimeDraft] = useState('')
+  const [recapFollowUpTimePartsDraft, setRecapFollowUpTimePartsDraft] = useState<{
+    hour: string
+    minute: string
+    period: string
+  }>({ hour: '', minute: '', period: '' })
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -476,7 +473,7 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPhoneDraft('')
     setRecapFollowUpDateDraft('')
-    setRecapFollowUpTimeDraft('')
+    setRecapFollowUpTimePartsDraft({ hour: '', minute: '', period: '' })
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -496,7 +493,10 @@ export default function VisitDetailPage() {
     const noteDate = (o.follow_up_date != null ? String(o.follow_up_date) : '').trim()
     const noteTime = (o.follow_up_time != null ? String(o.follow_up_time) : '').trim()
     if (noteDate) setRecapFollowUpDateDraft(noteDate)
-    if (noteTime) setRecapFollowUpTimeDraft(to12HourTimeDisplay(noteTime))
+    if (noteTime) {
+      const initialTime = to12HourTimeDisplay(noteTime)
+      setRecapFollowUpTimePartsDraft(parse12HourTimeParts(initialTime))
+    }
   }, [clinicalNote?.note_id, clinicalNote?.payload])
 
   useEffect(() => {
@@ -557,7 +557,6 @@ export default function VisitDetailPage() {
     effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
-  const scheduledBadge = showScheduledPreVisitBadge(visit)
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
@@ -652,10 +651,7 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
-  const recapFollowUpTimeParts = useMemo(
-    () => parse12HourTimeParts(recapFollowUpTimeDraft),
-    [recapFollowUpTimeDraft],
-  )
+  const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -690,15 +686,8 @@ export default function VisitDetailPage() {
             ? toCelsiusFromFahrenheit(vals[f.key] ?? '')
             : vals[f.key] ?? '',
         }))
-        const res = await submitVitals(pid, vid, form.form_id || null, staff, values)
-        const rawId = res.vitals_id ?? (res as { vitalsId?: string }).vitalsId
-        const short =
-          typeof rawId === 'string' && rawId.length >= 8
-            ? rawId.slice(-8)
-            : typeof rawId === 'string' && rawId.length > 0
-              ? rawId
-              : 'saved'
-        setVitalsMessage(`Vitals submitted (${short}) · ${new Date().toLocaleTimeString()}`)
+        await submitVitals(pid, vid, form.form_id || null, staff, values)
+        setVitalsMessage(`Vitals submitted · ${new Date().toLocaleTimeString()}`)
         setVitalsLocked(true)
       } catch (err) {
         setVitalsMessage(getApiErrorMessage(err))
@@ -764,10 +753,8 @@ export default function VisitDetailPage() {
           })
           setVitalsValues(hydratedValues)
           setVitalsStaffName((latest.staff_name || '').trim() || 'Nurse')
-          const rawId = latest.vitals_id
-          const short = typeof rawId === 'string' && rawId.length >= 8 ? rawId.slice(-8) : rawId || 'saved'
           const at = latest.submitted_at ? ` · ${new Date(latest.submitted_at).toLocaleTimeString()}` : ''
-          setVitalsMessage(`Vitals submitted (${short})${at}`)
+          setVitalsMessage(`Vitals submitted${at}`)
           setVitalsLocked(true)
           setVitalsFormVisible(true)
         }
@@ -1418,11 +1405,6 @@ export default function VisitDetailPage() {
                   >
                     <span className="material-symbols-outlined mr-2 text-xl">{t.icon}</span>
                     {t.label}
-                    {t.id === 'pre-visit' && scheduledBadge && (
-                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                        Scheduled
-                      </span>
-                    )}
                   </button>
                 ))}
               </div>
@@ -1447,7 +1429,6 @@ export default function VisitDetailPage() {
               {!loading && tab === 'pre-visit' && (
                 <div className="space-y-4">
                   <VisitIntakeCanvas
-                    clinicalNote={displayClinicalNote}
                     intake={displayIntake}
                     onPreVisitUpdated={setPreVisit}
                     patientName={patientName}
@@ -1922,15 +1903,14 @@ export default function VisitDetailPage() {
                       <div className="mt-2 flex w-full max-w-xs items-center gap-2">
                         <select
                           className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) =>
-                            setRecapFollowUpTimeDraft(
-                              compose12HourTime({
-                                hour: e.target.value,
-                                minute: recapFollowUpTimeParts.minute,
-                                period: recapFollowUpTimeParts.period,
-                              }),
-                            )
-                          }
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: e.target.value,
+                              minute: recapFollowUpTimeParts.minute,
+                              period: recapFollowUpTimeParts.period,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
                           value={recapFollowUpTimeParts.hour}
                         >
                           <option value="">HH</option>
@@ -1942,15 +1922,14 @@ export default function VisitDetailPage() {
                         </select>
                         <select
                           className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) =>
-                            setRecapFollowUpTimeDraft(
-                              compose12HourTime({
-                                hour: recapFollowUpTimeParts.hour,
-                                minute: e.target.value,
-                                period: recapFollowUpTimeParts.period,
-                              }),
-                            )
-                          }
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: recapFollowUpTimeParts.hour,
+                              minute: e.target.value,
+                              period: recapFollowUpTimeParts.period,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
                           value={recapFollowUpTimeParts.minute}
                         >
                           <option value="">MM</option>
@@ -1962,15 +1941,14 @@ export default function VisitDetailPage() {
                         </select>
                         <select
                           className="w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
-                          onChange={(e) =>
-                            setRecapFollowUpTimeDraft(
-                              compose12HourTime({
-                                hour: recapFollowUpTimeParts.hour,
-                                minute: recapFollowUpTimeParts.minute,
-                                period: e.target.value,
-                              }),
-                            )
-                          }
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: recapFollowUpTimeParts.hour,
+                              minute: recapFollowUpTimeParts.minute,
+                              period: e.target.value,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
                           value={recapFollowUpTimeParts.period}
                         >
                           <option value="">AM/PM</option>
@@ -2003,7 +1981,7 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
-                            const nextVisitTime = to24HourTimeForApi(recapFollowUpTimeDraft.trim())
+                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
                               follow_up_date: nextVisitDate || undefined,
