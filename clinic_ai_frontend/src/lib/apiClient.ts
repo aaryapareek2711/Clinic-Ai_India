@@ -4,7 +4,16 @@ import axios from 'axios'
  * Default to same-origin API paths.
  * In local `vite` dev, this is proxied to backend via `vite.config.ts`.
  */
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || ''
+const API_BASE_URL_CANDIDATES = [
+  import.meta.env.VITE_API_BASE_URL,
+  import.meta.env.NEXT_PUBLIC_API_BASE_URL,
+  import.meta.env.NEXT_PUBLIC_API_URL,
+  import.meta.env.API_URL,
+] as const
+
+export const API_BASE_URL =
+  API_BASE_URL_CANDIDATES.map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find((value) => value.length > 0) || ''
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
