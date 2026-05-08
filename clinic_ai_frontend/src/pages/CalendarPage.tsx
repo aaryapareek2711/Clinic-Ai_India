@@ -361,7 +361,7 @@ function CalendarPage() {
                   const isBlank = dayNum < 1 || dayNum > daysInMonth
                   const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
                   const dayKey = isBlank ? '' : `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
-                  const isSelectedDay = !isBlank && selectedDayKey === dayKey
+                  const isSelectedDay = !isBlank && selectedDayKey === dayKey && selectedVisitId === null
 
                   const isToday = (() => {
                     if (isBlank) return false
@@ -409,6 +409,7 @@ function CalendarPage() {
                             {dayAppts.slice(0, 3).map((a) => (
                               <button
                                 key={a.visit_id}
+                                data-appointment-chip="true"
                                 className={`block w-full truncate rounded border px-1.5 py-0.5 text-left text-[10px] ${
                                   selectedVisitId === a.visit_id
                                     ? 'border-blue-600 bg-blue-600 text-white'
@@ -420,6 +421,7 @@ function CalendarPage() {
                                   setSelectedDayKey(null)
                                   navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
                                 }}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 title={a.chief_complaint}
                                 type="button"
                               >
