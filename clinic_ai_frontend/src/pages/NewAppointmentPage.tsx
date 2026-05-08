@@ -220,7 +220,9 @@ function computeSlotsForDate(params: {
     while (pointer + appointmentDuration <= w.endMin) {
       const overlap = bookedIntervals.find((iv) => pointer < iv.endMin && pointer + appointmentDuration > iv.startMin)
       if (overlap) {
-        // Hide booked overlaps entirely from the selectable slot list.
+        if (!blocks.some((b) => b.startIso === overlap.startIso)) {
+          blocks.push({ startIso: overlap.startIso, endIso: overlap.endIso, booked: true })
+        }
         pointer = Math.max(pointer + (schedule.defaultSlotMinutes || 15), overlap.endMin)
         continue
       }
@@ -249,6 +251,7 @@ function NewAppointmentPage() {
 
   const [patients, setPatients] = useState<PatientSummary[]>([])
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
+  const [selectedDateUpcoming, setSelectedDateUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
@@ -299,6 +302,35 @@ function NewAppointmentPage() {
     }
   }, [requestedPatientId])
 
+  useEffect(() => {
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) {
+      setSelectedDateUpcoming([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const [upcomingRows, visitRows] = await Promise.all([
+          fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+            fromDate: `${dateStr}T00:00:00`,
+            toDate: `${dateStr}T23:59:59`,
+          }),
+          fetchProviderVisits(DEFAULT_PROVIDER_ID),
+        ])
+        const merged = mergeUpcomingSources(upcomingRows, visitRows).filter(
+          (row) => dateKeyFromRaw(row.scheduled_start) === dateStr,
+        )
+        if (!cancelled) setSelectedDateUpcoming(merged)
+      } catch {
+        if (!cancelled) setSelectedDateUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [appointmentDate])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return patients
@@ -313,8 +345,9 @@ function NewAppointmentPage() {
   const selectedDateBooked = useMemo(() => {
     const key = appointmentDate.trim()
     if (!key) return []
-    return upcoming.filter((a) => dateKeyFromRaw(a.scheduled_start) === key)
-  }, [appointmentDate, upcoming])
+    const sourceRows = selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming
+    return sourceRows.filter((a) => dateKeyFromRaw(a.scheduled_start) === key)
+  }, [appointmentDate, upcoming, selectedDateUpcoming])
 
   const dayAtCapacity = appointmentDate.trim().length > 0 && selectedDateBooked.length >= DAILY_SLOT_LIMIT
   const durationMap = useMemo(() => getAppointmentDurationMap(), [])
@@ -324,10 +357,10 @@ function NewAppointmentPage() {
         dateStr: appointmentDate.trim(),
         appointmentDuration,
         schedule,
-        upcoming,
+        upcoming: selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming,
         durationMap,
       }),
-    [appointmentDate, appointmentDuration, schedule, upcoming, durationMap],
+    [appointmentDate, appointmentDuration, schedule, upcoming, selectedDateUpcoming, durationMap],
   )
 
   const monthCells = useMemo(() => {
@@ -353,7 +386,7 @@ function NewAppointmentPage() {
           dateStr,
           appointmentDuration,
           schedule,
-          upcoming,
+          upcoming: selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming,
           durationMap,
         }).filter((slot) => !slot.booked).length > 0
       cells.push({
@@ -366,9 +399,18 @@ function NewAppointmentPage() {
       })
     }
     return cells
-  }, [visibleMonth, appointmentDate, minAppointmentDate, appointmentDuration, schedule, upcoming, durationMap])
+  }, [
+    visibleMonth,
+    appointmentDate,
+    minAppointmentDate,
+    appointmentDuration,
+    schedule,
+    upcoming,
+    selectedDateUpcoming,
+    durationMap,
+  ])
 
-  const availableSlots = useMemo(() => slotBlocks, [slotBlocks])
+  const availableSlots = useMemo(() => slotBlocks.filter((s) => !s.booked), [slotBlocks])
 
   useEffect(() => {
     setSelectedStartIsos((prev) => prev.filter((iso) => slotBlocks.some((b) => !b.booked && b.startIso === iso)))
@@ -645,16 +687,20 @@ function NewAppointmentPage() {
                   <p className="mb-3 text-[13px] tracking-[0.05em] text-[#3e4a3d] uppercase">Available Time</p>
                   <div className="flex flex-wrap gap-2">
                     {slotBlocks.map((slot) => {
-                      const active = selectedStartIsos.includes(slot.startIso)
+                      const active = selectedStartIsos.includes(slot.startIso) && !slot.booked
                       return (
                         <button
                           key={slot.startIso}
                           className={`rounded-xl border px-4 py-2 text-sm font-medium ${
-                            active
-                              ? 'border-[#6366f1] bg-[#6366f1] text-white'
-                              : 'border-gray-200 bg-white text-[#171d16] hover:border-[#6366f1]/40'
+                            slot.booked
+                              ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 line-through'
+                              : active
+                                ? 'border-[#6366f1] bg-[#6366f1] text-white'
+                                : 'border-gray-200 bg-white text-[#171d16] hover:border-[#6366f1]/40'
                           }`}
+                          disabled={slot.booked}
                           onClick={() => {
+                            if (slot.booked) return
                             setSelectedStartIsos((prev) =>
                               prev.includes(slot.startIso)
                                 ? prev.filter((x) => x !== slot.startIso)

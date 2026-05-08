@@ -183,6 +183,7 @@ function NewVisitPage() {
   const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
+  const [selectedDateUpcoming, setSelectedDateUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const schedule = useMemo(() => getDoctorScheduleSettings(), [])
@@ -206,6 +207,35 @@ function NewVisitPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) {
+      setSelectedDateUpcoming([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const [upcomingRows, visitRows] = await Promise.all([
+          fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+            fromDate: `${dateStr}T00:00:00`,
+            toDate: `${dateStr}T23:59:59`,
+          }),
+          fetchProviderVisits(DEFAULT_PROVIDER_ID),
+        ])
+        const merged = mergeUpcomingSources(upcomingRows, visitRows).filter(
+          (row) => dateKeyFromRaw(row.scheduled_start) === dateStr,
+        )
+        if (!cancelled) setSelectedDateUpcoming(merged)
+      } catch {
+        if (!cancelled) setSelectedDateUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [appointmentDate])
+
   const slotBlocks = useMemo<SlotBlock[]>(() => {
     const dateStr = appointmentDate.trim()
     if (!dateStr) return []
@@ -219,8 +249,9 @@ function NewVisitPage() {
       const evEnd = minutesFromHHmm(schedule.eveningEnd)
       if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
     }
+    const sourceRows = selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming
     const bookedStarts = new Set(
-      upcoming
+      sourceRows
         .filter((a) => dateKeyFromRaw(a.scheduled_start) === dateStr)
         .map((a) => localSlotKeyFromIso(a.scheduled_start)),
     )
@@ -232,17 +263,17 @@ function NewVisitPage() {
         const startIso = `${dateStr}T${slotHhmm}:00`
         const startTime = localSlotTimestamp(dateStr, slotHhmm)
         const now = Date.now()
-        if (!Number.isNaN(startTime) && startTime >= now - 60_000 && !bookedStarts.has(`${dateStr}T${slotHhmm}`)) {
+        if (!Number.isNaN(startTime) && startTime >= now - 60_000) {
           out.push({
             startIso,
-            booked: false,
+            booked: bookedStarts.has(`${dateStr}T${slotHhmm}`),
           })
         }
         pointer += step
       }
     }
     return out
-  }, [appointmentDate, schedule, upcoming])
+  }, [appointmentDate, schedule, upcoming, selectedDateUpcoming])
 
   const selectedSlots = useMemo(
     () =>
