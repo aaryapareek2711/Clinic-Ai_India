@@ -238,6 +238,7 @@ def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateRes
             visit_id=request.visit_id,
             transcription_job_id=request.transcription_job_id,
             preferred_language=request.preferred_language,
+            follow_up_in=request.follow_up_in,
             follow_up_date=request.follow_up_date,
         )
     except ValueError as exc:
@@ -329,7 +330,12 @@ def _generate_by_type(*, note_type: NoteType, request: NoteGenerateRequest) -> N
             patient_id=request.patient_id,
             visit_id=request.visit_id,
             transcription_job_id=request.transcription_job_id,
-            force_regenerate=request.follow_up_date is not None or bool(str(request.follow_up_time or "").strip()),
+            force_regenerate=(
+                bool(request.force_regenerate)
+                or request.follow_up_date is not None
+                or bool(str(request.follow_up_time or "").strip())
+                or bool(str(request.template_id or "").strip())
+            ),
             follow_up_date=request.follow_up_date,
             follow_up_time=request.follow_up_time,
             template_id=request.template_id,

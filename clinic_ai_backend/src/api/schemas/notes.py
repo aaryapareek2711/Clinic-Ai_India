@@ -86,6 +86,11 @@ class NoteGenerateRequest(BaseModel):
     transcription_job_id: str | None = None
     note_type: NoteType | None = None
     preferred_language: str | None = None
+    # Optional textual follow-up override (e.g. "In 2 weeks") for post-visit generation.
+    follow_up_in: str | None = Field(
+        default=None,
+        description='Optional follow-up interval text (e.g. "In 2 weeks") to override post-visit follow-up wording.',
+    )
     # Optional: staff-confirmed next visit (India note + post-visit scheduling). ISO date only.
     follow_up_date: date | None = Field(
         default=None,
@@ -98,6 +103,10 @@ class NoteGenerateRequest(BaseModel):
     template_id: str | None = Field(
         default=None,
         description="Optional clinical template id from /api/templates/{id} to guide note generation.",
+    )
+    force_regenerate: bool = Field(
+        default=False,
+        description="When true, bypass cached source-job note and generate a fresh note.",
     )
 
 
