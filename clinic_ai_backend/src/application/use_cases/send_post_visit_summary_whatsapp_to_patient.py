@@ -65,9 +65,9 @@ def send_latest_post_visit_summary_whatsapp_to_patient(
         raise ValueError("No post_visit_summary note found for this visit")
 
     payload = dict(note.get("payload") or {})
-    whatsapp_payload = str(note.get("whatsapp_payload") or "").strip()
-    if not whatsapp_payload:
-        whatsapp_payload = GeneratePostVisitSummaryUseCase._build_whatsapp_payload(payload=payload)
+    # Always regenerate from structured payload so send output stays aligned
+    # with the current approved WhatsApp format.
+    whatsapp_payload = GeneratePostVisitSummaryUseCase._build_whatsapp_payload(payload=payload)
 
     resolved_language = str(patient_for_send.get("preferred_language") or "").strip().lower()
     if not resolved_language:
