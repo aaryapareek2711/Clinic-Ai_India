@@ -40,6 +40,7 @@ class GeneratePostVisitSummaryUseCase:
         visit_id: str | None = None,
         transcription_job_id: str | None = None,
         preferred_language: str | None = None,
+        follow_up_in: str | None = None,
         follow_up_date: date | None = None,
     ) -> dict:
         """Generate summary with India-note-first strategy and transcript fallback."""
@@ -74,6 +75,9 @@ class GeneratePostVisitSummaryUseCase:
         context = self._build_context(india_note=india_note, transcript=transcript)
         language_name = LANGUAGE_NAMES.get(resolved_language, resolved_language)
         payload = self._generate_payload(context=context, language_name=language_name)
+        follow_up_in_text = str(follow_up_in or "").strip()
+        if follow_up_in_text:
+            payload["follow_up"] = follow_up_in_text
         if follow_up_date is not None:
             parsed_staff = parse_next_visit_at(follow_up_date)
             if parsed_staff:

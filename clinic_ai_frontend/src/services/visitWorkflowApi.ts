@@ -365,6 +365,7 @@ export type ClinicalNoteGenerateOptions = {
   follow_up_date?: string
   follow_up_time?: string
   template_id?: string
+  force_regenerate?: boolean
   note_type?: 'india_clinical' | 'soap' | 'post_visit_summary'
 }
 
@@ -483,7 +484,7 @@ export async function generateClinicalNote(
   visitId: string,
   options?: ClinicalNoteGenerateOptions,
 ): Promise<ClinicalNoteLatest> {
-  const body: Record<string, string | undefined> = {
+  const body: Record<string, string | boolean | undefined> = {
     patient_id: patientId,
     visit_id: visitId,
   }
@@ -491,6 +492,7 @@ export async function generateClinicalNote(
   if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
   if (options?.follow_up_time?.trim()) body.follow_up_time = options.follow_up_time.trim()
   if (options?.template_id?.trim()) body.template_id = options.template_id.trim()
+  if (options?.force_regenerate) body.force_regenerate = true
   if (options?.note_type) body.note_type = options.note_type
   const { data } = await apiClient.post<ClinicalNoteLatest>('/api/notes/clinical-note', body)
   return data
@@ -618,13 +620,19 @@ export type PostVisitPatientLanguage = 'hi' | 'en' | 'hi-eng'
 export async function generatePostVisitSummary(
   patientId: string,
   visitId: string,
-  options?: { preferred_language?: PostVisitPatientLanguage; follow_up_date?: string; follow_up_time?: string },
+  options?: {
+    preferred_language?: PostVisitPatientLanguage
+    follow_up_in?: string
+    follow_up_date?: string
+    follow_up_time?: string
+  },
 ): Promise<PostVisitSummaryResponse> {
   const body: Record<string, string> = {
     patient_id: patientId,
     visit_id: visitId,
   }
   if (options?.preferred_language) body.preferred_language = options.preferred_language
+  if (options?.follow_up_in?.trim()) body.follow_up_in = options.follow_up_in.trim()
   if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
   if (options?.follow_up_time?.trim()) body.follow_up_time = options.follow_up_time.trim()
   const { data } = await apiClient.post<PostVisitSummaryResponse>('/api/notes/post-visit-summary', {

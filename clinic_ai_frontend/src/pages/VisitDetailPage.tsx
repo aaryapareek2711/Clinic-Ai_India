@@ -135,6 +135,75 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   return 'en'
 }
 
+<<<<<<< HEAD
+function to12HourTimeDisplay(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const hh = Number(m12[1])
+    const mm = m12[2]
+    const mer = m12[3].toUpperCase()
+    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
+  }
+  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
+  if (!m24) return text
+  const h = Number(m24[1])
+  const mm = m24[2]
+  if (!Number.isFinite(h) || h < 0 || h > 23) return text
+  const mer = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${mm} ${mer}`
+}
+
+function to24HourTimeForApi(raw: string | null | undefined): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (m12) {
+    const h12 = Number(m12[1])
+    const mm = Number(m12[2])
+    const mer = m12[3].toUpperCase()
+    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
+      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
+      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    }
+  }
+  return text
+}
+
+function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
+  const text = to12HourTimeDisplay(raw)
+  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!m) return { hour: '', minute: '', period: '' }
+  return {
+    hour: String(Number(m[1])).padStart(2, '0'),
+    minute: m[2],
+    period: m[3].toUpperCase(),
+  }
+}
+
+function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
+  if (!parts.hour || !parts.minute || !parts.period) return ''
+  const hh = Number(parts.hour)
+  const mm = Number(parts.minute)
+  const pp = parts.period.toUpperCase()
+  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
+  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
+}
+
+function extractClinicalFollowUpIn(note: ClinicalNoteLatest | null): string {
+  const payload = note?.payload
+  if (!payload || typeof payload !== 'object') return ''
+  const raw = (payload as Record<string, unknown>).follow_up_in
+  return raw == null ? '' : String(raw).trim()
+}
+
+const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
+=======
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -591,7 +660,12 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
+<<<<<<< HEAD
+  const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
+  const clinicalFollowUpIn = extractClinicalFollowUpIn(clinicalNote)
+=======
   const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -1803,7 +1877,6 @@ export default function VisitDetailPage() {
                       [
                         ['patient', "Patient's WhatsApp"] as const,
                         ['different', 'Different number'] as const,
-                        ['family', 'Family member'] as const,
                       ]
                     ).map(([value, label]) => (
                       <label key={value} className="flex cursor-pointer items-center gap-2">
@@ -1842,6 +1915,73 @@ export default function VisitDetailPage() {
                       />
                     </label>
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+                      Follow-up time (optional)
+                      <div className="mt-2 flex w-full max-w-xs items-center gap-2">
+                        <select
+                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: e.target.value,
+                              minute: recapFollowUpTimeParts.minute,
+                              period: recapFollowUpTimeParts.period,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
+                          value={recapFollowUpTimeParts.hour}
+                        >
+                          <option value="" disabled hidden>
+                            HH
+                          </option>
+                          {HOUR_OPTIONS_12H.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: recapFollowUpTimeParts.hour,
+                              minute: e.target.value,
+                              period: recapFollowUpTimeParts.period,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
+                          value={recapFollowUpTimeParts.minute}
+                        >
+                          <option value="" disabled hidden>
+                            MM
+                          </option>
+                          {MINUTE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          onChange={(e) => {
+                            const nextParts = {
+                              hour: recapFollowUpTimeParts.hour,
+                              minute: recapFollowUpTimeParts.minute,
+                              period: e.target.value,
+                            }
+                            setRecapFollowUpTimePartsDraft(nextParts)
+                          }}
+                          value={recapFollowUpTimeParts.period}
+                        >
+                          <option value="" disabled hidden>
+                            AM/PM
+                          </option>
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </label>
+                  </div>
 
                   {displayPostVisitSummary?.whatsapp_payload?.trim() && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
@@ -1867,10 +2007,11 @@ export default function VisitDetailPage() {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
+                              follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                             })
                             setPostVisitSummary(res)
-                            setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')
+                            setPostVisitMessage('Post-visit summary generated. Ready to send.')
                           } catch (e) {
                             setPostVisitMessage(getApiErrorMessage(e))
                           } finally {
@@ -1884,13 +2025,9 @@ export default function VisitDetailPage() {
                     </button>
                     <button
                       className="rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#006b2c] disabled:opacity-50"
-                      disabled={!patientId || !visitId || !postVisitSummary?.whatsapp_payload?.trim() || recapAction !== null}
+                      disabled={!patientId || !visitId || recapAction !== null}
                       onClick={() => {
                         if (!patientId || !visitId) return
-                        if (!postVisitSummary?.whatsapp_payload?.trim()) {
-                          setPostVisitMessage('Generate the post-visit summary before sending.')
-                          return
-                        }
                         const overrideDigits =
                           recapContactMode === 'patient' ? '' : digitsOnlyPhone(recapPhoneDraft)
                         if (recapContactMode !== 'patient' && !overrideDigits) {
@@ -1901,6 +2038,15 @@ export default function VisitDetailPage() {
                           setRecapAction('send')
                           setPostVisitMessage(null)
                           try {
+                            const nextVisitDate = recapFollowUpDateDraft.trim()
+                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
+                            const refreshedSummary = await generatePostVisitSummary(patientId, visitId, {
+                              preferred_language: postVisitLanguage,
+                              follow_up_in: clinicalFollowUpIn || undefined,
+                              follow_up_date: nextVisitDate || undefined,
+                              follow_up_time: nextVisitTime || undefined,
+                            })
+                            setPostVisitSummary(refreshedSummary)
                             const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
                               phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
                               preferred_language: postVisitLanguage,
@@ -1947,46 +2093,6 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  {displayPostVisitSummary?.payload && (
-                    <div className="space-y-2 rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
-                      <p>
-                        <strong>Visit reason:</strong> {displayPostVisitSummary.payload.visit_reason || '—'}
-                      </p>
-                      <p>
-                        <strong>Findings:</strong> {displayPostVisitSummary.payload.what_doctor_found || '—'}
-                      </p>
-                      <p>
-                        <strong>Follow-up:</strong> {displayPostVisitSummary.payload.follow_up || '—'}
-                      </p>
-                      <p>
-                        <strong>Next visit date:</strong> {displayPostVisitSummary.payload.next_visit_date || '—'}
-                      </p>
-                      <p>
-                        <strong>Medicines to take:</strong>{' '}
-                        {displayPostVisitSummary.payload.medicines_to_take?.length
-                          ? displayPostVisitSummary.payload.medicines_to_take.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Tests recommended:</strong>{' '}
-                        {displayPostVisitSummary.payload.tests_recommended?.length
-                          ? displayPostVisitSummary.payload.tests_recommended.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Self-care:</strong>{' '}
-                        {displayPostVisitSummary.payload.self_care?.length
-                          ? displayPostVisitSummary.payload.self_care.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Warning signs:</strong>{' '}
-                        {displayPostVisitSummary.payload.warning_signs?.length
-                          ? displayPostVisitSummary.payload.warning_signs.join(', ')
-                          : '—'}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

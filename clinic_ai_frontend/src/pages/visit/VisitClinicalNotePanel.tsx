@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   clearSelectedClinicalTemplate,
   getSelectedClinicalTemplate,
+  setSelectedClinicalTemplate,
 } from '../../lib/clinicalTemplateSelection'
 import { getApiErrorMessage } from '../../lib/apiClient'
 import {
@@ -10,6 +11,9 @@ import {
   type ClinicalNoteLatest,
   type IndiaClinicalNotePayload,
 } from '../../services/visitWorkflowApi'
+<<<<<<< HEAD
+import { listClinicalTemplates, type ClinicalTemplateListItem } from '../../services/templatesApi'
+=======
 
 function to12HourTimeDisplay(raw: string | null | undefined): string {
   const text = String(raw || '').trim()
@@ -75,6 +79,7 @@ function composePartialTimeForApi(parts: { hour: string; minute: string; period:
 
 const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
 function asIndiaPayload(raw: ClinicalNoteLatest['payload']): IndiaClinicalNotePayload | null {
   if (!raw || typeof raw !== 'object') return null
@@ -110,6 +115,25 @@ function parseSoapFromDoctorNotes(raw: string | null | undefined): { subjective:
   return { subjective, objective }
 }
 
+type FollowUpUnit = 'days' | 'weeks' | 'months'
+
+function parseFollowUpIn(raw: string | null | undefined): { count: string; unit: FollowUpUnit } {
+  const text = String(raw || '').trim().toLowerCase()
+  const m = text.match(/(\d+)\s*(day|days|week|weeks|month|months)/)
+  if (!m) return { count: '7', unit: 'days' }
+  const unitRaw = m[2]
+  if (unitRaw.startsWith('week')) return { count: m[1], unit: 'weeks' }
+  if (unitRaw.startsWith('month')) return { count: m[1], unit: 'months' }
+  return { count: m[1], unit: 'days' }
+}
+
+function composeFollowUpIn(countRaw: string, unit: FollowUpUnit): string {
+  const n = Number.parseInt(countRaw, 10)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  const plural = n === 1 ? unit.slice(0, -1) : unit
+  return `In ${n} ${plural}`
+}
+
 export type VisitClinicalNotePanelProps = {
   patientId: string
   visitId: string
@@ -137,11 +161,22 @@ export default function VisitClinicalNotePanel({
   const [draftPlan, setDraftPlan] = useState('')
   const [draftDoctorNotes, setDraftDoctorNotes] = useState('')
   const [draftChief, setDraftChief] = useState('')
+<<<<<<< HEAD
+  const [editingFollowUp, setEditingFollowUp] = useState(false)
+  const [followUpCountDraft, setFollowUpCountDraft] = useState('7')
+  const [followUpUnitDraft, setFollowUpUnitDraft] = useState<FollowUpUnit>('days')
+=======
   const [followUpDate, setFollowUpDate] = useState('')
   const [followUpHour, setFollowUpHour] = useState('')
   const [followUpMinute, setFollowUpMinute] = useState('')
   const [followUpPeriod, setFollowUpPeriod] = useState('')
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [templateOptions, setTemplateOptions] = useState<ClinicalTemplateListItem[]>([])
 
   const payload = useMemo(() => asIndiaPayload(clinicalNote?.payload), [clinicalNote])
   const editing = activeEditSection !== null
@@ -154,6 +189,8 @@ export default function VisitClinicalNotePanel({
     setDraftChief(payload.chief_complaint ?? '')
   }, [editing, payload, clinicalNote?.note_id])
 
+<<<<<<< HEAD
+=======
   useEffect(() => {
     // Keep follow-up draft in sync with latest persisted note.
     setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
@@ -163,6 +200,7 @@ export default function VisitClinicalNotePanel({
     setFollowUpPeriod(parts.period)
   }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
 
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
   const displayPayload = useMemo((): IndiaClinicalNotePayload | null => {
     if (!payload) return null
     if (!editing) return payload
@@ -177,6 +215,31 @@ export default function VisitClinicalNotePanel({
 
   const soapParts = useMemo(() => parseSoapFromDoctorNotes(displayPayload?.doctor_notes), [displayPayload?.doctor_notes])
 
+<<<<<<< HEAD
+  const handleGenerate = useCallback(
+    async (templateIdOverride?: string | null) => {
+      if (!patientId || !visitId || generating) return
+      setGenerating(true)
+      setMessage(null)
+      try {
+        const chosenTemplateId =
+          templateIdOverride === undefined ? selectedTemplate?.id : templateIdOverride?.trim() || undefined
+        const res = await generateClinicalNote(patientId, visitId, {
+          template_id: chosenTemplateId || undefined,
+          force_regenerate: true,
+        })
+        onNoteUpdated(res)
+        setMessage('Clinical note generated and saved on the server.')
+        setActiveEditSection(null)
+      } catch (e) {
+        setMessage(getApiErrorMessage(e))
+      } finally {
+        setGenerating(false)
+      }
+    },
+    [patientId, visitId, generating, selectedTemplate?.id, onNoteUpdated],
+  )
+=======
   const handleGenerate = useCallback(async () => {
     if (!patientId || !visitId || generating) return
     setGenerating(true)
@@ -211,6 +274,7 @@ export default function VisitClinicalNotePanel({
     selectedTemplate?.id,
     onNoteUpdated,
   ])
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
   const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
@@ -234,6 +298,67 @@ export default function VisitClinicalNotePanel({
     return 'bg-slate-100 text-slate-700'
   }
 
+  const startFollowUpEdit = () => {
+    const parsed = parseFollowUpIn(displayPayload?.follow_up_in)
+    setFollowUpCountDraft(parsed.count)
+    setFollowUpUnitDraft(parsed.unit)
+    setEditingFollowUp(true)
+    setMessage(null)
+  }
+
+  const cancelFollowUpEdit = () => {
+    setEditingFollowUp(false)
+    setMessage(null)
+  }
+
+  const saveFollowUpEdit = () => {
+    const nextFollowUpIn = composeFollowUpIn(followUpCountDraft, followUpUnitDraft)
+    if (!nextFollowUpIn) {
+      setMessage('Please choose a valid follow-up count greater than 0.')
+      return
+    }
+    if (!clinicalNote || !displayPayload) {
+      setMessage('Cannot update follow-up right now. Reload this visit and try again.')
+      return
+    }
+    const nextPayload = {
+      ...(clinicalNote.payload as Record<string, unknown>),
+      follow_up_in: nextFollowUpIn,
+      follow_up_date: null,
+      follow_up_time: null,
+    }
+    onNoteUpdated({
+      ...clinicalNote,
+      payload: nextPayload,
+    })
+    setEditingFollowUp(false)
+    setMessage('Follow-up timing updated in this view.')
+  }
+
+  useEffect(() => {
+    if (!templatePickerOpen) return
+    let cancelled = false
+    void (async () => {
+      try {
+        setTemplatesLoading(true)
+        setTemplatesError(null)
+        const res = await listClinicalTemplates({
+          page: 1,
+          page_size: 100,
+          search: templateSearch.trim() || undefined,
+        })
+        if (!cancelled) setTemplateOptions(res.items ?? [])
+      } catch (e) {
+        if (!cancelled) setTemplatesError(getApiErrorMessage(e))
+      } finally {
+        if (!cancelled) setTemplatesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [templatePickerOpen, templateSearch])
+
   return (
     <div className="w-full space-y-6 rounded-xl border border-[#bdcaba] bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 border-b border-[#e9f0e5] pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -245,22 +370,27 @@ export default function VisitClinicalNotePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!clinicalNote && (
-            <button
-              className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!patientId || !visitId || generating}
-              onClick={() => void handleGenerate()}
-              type="button"
-            >
-              {generating ? 'Working…' : 'Generate note'}
-            </button>
-          )}
+          <button
+            className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005422] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!patientId || !visitId || generating}
+            onClick={() => void handleGenerate(selectedTemplate?.id ?? null)}
+            type="button"
+          >
+            {generating ? 'Working…' : clinicalNote ? 'Regenerate note' : 'Generate note'}
+          </button>
         </div>
       </div>
 
       <div className="rounded-lg border border-dashed border-[#c5d4c0] bg-[#f7faf4] p-4 text-xs text-[#3e4a3d]">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <p className="font-semibold text-[#171d16]">Selected template</p>
+          <button
+            className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+            onClick={() => setTemplatePickerOpen(true)}
+            type="button"
+          >
+            Choose template
+          </button>
           {selectedTemplate ? (
             <>
               <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-[11px] font-semibold text-[#166534]">
@@ -271,6 +401,7 @@ export default function VisitClinicalNotePanel({
                 onClick={() => {
                   clearSelectedClinicalTemplate()
                   setSelectedTemplate(null)
+                  void handleGenerate(null)
                 }}
                 type="button"
               >
@@ -278,9 +409,11 @@ export default function VisitClinicalNotePanel({
               </button>
             </>
           ) : (
-            <span className="text-[11px] text-[#575e70]">No template selected. Choose one from Templates page.</span>
+            <span className="text-[11px] text-[#575e70]">No template selected.</span>
           )}
         </div>
+<<<<<<< HEAD
+=======
         <p className="font-semibold text-[#171d16]">Optional before generate</p>
         <p className="mt-1 text-[#575e70]">
           Staff follow-up date/time is sent to the server with generation (scheduling + may refresh a cached note). Leave
@@ -335,6 +468,7 @@ export default function VisitClinicalNotePanel({
             </div>
           </label>
         </div>
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
       </div>
 
       {transcriptionStatusKnown && !transcriptionCompleted && (
@@ -486,23 +620,7 @@ export default function VisitClinicalNotePanel({
                     <p className="text-sm leading-relaxed text-[#3e4a3d] whitespace-pre-wrap">{soapParts.objective || '—'}</p>
                   </section>
                 </div>
-              ) : (
-                displayPayload.doctor_notes?.trim() && (
-                  <section>
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Clinical narrative</h4>
-                      <button
-                        className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
-                        onClick={() => startEdit('narrative')}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <p className="text-sm leading-relaxed text-[#3e4a3d] whitespace-pre-wrap">{displayPayload.doctor_notes}</p>
-                  </section>
-                )
-              )}
+              ) : null}
 
               <section className="rounded-lg border border-[#c8e6c9]/60 bg-[#f1f8f4] p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -617,18 +735,142 @@ export default function VisitClinicalNotePanel({
               <section className="flex flex-wrap items-center gap-3 rounded-lg border border-[#bdcaba] bg-[#f8faf6] px-4 py-3 text-sm">
                 <span className="material-symbols-outlined text-[#006b2c]">event_upcoming</span>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Follow-up</p>
-                  <p className="font-medium text-[#171d16]">
-                    {displayPayload.follow_up_in?.trim()
-                      ? `In ${displayPayload.follow_up_in.trim()}`
-                      : displayPayload.follow_up_date?.trim()
-                        ? `${displayPayload.follow_up_date.trim()}${displayPayload.follow_up_time?.trim() ? ` · ${displayPayload.follow_up_time.trim()}` : ''}`
-                        : '—'}
-                  </p>
+                  <div className="mb-1 flex items-center gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Follow-up</p>
+                    {!editingFollowUp && (
+                      <button
+                        className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                        onClick={startFollowUpEdit}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingFollowUp ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                        onChange={(e) => setFollowUpCountDraft(e.target.value)}
+                        value={followUpCountDraft}
+                      >
+                        {Array.from({ length: 30 }, (_, i) => String(i + 1)).map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="w-28 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                        onChange={(e) => setFollowUpUnitDraft(e.target.value as FollowUpUnit)}
+                        value={followUpUnitDraft}
+                      >
+                        <option value="days">Days</option>
+                        <option value="weeks">Weeks</option>
+                        <option value="months">Months</option>
+                      </select>
+                      <button
+                        className="rounded-md bg-[#2563eb] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1d4ed8]"
+                        onClick={saveFollowUpEdit}
+                        type="button"
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="rounded-md border border-[#bdcaba] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
+                        onClick={cancelFollowUpEdit}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="font-medium text-[#171d16]">
+                      {displayPayload.follow_up_in?.trim()
+                        ? displayPayload.follow_up_in.trim()
+                        : displayPayload.follow_up_date?.trim()
+                          ? `${displayPayload.follow_up_date.trim()}${displayPayload.follow_up_time?.trim() ? ` · ${displayPayload.follow_up_time.trim()}` : ''}`
+                          : '—'}
+                    </p>
+                  )}
                 </div>
               </section>
             </>
           )}
+        </div>
+      )}
+
+      {templatePickerOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <button
+            aria-label="Close template picker"
+            className="absolute inset-0 bg-black/45"
+            onClick={() => setTemplatePickerOpen(false)}
+            type="button"
+          />
+          <div
+            aria-labelledby="template-picker-title"
+            aria-modal="true"
+            className="relative z-[71] flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#bdcaba] bg-white shadow-2xl"
+            role="dialog"
+          >
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+              <div>
+                <h4 className="text-lg font-bold text-[#171d16]" id="template-picker-title">
+                  Choose clinical template
+                </h4>
+                <p className="mt-1 text-sm text-[#575e70]">Select one of your saved templates.</p>
+              </div>
+              <button
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                onClick={() => setTemplatePickerOpen(false)}
+                type="button"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="border-b border-gray-100 px-6 py-3">
+              <input
+                className="w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16] placeholder:text-slate-400"
+                onChange={(e) => setTemplateSearch(e.target.value)}
+                placeholder="Search templates by name..."
+                type="search"
+                value={templateSearch}
+              />
+            </div>
+            <div className="grid max-h-[60vh] grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2">
+              {templatesLoading && <p className="text-sm text-[#575e70]">Loading templates…</p>}
+              {!templatesLoading && templatesError && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{templatesError}</p>
+              )}
+              {!templatesLoading && !templatesError && templateOptions.length === 0 && (
+                <p className="text-sm text-[#575e70]">No templates found.</p>
+              )}
+              {!templatesLoading &&
+                !templatesError &&
+                templateOptions.map((t) => (
+                  <button
+                    className="rounded-2xl border border-[#dce5d8] bg-white p-4 text-left hover:border-[#16a34a] hover:bg-[#f8faf6]"
+                    key={t.id}
+                    onClick={() => {
+                      const picked = { id: t.id, name: t.name || 'Template' }
+                      setSelectedClinicalTemplate(picked)
+                      setSelectedTemplate(picked)
+                      setTemplatePickerOpen(false)
+                      void handleGenerate(picked.id)
+                    }}
+                    type="button"
+                  >
+                    <p className="text-3xl font-semibold text-[#171d16]">{t.name || 'Untitled template'}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-[#3e4a3d]">{t.description?.trim() || '—'}</p>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="uppercase tracking-wide text-[#575e70]">{(t.category || 'General').toUpperCase()}</span>
+                      <span className="font-semibold text-[#006b2c]">Use template</span>
+                    </div>
+                  </button>
+                ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
