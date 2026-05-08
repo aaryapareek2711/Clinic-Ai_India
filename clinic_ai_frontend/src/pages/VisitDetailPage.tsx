@@ -1904,7 +1904,6 @@ export default function VisitDetailPage() {
                       />
                     </label>
                   </div>
-<<<<<<< HEAD
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
                       Follow-up time (optional)
@@ -1972,8 +1971,6 @@ export default function VisitDetailPage() {
                       </div>
                     </label>
                   </div>
-=======
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
                   {displayPostVisitSummary?.whatsapp_payload?.trim() && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
