@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -125,6 +126,7 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   return 'en'
 }
 
+<<<<<<< HEAD
 function to12HourTimeDisplay(raw: string | null | undefined): string {
   const text = String(raw || '').trim()
   if (!text) return ''
@@ -191,6 +193,8 @@ function extractClinicalFollowUpIn(note: ClinicalNoteLatest | null): string {
 const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
+=======
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -367,11 +371,6 @@ export default function VisitDetailPage() {
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
   const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
-  const [recapFollowUpTimePartsDraft, setRecapFollowUpTimePartsDraft] = useState<{
-    hour: string
-    minute: string
-    period: string
-  }>({ hour: '', minute: '', period: '' })
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -480,7 +479,6 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPhoneDraft('')
     setRecapFollowUpDateDraft('')
-    setRecapFollowUpTimePartsDraft({ hour: '', minute: '', period: '' })
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -498,12 +496,7 @@ export default function VisitDetailPage() {
     if (!p || typeof p !== 'object') return
     const o = p as Record<string, unknown>
     const noteDate = (o.follow_up_date != null ? String(o.follow_up_date) : '').trim()
-    const noteTime = (o.follow_up_time != null ? String(o.follow_up_time) : '').trim()
     if (noteDate) setRecapFollowUpDateDraft(noteDate)
-    if (noteTime) {
-      const initialTime = to12HourTimeDisplay(noteTime)
-      setRecapFollowUpTimePartsDraft(parse12HourTimeParts(initialTime))
-    }
   }, [clinicalNote?.note_id, clinicalNote?.payload])
 
   useEffect(() => {
@@ -658,8 +651,12 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
+<<<<<<< HEAD
   const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
   const clinicalFollowUpIn = extractClinicalFollowUpIn(clinicalNote)
+=======
+  const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -1314,15 +1311,17 @@ export default function VisitDetailPage() {
         {visitId && !error && (
           <>
             <div className="p-8 pb-0">
-              <nav className="mb-4 flex items-center space-x-2 text-sm text-[#575e70]">
+              <nav className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-[#575e70]">
+                <BackButton ariaLabel="Go back" fallback="/visits" className="-ml-2 shrink-0" />
+                <span aria-hidden className="hidden h-4 w-px shrink-0 bg-slate-300 sm:block" />
                 <button className="hover:text-[#006b2c]" onClick={() => navigate('/dashboard')} type="button">
                   Dashboard
                 </button>
-                <span className="material-symbols-outlined text-xs">chevron_right</span>
+                <span className="material-symbols-outlined shrink-0 text-xs">chevron_right</span>
                 <button className="hover:text-[#006b2c]" onClick={() => navigate('/visits')} type="button">
                   Visits
                 </button>
-                <span className="material-symbols-outlined text-xs">chevron_right</span>
+                <span className="material-symbols-outlined shrink-0 text-xs">chevron_right</span>
                 <span className="font-semibold text-[#171d16]">{breadcrumbTitle}</span>
               </nav>
 
@@ -1898,12 +1897,14 @@ export default function VisitDetailPage() {
                       Next visit date (optional)
                       <input
                         className="mt-2 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                        min={recapFollowUpDateMin}
                         onChange={(e) => setRecapFollowUpDateDraft(e.target.value)}
                         type="date"
                         value={recapFollowUpDateDraft}
                       />
                     </label>
                   </div>
+<<<<<<< HEAD
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
                       Follow-up time (optional)
@@ -1971,6 +1972,8 @@ export default function VisitDetailPage() {
                       </div>
                     </label>
                   </div>
+=======
+>>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
                   {displayPostVisitSummary?.whatsapp_payload?.trim() && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
@@ -1994,12 +1997,10 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
-                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
-                              follow_up_time: nextVisitTime || undefined,
                             })
                             setPostVisitSummary(res)
                             setPostVisitMessage('Post-visit summary generated. Ready to send.')

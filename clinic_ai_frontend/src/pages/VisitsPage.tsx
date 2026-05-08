@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
+import BackButton from '../components/BackButton'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
@@ -141,13 +143,7 @@ function visitRowFromApi(v: ProviderVisitListItem): {
       : v.chief_complaint?.trim() || 'Consultation'
   const displayName = toDisplayName(v.patient_name || '') || 'Patient'
   const name = `${displayName} — ${subtitle}`
-  const pid = v.patient_id?.trim() || ''
-  const meta =
-    pid.length > 0
-      ? `ID: …${pid.slice(-10)}${v.mobile_number ? ` • ${v.mobile_number}` : ''}`
-      : v.mobile_number
-        ? String(v.mobile_number)
-        : 'Patient'
+  const meta = formatPatientDisplayId(displayName, v.mobile_number)
   const { date, duration } = formatVisitRowTimes(v)
   return {
     visitId,
@@ -323,11 +319,7 @@ function VisitsPage() {
   return (
     <div className="text-[#171d16] min-h-screen">
       <main className="min-h-screen">
-        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
-          <button className="flex items-center gap-2 text-gray-500 hover:opacity-80 transition-opacity" onClick={() => navigate('/dashboard')} type="button">
-            <span className="material-symbols-outlined">arrow_back</span>
-            <span className="text-sm">Back to Dashboard</span>
-          </button>
+        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-10">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <button
@@ -354,9 +346,12 @@ function VisitsPage() {
         </header>
 
         <div className="pt-24 px-8 pb-12">
-          <div className="mb-8">
-            <h2 className="text-[28px] font-bold">{tabTitles[activeTab]}</h2>
-            <p className="text-[#3e4a3d] mt-1">{tabDescriptions[activeTab]}</p>
+          <div className="mb-8 flex items-start gap-2">
+            <BackButton to="/dashboard" className="-ml-2 mt-1" />
+            <div>
+              <h2 className="text-[28px] font-bold">{tabTitles[activeTab]}</h2>
+              <p className="text-[#3e4a3d] mt-1">{tabDescriptions[activeTab]}</p>
+            </div>
           </div>
 
           {listError && (
@@ -427,8 +422,8 @@ function VisitsPage() {
               >
                 <option value="patient_newest">New patient: newest first</option>
                 <option value="patient_oldest">New patient: oldest first</option>
-                <option value="visit_latest">Last visit: newest first</option>
-                <option value="visit_oldest">Last visit: oldest first</option>
+                <option value="visit_latest">Latest visit: newest first</option>
+                <option value="visit_oldest">Latest visit: oldest first</option>
                 <option value="time_newest">Time: newest first</option>
                 <option value="time_oldest">Time: oldest first</option>
                 <option value="name_az">Name: A → Z</option>

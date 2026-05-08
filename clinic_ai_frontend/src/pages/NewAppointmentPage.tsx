@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getAppointmentDurationMap, setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
@@ -503,7 +504,9 @@ function NewAppointmentPage() {
                         <span className="shrink-0 rounded-full bg-[#2563eb] px-2 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase">Selected</span>
                       ) : null}
                     </div>
-                    <p className="mt-1 truncate text-xs font-medium text-[#3e4a3d]">ID: …{p.id.slice(-10)}</p>
+                    <p className="mt-1 truncate text-xs font-medium text-[#3e4a3d]">
+                      {formatPatientDisplayId(toDisplayName(p.full_name), p.phone_number)}
+                    </p>
                     <p className="mt-0.5 truncate text-xs text-[#3e4a3d]">{p.phone_number || '—'}</p>
                   </div>
                 </button>

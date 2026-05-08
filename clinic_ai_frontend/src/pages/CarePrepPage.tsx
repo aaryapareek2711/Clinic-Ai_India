@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { DEFAULT_PROVIDER_ID, fetchProviderCarePrep } from '../services/visitWorkflowApi'
 import type { CarePrepItem } from '../services/visitWorkflowApi'
 
@@ -115,7 +117,7 @@ function mapVisitAndIntake(visit: CarePrepItem): QueueRow {
     patientName: name,
     mobileNumber: String(visit.mobile_number || ''),
     tokenLabel: visitId.slice(-6).toUpperCase(),
-    dobLine: `Patient ID …${patientId.slice(-10)}`,
+    dobLine: formatPatientDisplayId(name, visit.mobile_number),
     submitted: submittedLabelMinutes(mins),
     submittedMinutesAgo: mins,
     patientCreatedAt: String(visit.patient_created_at || ''),
@@ -133,7 +135,7 @@ function StatusCell({ row }: { row: QueueRow }) {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-[#22c55e]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#22c55e]" />
-          Intake ready
+          Completed
         </div>
       </div>
     )
@@ -188,6 +190,17 @@ export default function CarePrepPage() {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
   const pagedPatients = visiblePatients
 
+  // Reset to page 1 whenever the search or sort changes so an empty/small
+  // result set isn't shown as "0 rows" on a leftover page index.
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, sortBy])
+
+  // Clamp the page index when the total shrinks (e.g. after applying a search).
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [currentPage, totalPages])
+
   function goToIntake(vid: string): void {
     navigate(`/careprep/intake/${encodeURIComponent(vid)}`)
   }
@@ -219,7 +232,10 @@ export default function CarePrepPage() {
 
       <main className="flex flex-1 flex-col pt-16">
         <div className="flex-1 p-8">
-          <h2 className="mb-6 text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep</h2>
+          <div className="mb-6 flex items-center gap-2">
+            <BackButton to="/dashboard" />
+            <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep</h2>
+          </div>
 
           {errorMessage && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -255,8 +271,8 @@ export default function CarePrepPage() {
                   >
                     <option value="patient_newest">New patient: newest first</option>
                     <option value="patient_oldest">New patient: oldest first</option>
-                    <option value="visit_latest">Last visit: newest first</option>
-                    <option value="visit_oldest">Last visit: oldest first</option>
+                    <option value="visit_latest">Latest visit: newest first</option>
+                    <option value="visit_oldest">Latest visit: oldest first</option>
                     <option value="time_newest">Time: newest first</option>
                     <option value="time_oldest">Time: oldest first</option>
                     <option value="name_az">Name: A → Z</option>

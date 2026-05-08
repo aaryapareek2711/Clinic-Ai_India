@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { fetchPatientById, fetchPatientVisits, fetchPatients, type PatientSummary, type PatientVisit } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -83,6 +85,10 @@ function PatientDetailPage() {
   }, [patientId])
 
   const displayName = useMemo(() => patient?.full_name || 'Patient', [patient])
+  const humanPatientId = useMemo(
+    () => (patient ? formatPatientDisplayId(patient.full_name, patient.phone_number) : ''),
+    [patient],
+  )
   const ageGender = `${patient?.age ?? '—'} Yrs • ${patient?.gender ?? 'Unknown'}`
 
   return (
@@ -111,11 +117,14 @@ function PatientDetailPage() {
       </header>
 
       <main className="p-8 min-h-[calc(100vh-4rem)]">
-        <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
-          <button className="hover:text-[#006b2c] transition-colors" onClick={() => navigate('/patients')} type="button">Patients</button>
-          <span className="material-symbols-outlined text-xs">chevron_right</span>
-          <span className="text-[#171d16] font-semibold">{displayName}</span>
-        </nav>
+        <div className="flex items-center gap-2 mb-6">
+          <BackButton fallback="/patients" className="-ml-2" />
+          <nav className="flex items-center gap-2 text-sm text-slate-500">
+            <button className="hover:text-[#006b2c] transition-colors" onClick={() => navigate('/patients')} type="button">Patients</button>
+            <span className="material-symbols-outlined text-xs">chevron_right</span>
+            <span className="text-[#171d16] font-semibold">{displayName}</span>
+          </nav>
+        </div>
 
         {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
@@ -138,10 +147,17 @@ function PatientDetailPage() {
               <p className="text-base text-[#171d16]">{ageGender}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">ABHA ID</p>
+              <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Patient ID</p>
               <div className="flex items-center gap-2">
-                <p className="text-base text-[#171d16]">{patientId ? `...${patientId.slice(-10)}` : '—'}</p>
-                <button className="text-teal-600 hover:bg-teal-50 p-1 rounded-md transition-colors" type="button">
+                <p className="text-base text-[#171d16] break-all">{humanPatientId || '—'}</p>
+                <button
+                  className="text-teal-600 hover:bg-teal-50 p-1 rounded-md transition-colors shrink-0"
+                  disabled={!humanPatientId}
+                  onClick={() => {
+                    if (humanPatientId) void navigator.clipboard.writeText(humanPatientId)
+                  }}
+                  type="button"
+                >
                   <span className="material-symbols-outlined text-sm">content_copy</span>
                 </button>
               </div>
@@ -181,32 +197,47 @@ function PatientDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#bdcaba]">
-                {visits.map((visit) => (
-                  <tr key={visit.visit_id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-5">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-[#171d16]">Visit #{visit.visit_id.slice(-6)}</span>
-                        <span className="text-xs text-slate-400">{visit.status.replace(/_/g, ' ')}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5 text-sm text-slate-600">{formatDate(visit.scheduled_start || visit.created_at)}</td>
-                    <td className="px-6 py-5">
-                      <span className="text-sm font-medium text-slate-700">General</span>
-                    </td>
-                    <td className="px-6 py-5">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${badgeClasses(toneForStatus(visit.status))}`}>
-                        <span className={`w-1 h-1 rounded-full mr-1.5 ${toneForStatus(visit.status) === 'amber' ? 'bg-[#f59e0b]' : toneForStatus(visit.status) === 'green' ? 'bg-[#22c55e]' : 'bg-blue-500'}`} />
-                        {visit.status.replace(/_/g, ' ')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5 text-right">
-                      <button className="text-[#006b2c] font-semibold text-sm hover:underline inline-flex items-center gap-1" onClick={() => navigate(`/visits/detail?visitId=${encodeURIComponent(visit.visit_id)}&tab=pre-visit`)} type="button">
-                        View Details
-                        <span className="material-symbols-outlined text-xs">arrow_forward</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {visits.map((visit) => {
+                  const goToVisit = () =>
+                    navigate(`/visits/detail?visitId=${encodeURIComponent(visit.visit_id)}&tab=pre-visit`)
+                  return (
+                    <tr
+                      key={visit.visit_id}
+                      className="hover:bg-slate-50/50 transition-colors cursor-pointer"
+                      onClick={goToVisit}
+                    >
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-[#171d16]">Visit #{visit.visit_id.slice(-6)}</span>
+                          <span className="text-xs text-slate-400">{visit.status.replace(/_/g, ' ')}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-slate-600">{formatDate(visit.scheduled_start || visit.created_at)}</td>
+                      <td className="px-6 py-5">
+                        <span className="text-sm font-medium text-slate-700">General</span>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${badgeClasses(toneForStatus(visit.status))}`}>
+                          <span className={`w-1 h-1 rounded-full mr-1.5 ${toneForStatus(visit.status) === 'amber' ? 'bg-[#f59e0b]' : toneForStatus(visit.status) === 'green' ? 'bg-[#22c55e]' : 'bg-blue-500'}`} />
+                          {visit.status.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-right">
+                        <button
+                          className="text-[#006b2c] font-semibold text-sm hover:underline inline-flex items-center gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            goToVisit()
+                          }}
+                          type="button"
+                        >
+                          View Details
+                          <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
                 {!loading && visits.length === 0 && (
                   <tr>
                     <td className="px-6 py-8 text-center text-sm text-slate-500" colSpan={5}>

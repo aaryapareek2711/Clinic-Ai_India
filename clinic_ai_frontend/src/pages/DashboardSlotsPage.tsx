@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -68,6 +69,7 @@ function visitToUpcomingRow(v: ProviderVisitListItem): ProviderUpcomingAppointme
     appointment_id: vid,
     patient_id: v.patient_id,
     patient_name: v.patient_name,
+    mobile_number: v.mobile_number ?? null,
     scheduled_start: v.scheduled_start || '',
     chief_complaint: v.chief_complaint?.trim() || '',
     appointment_type: v.visit_type?.trim() || 'Visit',
@@ -180,7 +182,7 @@ function DashboardSlotsPage() {
       const visit = visitById.get(vid)
       const effectiveStatus = visit?.status ?? a.status
       if (!isNotVisitedYet(effectiveStatus)) continue
-      merged.set(vid, { ...a, status: effectiveStatus })
+      merged.set(vid, { ...a, status: effectiveStatus, mobile_number: visit?.mobile_number ?? a.mobile_number })
     }
 
     for (const v of visits) {
@@ -296,7 +298,8 @@ function DashboardSlotsPage() {
                 <div>
                   <p className="font-semibold">{toDisplayName(item.patient_name)}</p>
                   <p className="mt-1 text-xs text-gray-500">
-                    ID: …{(item.patient_id || '').slice(-10) || '—'} · {(item.status || 'open').replace(/_/g, ' ')}
+                    {formatPatientDisplayId(toDisplayName(item.patient_name), item.mobile_number)} ·{' '}
+                    {(item.status || 'open').replace(/_/g, ' ')}
                   </p>
                 </div>
                 <div className="text-right">

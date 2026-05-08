@@ -23,7 +23,6 @@ from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.adapters.external.storage.object_storage import TranscriptionAudioStore
 from src.application.services.dialogue_pii import scrub_dialogue_turns
 from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
-from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
 from src.application.utils.transcript_dialogue import (
     align_segments_with_structured_dialogue,
     audio_duration_from_segments_ms,
@@ -151,7 +150,9 @@ class TranscriptionWorker:
                 structured_dialogue=structured,
             )
             self.repo.mark_completed(job_id)
-            self._auto_generate_default_note(job=job)
+            # Clinical note is generated only when the provider clicks
+            # "Generate note" in the visit Clinical Note panel.
+            # Auto-generation here was removed by product requirement.
             self._purge_stored_audio(job)
         except Exception as exc:  # noqa: BLE001
             if "NON_RETRIABLE_NO_TEXT" in str(exc):
@@ -185,21 +186,6 @@ class TranscriptionWorker:
         finally:
             self.consumer.ack_last()
         return True
-
-    def _auto_generate_default_note(self, *, job: dict) -> None:
-        """Generate default India note after successful transcription completion."""
-        if self.settings.default_note_type != "india_clinical":
-            return
-        try:
-            GenerateIndiaClinicalNoteUseCase().execute(
-                patient_id=str(job.get("patient_id")),
-                visit_id=job.get("visit_id"),
-                transcription_job_id=str(job.get("job_id")),
-                force_regenerate=False,
-            )
-        except Exception:
-            # Do not fail transcription completion if note generation errors.
-            return
 
     def _has_previsit(self, job: dict) -> bool:
         patient_id = str(job.get("patient_id"))

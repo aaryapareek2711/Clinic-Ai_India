@@ -216,6 +216,8 @@ export type ProviderUpcomingAppointment = {
   appointment_id: string
   patient_id: string
   patient_name: string
+  /** Enriched from visit list when available — used for display id (name_mobile). */
+  mobile_number?: string | null
   scheduled_start: string
   chief_complaint: string
   appointment_type: string

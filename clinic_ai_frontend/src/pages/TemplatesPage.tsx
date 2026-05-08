@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import BackButton from '../components/BackButton'
 import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
@@ -156,9 +157,12 @@ function TemplatesPage() {
               {templateSavedMessage}
             </div>
           )}
-          <div className="mb-6">
-            <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
-            <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
+          <div className="mb-6 flex items-start gap-2">
+            <BackButton to="/dashboard" className="-ml-2 mt-1" />
+            <div>
+              <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
+              <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
+            </div>
           </div>
 
           <div className="flex items-center border-b border-[#bdcaba] mb-8">
@@ -307,34 +311,48 @@ function TemplatesPage() {
             ) : (
               !templatesLoading && (
                 <div className="grid grid-cols-1 gap-4 px-8 md:grid-cols-2 lg:grid-cols-3">
-                  {myTemplates.map((t) => (
-                    <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                      <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
-                      <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
-                        <button
-                          className="text-xs font-semibold text-[#006b2c] hover:underline disabled:opacity-50"
-                          disabled={templateActionLoadingId === t.id}
-                          onClick={async () => {
-                            setTemplateActionLoadingId(t.id)
-                            try {
-                              const fullTemplate = await getClinicalTemplate(t.id)
-                              setTemplateToEdit(fullTemplate)
-                              setIsCreateModalOpen(true)
-                            } catch (e) {
-                              setTemplatesError(getApiErrorMessage(e))
-                            } finally {
-                              setTemplateActionLoadingId(null)
-                            }
-                          }}
-                          type="button"
-                        >
-                          {templateActionLoadingId === t.id ? 'Opening…' : 'View/Edit'}
-                        </button>
+                  {myTemplates.map((t) => {
+                    const isOpening = templateActionLoadingId === t.id
+                    const openTemplate = async () => {
+                      if (templateActionLoadingId) return
+                      setTemplateActionLoadingId(t.id)
+                      try {
+                        const fullTemplate = await getClinicalTemplate(t.id)
+                        setTemplateToEdit(fullTemplate)
+                        setIsCreateModalOpen(true)
+                      } catch (e) {
+                        setTemplatesError(getApiErrorMessage(e))
+                      } finally {
+                        setTemplateActionLoadingId(null)
+                      }
+                    }
+                    return (
+                      <div
+                        key={t.id}
+                        aria-busy={isOpening}
+                        aria-disabled={isOpening}
+                        className={`group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:border-[#006b2c] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb] ${isOpening ? 'opacity-70' : 'cursor-pointer'}`}
+                        onClick={() => void openTemplate()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            void openTemplate()
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
+                        <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                          <span className="text-xs font-semibold text-[#006b2c] group-hover:underline">
+                            {isOpening ? 'Opening…' : 'View/Edit'}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )
             )}

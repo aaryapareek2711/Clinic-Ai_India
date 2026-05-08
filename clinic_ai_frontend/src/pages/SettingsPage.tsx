@@ -258,7 +258,7 @@ function SettingsPage() {
 
       <main className="min-h-screen bg-[#f4fcf0]">
         <div className="space-y-8 p-8 pt-24">
-          <SettingsHeadingNav showTabs={false} variant="wide" />
+          <SettingsHeadingNav backTo="/dashboard" showTabs={false} variant="wide" />
 
           <section className="relative z-0 mx-auto max-w-7xl overflow-hidden rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-10 py-10 text-white shadow-lg">
           <div
