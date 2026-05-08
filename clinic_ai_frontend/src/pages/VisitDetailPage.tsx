@@ -181,6 +181,13 @@ function compose12HourTime(parts: { hour: string; minute: string; period: string
   return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
 }
 
+function extractClinicalFollowUpIn(note: ClinicalNoteLatest | null): string {
+  const payload = note?.payload
+  if (!payload || typeof payload !== 'object') return ''
+  const raw = (payload as Record<string, unknown>).follow_up_in
+  return raw == null ? '' : String(raw).trim()
+}
+
 const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
@@ -652,6 +659,7 @@ export default function VisitDetailPage() {
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
   const recapFollowUpTimeParts = recapFollowUpTimePartsDraft
+  const clinicalFollowUpIn = extractClinicalFollowUpIn(clinicalNote)
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -1859,7 +1867,6 @@ export default function VisitDetailPage() {
                       [
                         ['patient', "Patient's WhatsApp"] as const,
                         ['different', 'Different number'] as const,
-                        ['family', 'Family member'] as const,
                       ]
                     ).map(([value, label]) => (
                       <label key={value} className="flex cursor-pointer items-center gap-2">
@@ -1913,7 +1920,9 @@ export default function VisitDetailPage() {
                           }}
                           value={recapFollowUpTimeParts.hour}
                         >
-                          <option value="">HH</option>
+                          <option value="" disabled hidden>
+                            HH
+                          </option>
                           {HOUR_OPTIONS_12H.map((opt) => (
                             <option key={opt} value={opt}>
                               {opt}
@@ -1932,7 +1941,9 @@ export default function VisitDetailPage() {
                           }}
                           value={recapFollowUpTimeParts.minute}
                         >
-                          <option value="">MM</option>
+                          <option value="" disabled hidden>
+                            MM
+                          </option>
                           {MINUTE_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
                               {opt}
@@ -1951,7 +1962,9 @@ export default function VisitDetailPage() {
                           }}
                           value={recapFollowUpTimeParts.period}
                         >
-                          <option value="">AM/PM</option>
+                          <option value="" disabled hidden>
+                            AM/PM
+                          </option>
                           <option value="AM">AM</option>
                           <option value="PM">PM</option>
                         </select>
@@ -1984,11 +1997,12 @@ export default function VisitDetailPage() {
                             const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitLanguage,
+                              follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                               follow_up_time: nextVisitTime || undefined,
                             })
                             setPostVisitSummary(res)
-                            setPostVisitMessage('Post-visit summary generated. Review the preview, then send.')
+                            setPostVisitMessage('Post-visit summary generated. Ready to send.')
                           } catch (e) {
                             setPostVisitMessage(getApiErrorMessage(e))
                           } finally {
@@ -2002,13 +2016,9 @@ export default function VisitDetailPage() {
                     </button>
                     <button
                       className="rounded-lg bg-[#16a34a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#006b2c] disabled:opacity-50"
-                      disabled={!patientId || !visitId || !postVisitSummary?.whatsapp_payload?.trim() || recapAction !== null}
+                      disabled={!patientId || !visitId || recapAction !== null}
                       onClick={() => {
                         if (!patientId || !visitId) return
-                        if (!postVisitSummary?.whatsapp_payload?.trim()) {
-                          setPostVisitMessage('Generate the post-visit summary before sending.')
-                          return
-                        }
                         const overrideDigits =
                           recapContactMode === 'patient' ? '' : digitsOnlyPhone(recapPhoneDraft)
                         if (recapContactMode !== 'patient' && !overrideDigits) {
@@ -2019,6 +2029,15 @@ export default function VisitDetailPage() {
                           setRecapAction('send')
                           setPostVisitMessage(null)
                           try {
+                            const nextVisitDate = recapFollowUpDateDraft.trim()
+                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
+                            const refreshedSummary = await generatePostVisitSummary(patientId, visitId, {
+                              preferred_language: postVisitLanguage,
+                              follow_up_in: clinicalFollowUpIn || undefined,
+                              follow_up_date: nextVisitDate || undefined,
+                              follow_up_time: nextVisitTime || undefined,
+                            })
+                            setPostVisitSummary(refreshedSummary)
                             const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
                               phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
                               preferred_language: postVisitLanguage,
@@ -2065,46 +2084,6 @@ export default function VisitDetailPage() {
                     </div>
                   )}
 
-                  {displayPostVisitSummary?.payload && (
-                    <div className="space-y-2 rounded-lg border border-[#bdcaba] bg-slate-50 p-4 text-xs">
-                      <p>
-                        <strong>Visit reason:</strong> {displayPostVisitSummary.payload.visit_reason || '—'}
-                      </p>
-                      <p>
-                        <strong>Findings:</strong> {displayPostVisitSummary.payload.what_doctor_found || '—'}
-                      </p>
-                      <p>
-                        <strong>Follow-up:</strong> {displayPostVisitSummary.payload.follow_up || '—'}
-                      </p>
-                      <p>
-                        <strong>Next visit date:</strong> {displayPostVisitSummary.payload.next_visit_date || '—'}
-                      </p>
-                      <p>
-                        <strong>Medicines to take:</strong>{' '}
-                        {displayPostVisitSummary.payload.medicines_to_take?.length
-                          ? displayPostVisitSummary.payload.medicines_to_take.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Tests recommended:</strong>{' '}
-                        {displayPostVisitSummary.payload.tests_recommended?.length
-                          ? displayPostVisitSummary.payload.tests_recommended.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Self-care:</strong>{' '}
-                        {displayPostVisitSummary.payload.self_care?.length
-                          ? displayPostVisitSummary.payload.self_care.join(', ')
-                          : '—'}
-                      </p>
-                      <p>
-                        <strong>Warning signs:</strong>{' '}
-                        {displayPostVisitSummary.payload.warning_signs?.length
-                          ? displayPostVisitSummary.payload.warning_signs.join(', ')
-                          : '—'}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
