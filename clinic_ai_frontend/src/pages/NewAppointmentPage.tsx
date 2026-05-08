@@ -6,13 +6,7 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
-import {
-  DEFAULT_PROVIDER_ID,
-  fetchProviderUpcoming,
-  fetchProviderVisits,
-  type ProviderUpcomingAppointment,
-  type ProviderVisitListItem,
-} from '../services/visitWorkflowApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const DAILY_SLOT_LIMIT = 15
@@ -88,24 +82,16 @@ function localSlotTimestamp(dateStr: string, hhmm: string): number {
   return new Date(year, month - 1, day, hour, minute, 0, 0).getTime()
 }
 
-function extractDateAndTime(raw: string | null | undefined): { dateStr: string; hhmm: string } | null {
-  const text = String(raw ?? '').trim()
-  if (!text) return null
-  const m = text.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/)
-  if (m) return { dateStr: m[1], hhmm: m[2] }
-  const d = new Date(text)
-  if (Number.isNaN(d.getTime())) return null
+function localSlotKeyFromIso(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
   const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return { dateStr: `${y}-${mo}-${day}`, hhmm: `${hh}:${mm}` }
-}
-
-function dateKeyFromRaw(raw: string | null | undefined): string {
-  const parts = extractDateAndTime(raw)
-  return parts?.dateStr ?? ''
+  return `${y}-${m}-${day}T${hh}:${mm}`
 }
 
 function addMinutesToIsoLocal(isoLocal: string, mins: number): string {
@@ -124,45 +110,6 @@ type SlotBlock = {
   startIso: string
   endIso: string
   booked: boolean
-}
-
-function toUpcomingFromVisit(v: ProviderVisitListItem): ProviderUpcomingAppointment | null {
-  const visitId = String(v.visit_id || v.id || '').trim()
-  const scheduledStart = String(v.scheduled_start || '').trim()
-  const status = String(v.status || '').trim().toLowerCase()
-  if (!visitId || !scheduledStart) return null
-  if (['cancelled', 'canceled', 'completed', 'closed', 'ended'].includes(status)) return null
-  return {
-    appointment_id: visitId,
-    patient_id: v.patient_id,
-    patient_name: v.patient_name,
-    scheduled_start: scheduledStart,
-    chief_complaint: v.chief_complaint || 'Visit',
-    appointment_type: v.visit_type || 'visit',
-    previsit_completed: false,
-    visit_id: visitId,
-    status: v.status || '',
-  }
-}
-
-function mergeUpcomingSources(
-  upcomingRows: ProviderUpcomingAppointment[],
-  visitRows: ProviderVisitListItem[],
-): ProviderUpcomingAppointment[] {
-  const byVisitId = new Map<string, ProviderUpcomingAppointment>()
-  for (const row of upcomingRows) {
-    const visitId = String(row.visit_id || '').trim()
-    const scheduledStart = String(row.scheduled_start || '').trim()
-    if (!visitId || !scheduledStart) continue
-    byVisitId.set(visitId, row)
-  }
-  for (const visit of visitRows) {
-    const converted = toUpcomingFromVisit(visit)
-    if (!converted) continue
-    // Prefer visits API as authoritative source for current scheduled_start/status.
-    byVisitId.set(converted.visit_id, converted)
-  }
-  return [...byVisitId.values()]
 }
 
 function formatMonthLabel(d: Date): string {
@@ -198,13 +145,15 @@ function computeSlotsForDate(params: {
   const bookedIntervals = selectedDateBooked
     .map((a) => {
       const startIso = a.scheduled_start
-      const parts = extractDateAndTime(startIso)
-      if (!parts) return null
-      const bookedDate = parts.dateStr
-      const bookedHm = parts.hhmm
+      const bookedKey = localSlotKeyFromIso(startIso)
+      if (!bookedKey) return null
+      const [bookedDate, bookedHm] = bookedKey.split('T')
+      if (!bookedDate || !bookedHm) return null
       const startTime = localSlotTimestamp(bookedDate, bookedHm)
       if (Number.isNaN(startTime)) return null
-      const startMin = minutesFromHHmm(bookedHm)
+      const d = new Date(startIso)
+      if (Number.isNaN(d.getTime())) return null
+      const startMin = d.getHours() * 60 + d.getMinutes()
       const duration = durationMap[startIso] ?? schedule.defaultSlotMinutes ?? 15
       const endMin = startMin + duration
       const endIso = addMinutesToIsoLocal(`${bookedDate}T${bookedHm}:00`, duration)
@@ -251,7 +200,6 @@ function NewAppointmentPage() {
 
   const [patients, setPatients] = useState<PatientSummary[]>([])
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
-  const [selectedDateUpcoming, setSelectedDateUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
@@ -278,15 +226,13 @@ function NewAppointmentPage() {
           setListLoading(true)
           setError(null)
         }
-        const [patientsData, upcomingData, visitsData] = await Promise.all([
+        const [patientsData, upcomingData] = await Promise.all([
           fetchPatients(),
           fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
         ])
-        const providerUpcoming = mergeUpcomingSources(upcomingData, visitsData)
         if (!cancelled) {
           setPatients(patientsData)
-          setUpcoming(providerUpcoming)
+          setUpcoming(upcomingData)
           if (requestedPatientId && patientsData.some((p) => p.id === requestedPatientId)) {
             setSelectedId(requestedPatientId)
           }
@@ -302,35 +248,6 @@ function NewAppointmentPage() {
     }
   }, [requestedPatientId])
 
-  useEffect(() => {
-    const dateStr = appointmentDate.trim()
-    if (!dateStr) {
-      setSelectedDateUpcoming([])
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      try {
-        const [upcomingRows, visitRows] = await Promise.all([
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
-            fromDate: `${dateStr}T00:00:00`,
-            toDate: `${dateStr}T23:59:59`,
-          }),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        ])
-        const merged = mergeUpcomingSources(upcomingRows, visitRows).filter(
-          (row) => dateKeyFromRaw(row.scheduled_start) === dateStr,
-        )
-        if (!cancelled) setSelectedDateUpcoming(merged)
-      } catch {
-        if (!cancelled) setSelectedDateUpcoming([])
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [appointmentDate])
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return patients
@@ -345,9 +262,8 @@ function NewAppointmentPage() {
   const selectedDateBooked = useMemo(() => {
     const key = appointmentDate.trim()
     if (!key) return []
-    const sourceRows = selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming
-    return sourceRows.filter((a) => dateKeyFromRaw(a.scheduled_start) === key)
-  }, [appointmentDate, upcoming, selectedDateUpcoming])
+    return upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === key)
+  }, [appointmentDate, upcoming])
 
   const dayAtCapacity = appointmentDate.trim().length > 0 && selectedDateBooked.length >= DAILY_SLOT_LIMIT
   const durationMap = useMemo(() => getAppointmentDurationMap(), [])
@@ -357,10 +273,10 @@ function NewAppointmentPage() {
         dateStr: appointmentDate.trim(),
         appointmentDuration,
         schedule,
-        upcoming: selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming,
+        upcoming,
         durationMap,
       }),
-    [appointmentDate, appointmentDuration, schedule, upcoming, selectedDateUpcoming, durationMap],
+    [appointmentDate, appointmentDuration, schedule, upcoming, durationMap],
   )
 
   const monthCells = useMemo(() => {
@@ -386,7 +302,7 @@ function NewAppointmentPage() {
           dateStr,
           appointmentDuration,
           schedule,
-          upcoming: selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming,
+          upcoming,
           durationMap,
         }).filter((slot) => !slot.booked).length > 0
       cells.push({
@@ -399,16 +315,7 @@ function NewAppointmentPage() {
       })
     }
     return cells
-  }, [
-    visibleMonth,
-    appointmentDate,
-    minAppointmentDate,
-    appointmentDuration,
-    schedule,
-    upcoming,
-    selectedDateUpcoming,
-    durationMap,
-  ])
+  }, [visibleMonth, appointmentDate, minAppointmentDate, appointmentDuration, schedule, upcoming, durationMap])
 
   const availableSlots = useMemo(() => slotBlocks.filter((s) => !s.booked), [slotBlocks])
 

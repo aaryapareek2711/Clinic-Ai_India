@@ -6,13 +6,7 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
-import {
-  DEFAULT_PROVIDER_ID,
-  fetchProviderUpcoming,
-  fetchProviderVisits,
-  type ProviderUpcomingAppointment,
-  type ProviderVisitListItem,
-} from '../services/visitWorkflowApi'
+import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function localDateInputMin(d = new Date()): string {
@@ -39,6 +33,16 @@ function normalizeIndiaMobileForApi(raw: string): string | null {
     if (/^[6-9]\d{9}$/.test(last10)) return `91${last10}`
   }
   return null
+}
+
+function dateKeyLocal(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function minutesFromHHmm(v: string): number {
@@ -78,30 +82,16 @@ function localSlotTimestamp(dateStr: string, hhmm: string): number {
   return new Date(year, month - 1, day, hour, minute, 0, 0).getTime()
 }
 
-function extractDateAndTime(raw: string | null | undefined): { dateStr: string; hhmm: string } | null {
-  const text = String(raw ?? '').trim()
-  if (!text) return null
-  const m = text.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/)
-  if (m) return { dateStr: m[1], hhmm: m[2] }
-  const d = new Date(text)
-  if (Number.isNaN(d.getTime())) return null
+function localSlotKeyFromIso(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
   const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return { dateStr: `${y}-${mo}-${day}`, hhmm: `${hh}:${mm}` }
-}
-
-function dateKeyFromRaw(raw: string | null | undefined): string {
-  const parts = extractDateAndTime(raw)
-  return parts?.dateStr ?? ''
-}
-
-function localSlotKeyFromIso(iso: string | null | undefined): string {
-  const parts = extractDateAndTime(iso)
-  if (!parts) return ''
-  return `${parts.dateStr}T${parts.hhmm}`
+  return `${y}-${m}-${day}T${hh}:${mm}`
 }
 
 function formatMonthLabel(d: Date): string {
@@ -125,45 +115,6 @@ type SlotBlock = {
   booked: boolean
 }
 
-function toUpcomingFromVisit(v: ProviderVisitListItem): ProviderUpcomingAppointment | null {
-  const visitId = String(v.visit_id || v.id || '').trim()
-  const scheduledStart = String(v.scheduled_start || '').trim()
-  const status = String(v.status || '').trim().toLowerCase()
-  if (!visitId || !scheduledStart) return null
-  if (['cancelled', 'canceled', 'completed', 'closed', 'ended'].includes(status)) return null
-  return {
-    appointment_id: visitId,
-    patient_id: v.patient_id,
-    patient_name: v.patient_name,
-    scheduled_start: scheduledStart,
-    chief_complaint: v.chief_complaint || 'Visit',
-    appointment_type: v.visit_type || 'visit',
-    previsit_completed: false,
-    visit_id: visitId,
-    status: v.status || '',
-  }
-}
-
-function mergeUpcomingSources(
-  upcomingRows: ProviderUpcomingAppointment[],
-  visitRows: ProviderVisitListItem[],
-): ProviderUpcomingAppointment[] {
-  const byVisitId = new Map<string, ProviderUpcomingAppointment>()
-  for (const row of upcomingRows) {
-    const visitId = String(row.visit_id || '').trim()
-    const scheduledStart = String(row.scheduled_start || '').trim()
-    if (!visitId || !scheduledStart) continue
-    byVisitId.set(visitId, row)
-  }
-  for (const visit of visitRows) {
-    const converted = toUpcomingFromVisit(visit)
-    if (!converted) continue
-    // Prefer visits API as authoritative source for current scheduled_start/status.
-    byVisitId.set(converted.visit_id, converted)
-  }
-  return [...byVisitId.values()]
-}
-
 function NewVisitPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -183,7 +134,6 @@ function NewVisitPage() {
   const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const [visitKind, setVisitKind] = useState<'scheduled' | 'walk_in'>('scheduled')
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
-  const [selectedDateUpcoming, setSelectedDateUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const schedule = useMemo(() => getDoctorScheduleSettings(), [])
@@ -193,11 +143,8 @@ function NewVisitPage() {
     let cancelled = false
     void (async () => {
       try {
-        const [upcomingRows, visitRows] = await Promise.all([
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        ])
-        if (!cancelled) setUpcoming(mergeUpcomingSources(upcomingRows, visitRows))
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID)
+        if (!cancelled) setUpcoming(data)
       } catch {
         if (!cancelled) setUpcoming([])
       }
@@ -206,35 +153,6 @@ function NewVisitPage() {
       cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    const dateStr = appointmentDate.trim()
-    if (!dateStr) {
-      setSelectedDateUpcoming([])
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      try {
-        const [upcomingRows, visitRows] = await Promise.all([
-          fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
-            fromDate: `${dateStr}T00:00:00`,
-            toDate: `${dateStr}T23:59:59`,
-          }),
-          fetchProviderVisits(DEFAULT_PROVIDER_ID),
-        ])
-        const merged = mergeUpcomingSources(upcomingRows, visitRows).filter(
-          (row) => dateKeyFromRaw(row.scheduled_start) === dateStr,
-        )
-        if (!cancelled) setSelectedDateUpcoming(merged)
-      } catch {
-        if (!cancelled) setSelectedDateUpcoming([])
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [appointmentDate])
 
   const slotBlocks = useMemo<SlotBlock[]>(() => {
     const dateStr = appointmentDate.trim()
@@ -249,10 +167,9 @@ function NewVisitPage() {
       const evEnd = minutesFromHHmm(schedule.eveningEnd)
       if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
     }
-    const sourceRows = selectedDateUpcoming.length > 0 ? selectedDateUpcoming : upcoming
     const bookedStarts = new Set(
-      sourceRows
-        .filter((a) => dateKeyFromRaw(a.scheduled_start) === dateStr)
+      upcoming
+        .filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
         .map((a) => localSlotKeyFromIso(a.scheduled_start)),
     )
     const out: SlotBlock[] = []
@@ -273,7 +190,7 @@ function NewVisitPage() {
       }
     }
     return out
-  }, [appointmentDate, schedule, upcoming, selectedDateUpcoming])
+  }, [appointmentDate, schedule, upcoming])
 
   const selectedSlots = useMemo(
     () =>
