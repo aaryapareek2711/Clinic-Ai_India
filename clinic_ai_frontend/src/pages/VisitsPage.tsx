@@ -13,7 +13,16 @@ import {
 
 type VisitTab = 'all' | 'scheduled' | 'in-progress' | 'completed'
 type RowTone = 'blue' | 'amber' | 'green'
-type VisitSort = 'patient_newest' | 'patient_oldest' | 'time_newest' | 'time_oldest' | 'name_az' | 'name_za' | 'visit_id'
+type VisitSort =
+  | 'patient_newest'
+  | 'patient_oldest'
+  | 'visit_latest'
+  | 'visit_oldest'
+  | 'time_newest'
+  | 'time_oldest'
+  | 'name_az'
+  | 'name_za'
+  | 'visit_id'
 const PAGE_SIZE = 10
 const AUTO_REFRESH_MS = 30_000
 const MIN_FOCUS_REFRESH_GAP_MS = 8_000
@@ -418,6 +427,8 @@ function VisitsPage() {
               >
                 <option value="patient_newest">New patient: newest first</option>
                 <option value="patient_oldest">New patient: oldest first</option>
+                <option value="visit_latest">Last visit: newest first</option>
+                <option value="visit_oldest">Last visit: oldest first</option>
                 <option value="time_newest">Time: newest first</option>
                 <option value="time_oldest">Time: oldest first</option>
                 <option value="name_az">Name: A → Z</option>
