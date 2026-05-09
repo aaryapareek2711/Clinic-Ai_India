@@ -11,75 +11,7 @@ import {
   type ClinicalNoteLatest,
   type IndiaClinicalNotePayload,
 } from '../../services/visitWorkflowApi'
-<<<<<<< HEAD
 import { listClinicalTemplates, type ClinicalTemplateListItem } from '../../services/templatesApi'
-=======
-
-function to12HourTimeDisplay(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const hh = Number(m12[1])
-    const mm = m12[2]
-    const mer = m12[3].toUpperCase()
-    if (hh >= 1 && hh <= 12) return `${hh}:${mm} ${mer}`
-  }
-  const m24 = text.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m24) return text
-  const h = Number(m24[1])
-  const mm = m24[2]
-  if (!Number.isFinite(h) || h < 0 || h > 23) return text
-  const mer = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${mm} ${mer}`
-}
-
-function to24HourTimeForApi(raw: string | null | undefined): string {
-  const text = String(raw || '').trim()
-  if (!text) return ''
-  const m12 = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (m12) {
-    const h12 = Number(m12[1])
-    const mm = Number(m12[2])
-    const mer = m12[3].toUpperCase()
-    if (h12 >= 1 && h12 <= 12 && mm >= 0 && mm <= 59) {
-      const h24 = (h12 % 12) + (mer === 'PM' ? 12 : 0)
-      return `${String(h24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    }
-  }
-  return text
-}
-
-function parse12HourTimeParts(raw: string | null | undefined): { hour: string; minute: string; period: string } {
-  const text = to12HourTimeDisplay(raw)
-  const m = text.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (!m) return { hour: '', minute: '', period: '' }
-  return {
-    hour: String(Number(m[1])).padStart(2, '0'),
-    minute: m[2],
-    period: m[3].toUpperCase(),
-  }
-}
-
-function compose12HourTime(parts: { hour: string; minute: string; period: string }): string {
-  if (!parts.hour || !parts.minute || !parts.period) return ''
-  const hh = Number(parts.hour)
-  const mm = Number(parts.minute)
-  const pp = parts.period.toUpperCase()
-  if (!(hh >= 1 && hh <= 12 && mm >= 0 && mm <= 59 && (pp === 'AM' || pp === 'PM'))) return ''
-  return `${hh}:${String(mm).padStart(2, '0')} ${pp}`
-}
-
-function composePartialTimeForApi(parts: { hour: string; minute: string; period: string }): string {
-  const composed = compose12HourTime(parts)
-  if (!composed) return ''
-  return to24HourTimeForApi(composed)
-}
-
-const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
-const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
 function asIndiaPayload(raw: ClinicalNoteLatest['payload']): IndiaClinicalNotePayload | null {
   if (!raw || typeof raw !== 'object') return null
@@ -161,16 +93,9 @@ export default function VisitClinicalNotePanel({
   const [draftPlan, setDraftPlan] = useState('')
   const [draftDoctorNotes, setDraftDoctorNotes] = useState('')
   const [draftChief, setDraftChief] = useState('')
-<<<<<<< HEAD
   const [editingFollowUp, setEditingFollowUp] = useState(false)
   const [followUpCountDraft, setFollowUpCountDraft] = useState('7')
   const [followUpUnitDraft, setFollowUpUnitDraft] = useState<FollowUpUnit>('days')
-=======
-  const [followUpDate, setFollowUpDate] = useState('')
-  const [followUpHour, setFollowUpHour] = useState('')
-  const [followUpMinute, setFollowUpMinute] = useState('')
-  const [followUpPeriod, setFollowUpPeriod] = useState('')
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
   const [selectedTemplate, setSelectedTemplate] = useState(() => getSelectedClinicalTemplate())
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [templatesLoading, setTemplatesLoading] = useState(false)
@@ -189,18 +114,6 @@ export default function VisitClinicalNotePanel({
     setDraftChief(payload.chief_complaint ?? '')
   }, [editing, payload, clinicalNote?.note_id])
 
-<<<<<<< HEAD
-=======
-  useEffect(() => {
-    // Keep follow-up draft in sync with latest persisted note.
-    setFollowUpDate(payload?.follow_up_date?.toString().trim() || '')
-    const parts = parse12HourTimeParts(payload?.follow_up_time?.toString().trim() || '')
-    setFollowUpHour(parts.hour)
-    setFollowUpMinute(parts.minute)
-    setFollowUpPeriod(parts.period)
-  }, [payload?.follow_up_date, payload?.follow_up_time, clinicalNote?.note_id])
-
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
   const displayPayload = useMemo((): IndiaClinicalNotePayload | null => {
     if (!payload) return null
     if (!editing) return payload
@@ -215,7 +128,6 @@ export default function VisitClinicalNotePanel({
 
   const soapParts = useMemo(() => parseSoapFromDoctorNotes(displayPayload?.doctor_notes), [displayPayload?.doctor_notes])
 
-<<<<<<< HEAD
   const handleGenerate = useCallback(
     async (templateIdOverride?: string | null) => {
       if (!patientId || !visitId || generating) return
@@ -239,42 +151,6 @@ export default function VisitClinicalNotePanel({
     },
     [patientId, visitId, generating, selectedTemplate?.id, onNoteUpdated],
   )
-=======
-  const handleGenerate = useCallback(async () => {
-    if (!patientId || !visitId || generating) return
-    setGenerating(true)
-    setMessage(null)
-    try {
-      const followUpTimeApi = composePartialTimeForApi({
-        hour: followUpHour,
-        minute: followUpMinute,
-        period: followUpPeriod,
-      })
-      const res = await generateClinicalNote(patientId, visitId, {
-        follow_up_date: followUpDate.trim() || undefined,
-        follow_up_time: followUpTimeApi || undefined,
-        template_id: selectedTemplate?.id,
-      })
-      onNoteUpdated(res)
-      setMessage('Clinical note generated and saved on the server.')
-      setActiveEditSection(null)
-    } catch (e) {
-      setMessage(getApiErrorMessage(e))
-    } finally {
-      setGenerating(false)
-    }
-  }, [
-    patientId,
-    visitId,
-    generating,
-    followUpDate,
-    followUpHour,
-    followUpMinute,
-    followUpPeriod,
-    selectedTemplate?.id,
-    onNoteUpdated,
-  ])
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
 
   const startEdit = (section: 'chief' | 'narrative' | 'assessment' | 'plan') => {
     if (!payload) return
@@ -412,63 +288,6 @@ export default function VisitClinicalNotePanel({
             <span className="text-[11px] text-[#575e70]">No template selected.</span>
           )}
         </div>
-<<<<<<< HEAD
-=======
-        <p className="font-semibold text-[#171d16]">Optional before generate</p>
-        <p className="mt-1 text-[#575e70]">
-          Staff follow-up date/time is sent to the server with generation (scheduling + may refresh a cached note). Leave
-          blank if not needed.
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#575e70]">Follow-up date</span>
-            <input
-              className="rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-              onChange={(e) => setFollowUpDate(e.target.value)}
-              type="date"
-              value={followUpDate}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#575e70]">Time (hh:mm AM/PM)</span>
-            <div className="flex items-center gap-2">
-              <select
-                className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) => setFollowUpHour(e.target.value)}
-                value={followUpHour}
-              >
-                <option value="">HH</option>
-                {HOUR_OPTIONS_12H.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) => setFollowUpMinute(e.target.value)}
-                value={followUpMinute}
-              >
-                <option value="">MM</option>
-                {MINUTE_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="w-24 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                onChange={(e) => setFollowUpPeriod(e.target.value)}
-                value={followUpPeriod}
-              >
-                <option value="">AM/PM</option>
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
-            </div>
-          </label>
-        </div>
->>>>>>> a9f0be420fea9c305b3f20031beaaf4112834356
       </div>
 
       {transcriptionStatusKnown && !transcriptionCompleted && (
