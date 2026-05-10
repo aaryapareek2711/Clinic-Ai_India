@@ -156,9 +156,21 @@ function visitStatusChip(statusRaw: string | undefined | null): {
   className: string
 } {
   const s = (statusRaw || '').trim().toLowerCase()
-  if (['scheduled', 'open', 'queued', 'in_queue'].includes(s)) {
+  if (s === 'scheduled') {
     return {
-      label: 'Scheduled',
+      label: 'Upcoming',
+      className: 'rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800',
+    }
+  }
+  if (s === 'queued' || s === 'in_queue') {
+    return {
+      label: 'In Queue',
+      className: 'rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800',
+    }
+  }
+  if (s === 'open') {
+    return {
+      label: 'Open',
       className: 'rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800',
     }
   }
