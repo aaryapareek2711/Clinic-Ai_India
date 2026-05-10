@@ -98,7 +98,7 @@ export default function VisitKanbanCard({ visit, onOpen, onPrimaryAction }: Visi
           }}
           type="button"
         >
-          View Visit
+          {visit.visitId ? 'View Visit' : 'Open Patient'}
         </button>
       </div>
     </article>

@@ -33,6 +33,7 @@ export type KanbanStageDefinition = {
 
 export type VisitKanbanCardModel = {
   visitId: string
+  patientId: string
   patientName: string
   subtitle: string
   meta: string
@@ -266,6 +267,7 @@ export function toVisitKanbanCardModel(visit: ProviderVisitListItem): VisitKanba
 
   return {
     visitId: (visit.visit_id || visit.id || '').trim(),
+    patientId: (visit.patient_id || '').trim(),
     patientName: displayName,
     subtitle,
     meta: formatPatientDisplayId(displayName, visit.mobile_number),
@@ -310,6 +312,7 @@ export function filterVisitsBySearch(visits: ProviderVisitListItem[], searchTerm
     const haystack = [
       visit.patient_name,
       visit.visit_id,
+      visit.patient_id,
       visit.id,
       visit.mobile_number,
       visit.status,

@@ -8,7 +8,9 @@ import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderVisitsPaged,
+  type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
+import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import VisitKanbanBoard from './visit/VisitKanbanBoard'
 import type { VisitKanbanCardModel } from './visit/visit-kanban-utils'
@@ -55,7 +57,13 @@ function VisitsPage() {
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,
   })
+  const { data: patientsData } = useQuery({
+    queryKey: ['patients', 'all-for-visits-board'],
+    queryFn: fetchPatients,
+    staleTime: 60_000,
+  })
   const visits = data?.items ?? []
+  const patients = patientsData ?? []
   const totalVisits = data?.total ?? 0
   const loading = isFetching && !data
   const listError = error ? getApiErrorMessage(error) : null
@@ -84,6 +92,40 @@ function VisitsPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalVisits / PAGE_SIZE))
 
+  const visitsWithRegisteredPatients = useMemo(() => {
+    const patientIdsWithVisit = new Set(
+      visits.map((v) => String(v.patient_id || '').trim()).filter(Boolean),
+    )
+    const syntheticRegisteredVisits: ProviderVisitListItem[] = patients
+      .filter((p: PatientSummary) => !String(p.latest_visit_id || '').trim())
+      .filter((p: PatientSummary) => !patientIdsWithVisit.has(String(p.id || p.patient_id || '').trim()))
+      .map((p: PatientSummary) => ({
+        id: '',
+        visit_id: '',
+        patient_id: String(p.id || p.patient_id || '').trim(),
+        patient_name: String(p.full_name || `${p.first_name || ''} ${p.last_name || ''}` || '').trim() || 'Patient',
+        mobile_number: p.phone_number || '',
+        visit_type: '',
+        status: 'patient_registered',
+        previous_workflow_stage: null,
+        current_workflow_stage: 'patient_registered',
+        next_workflow_stage: 'appointment_created',
+        scheduled_start: null,
+        actual_start: null,
+        actual_end: null,
+        duration_minutes: null,
+        chief_complaint: null,
+        intake_status: null,
+        intake_question_count: null,
+        intake_last_updated_at: null,
+        created_at: '',
+        updated_at: '',
+        patient_created_at: null,
+        patient_last_visit_at: null,
+      }))
+    return [...syntheticRegisteredVisits, ...visits]
+  }, [patients, visits])
+
   useEffect(() => {
     setCurrentPage(1)
   }, [searchQuery, sortBy])
@@ -98,10 +140,22 @@ function VisitsPage() {
   }
 
   const handleOpenVisit = (card: VisitKanbanCardModel) => {
+    if (!card.visitId) {
+      if (card.patientId) navigate(`/patients/detail?patientId=${encodeURIComponent(card.patientId)}`)
+      return
+    }
     openVisitWithTab(card.visitId, 'pre-visit')
   }
 
   const handlePrimaryAction = (card: VisitKanbanCardModel) => {
+    if (!card.visitId) {
+      if (card.patientId) {
+        navigate(`/start-visit?patientId=${encodeURIComponent(card.patientId)}`)
+      } else {
+        navigate('/start-visit')
+      }
+      return
+    }
     openVisitWithTab(card.visitId, card.primaryAction.tab)
   }
 
@@ -210,7 +264,7 @@ function VisitsPage() {
             )}
             {!loading && !listError && totalVisits > 0 && (
               <VisitKanbanBoard
-                visits={visits}
+                visits={visitsWithRegisteredPatients}
                 searchQuery={searchQuery}
                 onOpenVisit={handleOpenVisit}
                 onPrimaryAction={handlePrimaryAction}
