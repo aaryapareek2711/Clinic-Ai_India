@@ -79,6 +79,10 @@ function isNarrativeSection(section: ClinicalContentSection): section is Narrati
   return (NARRATIVE_SECTIONS as readonly string[]).includes(section)
 }
 
+function isClinicalContentSection(value: string): value is ClinicalContentSection {
+  return (CLINICAL_CONTENT_SECTIONS as readonly string[]).includes(value)
+}
+
 const defaultNarrativeDepth = (): Record<NarrativeSection, 'brief' | 'detail'> => ({
   chief_complaint: 'brief',
   assessment: 'brief',
@@ -114,6 +118,9 @@ const emptyContent = (): TemplateContentPayload => ({
   investigations: [],
   red_flags: [],
   data_gaps: [],
+  included_sections: [...CLINICAL_CONTENT_SECTIONS],
+  section_detail_level: defaultNarrativeDepth(),
+  section_order: [...CLINICAL_CONTENT_SECTIONS],
 })
 
 const APPOINTMENT_OPTIONS = ['Consultation', 'Follow-up', 'Procedure', 'Telehealth']
@@ -162,6 +169,57 @@ function buildBodyContent(content: TemplateContentPayload, redFlagsText: string,
     red_flags: rf,
     data_gaps: dg,
   }
+}
+
+function buildTemplateControlledContent(
+  content: TemplateContentPayload,
+  redFlagsText: string,
+  dataGapsText: string,
+  sectionOrder: ClinicalContentSection[],
+  narrativeDepth: Record<NarrativeSection, 'brief' | 'detail'>,
+): TemplateContentPayload {
+  const base = buildBodyContent(content, redFlagsText, dataGapsText)
+  const included = [...sectionOrder]
+  const detailEntries = included
+    .filter(isNarrativeSection)
+    .map((section) => [section, narrativeDepth[section]] as const)
+  return {
+    ...base,
+    included_sections: included,
+    section_order: included,
+    section_detail_level: Object.fromEntries(detailEntries),
+  }
+}
+
+function deriveSectionOrderFromTemplateContent(content?: TemplateContentPayload): ClinicalContentSection[] {
+  if (!content) return [...CLINICAL_CONTENT_SECTIONS]
+  const includedRaw = Array.isArray(content.included_sections) ? content.included_sections : []
+  const orderRaw = Array.isArray(content.section_order) ? content.section_order : []
+  const included = includedRaw.map(String).filter(isClinicalContentSection)
+  const order = orderRaw.map(String).filter(isClinicalContentSection)
+  const includeSet = new Set(included)
+  if (includeSet.size === 0) return [...CLINICAL_CONTENT_SECTIONS]
+  const next: ClinicalContentSection[] = []
+  for (const section of order) {
+    if (includeSet.has(section) && !next.includes(section)) next.push(section)
+  }
+  for (const section of CLINICAL_CONTENT_SECTIONS) {
+    if (includeSet.has(section) && !next.includes(section)) next.push(section)
+  }
+  return next
+}
+
+function deriveNarrativeDepthFromTemplateContent(content?: TemplateContentPayload): Record<NarrativeSection, 'brief' | 'detail'> {
+  const base = defaultNarrativeDepth()
+  if (!content?.section_detail_level) return base
+  const entries = Object.entries(content.section_detail_level)
+  for (const [k, v] of entries) {
+    if (!isNarrativeSection(k as ClinicalContentSection)) continue
+    if (v === 'brief' || v === 'detail') {
+      base[k as NarrativeSection] = v
+    }
+  }
+  return base
 }
 
 function stableEditFingerprint(input: {
@@ -310,10 +368,10 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setOptionalPreferences('')
     setError(null)
     setSaveLoading(false)
-    setContentSectionOrder([...CLINICAL_CONTENT_SECTIONS])
+    setContentSectionOrder(deriveSectionOrderFromTemplateContent(contentFromTemplate))
     setDraggingSectionIndex(null)
     setHiddenMedicationFields({})
-    setNarrativeDepth(defaultNarrativeDepth())
+    setNarrativeDepth(deriveNarrativeDepthFromTemplateContent(contentFromTemplate))
   }, [isOpen, resetAll, templateToEdit])
 
   const hasEditChanges = useMemo(() => {
@@ -323,7 +381,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       description,
       tags: parseTagsInput(tagsInput),
       appointmentTypes,
-      content: buildBodyContent(content, redFlagsText, dataGapsText),
+      content: buildTemplateControlledContent(content, redFlagsText, dataGapsText, contentSectionOrder, narrativeDepth),
     })
 
     const baselineContent = templateToEdit.content
@@ -343,15 +401,28 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       description: templateToEdit.description || '',
       tags: templateToEdit.tags || [],
       appointmentTypes: templateToEdit.appointment_types || [],
-      content: buildBodyContent(
+      content: buildTemplateControlledContent(
         baselineContent,
         (baselineContent.red_flags || []).filter(Boolean).join('\n'),
         (baselineContent.data_gaps || []).filter(Boolean).join('\n'),
+        deriveSectionOrderFromTemplateContent(baselineContent),
+        deriveNarrativeDepthFromTemplateContent(baselineContent),
       ),
     })
 
     return currentFingerprint !== baselineFingerprint
-  }, [templateToEdit, name, description, tagsInput, appointmentTypes, content, redFlagsText, dataGapsText])
+  }, [
+    templateToEdit,
+    name,
+    description,
+    tagsInput,
+    appointmentTypes,
+    content,
+    redFlagsText,
+    dataGapsText,
+    contentSectionOrder,
+    narrativeDepth,
+  ])
 
   const toggleAppointment = (label: string) => {
     setAppointmentTypes((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]))
@@ -373,7 +444,13 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       return
     }
     const tags = parseTagsInput(tagsInput)
-    const bodyContent = buildBodyContent(content, redFlagsText, dataGapsText)
+    const bodyContent = buildTemplateControlledContent(
+      content,
+      redFlagsText,
+      dataGapsText,
+      contentSectionOrder,
+      narrativeDepth,
+    )
     setSaveLoading(true)
     try {
       if (templateToEdit?.id) {

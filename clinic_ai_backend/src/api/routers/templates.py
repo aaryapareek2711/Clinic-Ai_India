@@ -31,6 +31,9 @@ def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
     data = dict(doc)
     data.pop("_id", None)
     raw_content = dict(data.get("content") or {})
+    included_sections = raw_content.get("included_sections")
+    section_detail_level = raw_content.get("section_detail_level")
+    section_order = raw_content.get("section_order")
     data["content"] = {
         "assessment": str(raw_content.get("assessment") or ""),
         "plan": str(raw_content.get("plan") or ""),
@@ -43,6 +46,9 @@ def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
         "doctor_notes": str(raw_content.get("doctor_notes") or raw_content.get("subjective") or ""),
         "chief_complaint": str(raw_content.get("chief_complaint") or raw_content.get("objective") or ""),
         "data_gaps": list(raw_content.get("data_gaps") or []),
+        "included_sections": list(included_sections) if isinstance(included_sections, list) else [],
+        "section_detail_level": dict(section_detail_level) if isinstance(section_detail_level, dict) else {},
+        "section_order": list(section_order) if isinstance(section_order, list) else [],
     }
     return data
 

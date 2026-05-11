@@ -23,3 +23,6 @@ worker:
 
 sweeper:
 	python sweeper_startup.py
+
+clear-templates:
+	python scripts/clear_templates.py
