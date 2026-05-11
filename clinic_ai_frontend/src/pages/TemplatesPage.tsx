@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import BackButton from '../components/BackButton'
 import CreateTemplateModal from '../components/CreateTemplateModal'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -9,45 +9,6 @@ import {
   type ClinicalTemplateListItem,
 } from '../services/templatesApi'
 import NotificationsDrawer from './NotificationsDrawer'
-
-const RECOMMENDED_TEMPLATES = [
-  {
-    id: 'general-opd',
-    specialty: 'general',
-    updatedOrder: 0,
-    tag: 'POPULAR',
-    tagClass: 'bg-blue-100 text-blue-700',
-    iconWrap: 'bg-blue-50 text-blue-600',
-    icon: 'stethoscope' as const,
-    title: 'General OPD',
-    description: 'Standard Indian OPD structure including Chief Complaints, History, Examination, and Rx.',
-    readMins: 12,
-  },
-  {
-    id: 'diabetes',
-    specialty: 'chronic',
-    updatedOrder: 1,
-    tag: 'CHRONIC',
-    tagClass: 'bg-amber-100 text-amber-700',
-    iconWrap: 'bg-amber-50 text-amber-600',
-    icon: 'blood_pressure' as const,
-    title: 'Diabetes Follow-up',
-    description: 'Optimized for HbA1c tracking, foot exams, and metformin/insulin adjustments.',
-    readMins: 8,
-  },
-  {
-    id: 'pediatric',
-    specialty: 'pediatrics',
-    updatedOrder: 2,
-    tag: 'WELLNESS',
-    tagClass: 'bg-green-100 text-green-700',
-    iconWrap: 'bg-green-50 text-green-600',
-    icon: 'child_care' as const,
-    title: 'Pediatric Wellness',
-    description: 'Growth tracking (height/weight), vaccination status, and milestone assessment.',
-    readMins: 15,
-  },
-] as const
 
 function TemplatesPage() {
   const provider = useProviderIdentity()
@@ -114,19 +75,6 @@ function TemplatesPage() {
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [isFiltersOpen])
-
-  const filteredRecommended = useMemo(() => {
-    let list = [...RECOMMENDED_TEMPLATES]
-    if (specialtyFilter !== 'all') {
-      list = list.filter((t) => t.specialty === specialtyFilter)
-    }
-    if (sortBy === 'name') {
-      list.sort((a, b) => a.title.localeCompare(b.title))
-    } else if (sortBy === 'recent') {
-      list.sort((a, b) => b.updatedOrder - a.updatedOrder)
-    }
-    return list
-  }, [specialtyFilter, sortBy])
 
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-inter">
@@ -339,44 +287,6 @@ function TemplatesPage() {
                     </div>
                   )
                 })}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-16">
-            <h4 className="text-[#3e4a3d] uppercase tracking-widest text-[13px] mb-6">Recommended for you</h4>
-            {filteredRecommended.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-[#bdcaba] bg-white px-6 py-10 text-center text-sm text-[#3e4a3d]">
-                No templates match the selected filters. Try &quot;All specialties&quot; or clear filters.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {filteredRecommended.map((t) => (
-                  <div
-                    key={t.id}
-                    className="group cursor-pointer rounded-xl border border-gray-200 bg-white p-6 transition-all hover:border-[#006b2c]"
-                  >
-                    <div className="mb-4 flex items-start justify-between">
-                      <div
-                        className={`rounded-lg p-3 transition-colors group-hover:bg-[#00873a]/20 group-hover:text-[#006b2c] ${t.iconWrap}`}
-                      >
-                        <span className="material-symbols-outlined">{t.icon}</span>
-                      </div>
-                      <span className={`rounded px-2 py-1 text-xs ${t.tagClass}`}>{t.tag}</span>
-                    </div>
-                    <h5 className="mb-1 text-[18px] font-semibold">{t.title}</h5>
-                    <p className="mb-6 line-clamp-2 text-sm text-[#3e4a3d]">{t.description}</p>
-                    <div className="flex items-center justify-between border-t border-gray-100 pt-4">
-                      <span className="flex items-center gap-1 text-xs text-[#6e7b6c]">
-                        <span className="material-symbols-outlined text-sm">schedule</span>
-                        {t.readMins} min read
-                      </span>
-                      <button className="text-sm font-semibold text-[#006b2c] hover:underline" type="button">
-                        Use Template
-                      </button>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>

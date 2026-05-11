@@ -29,6 +29,9 @@ export type TemplateContentPayload = {
   doctor_notes: string
   chief_complaint: string
   data_gaps: string[]
+  included_sections?: string[]
+  section_detail_level?: Record<string, 'brief' | 'detail'>
+  section_order?: string[]
 }
 
 /** Mirrors `CreateTemplateRequest`. Practice/community hidden in UI until enabled. */
@@ -107,6 +110,9 @@ export async function fetchClinicalNoteBlueprint(
     investigations: invRaw.map(investigationFromUnknown),
     red_flags: redRaw.map((x) => String(x)),
     data_gaps: gapRaw.map((x) => String(x)),
+    included_sections: [],
+    section_detail_level: {},
+    section_order: [],
   }
 }
 
