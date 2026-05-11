@@ -9,19 +9,84 @@ import {
   type TemplateMedicationPayload,
 } from '../services/templatesApi'
 
+/** Default order aligns with typical clinical-note flow; users may still reorder sections. */
 const CLINICAL_CONTENT_SECTIONS = [
+  'chief_complaint',
   'assessment',
   'plan',
-  'chief_complaint',
-  'doctor_notes',
-  'rx',
-  'follow_up_date',
+  'investigations',
   'red_flags',
   'data_gaps',
-  'investigations',
+  'follow_up_date',
+  'rx',
+  'doctor_notes',
 ] as const
 
 type ClinicalContentSection = (typeof CLINICAL_CONTENT_SECTIONS)[number]
+
+const ELIMINATABLE_SECTIONS = ['rx', 'doctor_notes'] as const
+type EliminatableSection = (typeof ELIMINATABLE_SECTIONS)[number]
+
+function isEliminatableSection(section: ClinicalContentSection): section is EliminatableSection {
+  return (ELIMINATABLE_SECTIONS as readonly string[]).includes(section)
+}
+
+/** Re-insert eliminated optional blocks using default clinical-note proximity. */
+function insertEliminatableSectionBack(
+  currentOrder: ClinicalContentSection[],
+  section: EliminatableSection,
+): ClinicalContentSection[] {
+  if (currentOrder.includes(section)) return currentOrder
+  const defaultOrder = [...CLINICAL_CONTENT_SECTIONS]
+  const targetIdx = defaultOrder.indexOf(section)
+
+  let insertAt = currentOrder.length
+  for (let i = targetIdx - 1; i >= 0; i--) {
+    const predecessor = defaultOrder[i] as ClinicalContentSection
+    const idx = currentOrder.lastIndexOf(predecessor)
+    if (idx !== -1) {
+      insertAt = idx + 1
+      break
+    }
+  }
+  if (insertAt === currentOrder.length) {
+    for (let i = targetIdx + 1; i < defaultOrder.length; i++) {
+      const successor = defaultOrder[i] as ClinicalContentSection
+      const idx = currentOrder.indexOf(successor)
+      if (idx !== -1) {
+        insertAt = idx
+        break
+      }
+    }
+  }
+  const next = [...currentOrder]
+  next.splice(insertAt, 0, section)
+  return next
+}
+
+/** Narrative sections shown without free-text boxes; Brief/Detail will drive generation once wired to the backend. */
+const NARRATIVE_SECTIONS = [
+  'chief_complaint',
+  'assessment',
+  'plan',
+  'doctor_notes',
+  'red_flags',
+  'data_gaps',
+] as const
+type NarrativeSection = (typeof NARRATIVE_SECTIONS)[number]
+
+function isNarrativeSection(section: ClinicalContentSection): section is NarrativeSection {
+  return (NARRATIVE_SECTIONS as readonly string[]).includes(section)
+}
+
+const defaultNarrativeDepth = (): Record<NarrativeSection, 'brief' | 'detail'> => ({
+  chief_complaint: 'brief',
+  assessment: 'brief',
+  plan: 'brief',
+  doctor_notes: 'brief',
+  red_flags: 'brief',
+  data_gaps: 'brief',
+})
 
 const emptyMedication = (): TemplateMedicationPayload => ({
   medicine_name: '',
@@ -140,15 +205,9 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
   ])
   const [draggingSectionIndex, setDraggingSectionIndex] = useState<number | null>(null)
   const [hiddenMedicationFields, setHiddenMedicationFields] = useState<Record<string, boolean>>({})
+  /** UI-only until post-visit generation reads this from the API. */
+  const [narrativeDepth, setNarrativeDepth] = useState(defaultNarrativeDepth)
   const isEditMode = Boolean(templateToEdit)
-  const minFollowUpDate = useMemo(() => {
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const year = tomorrow.getFullYear()
-    const month = String(tomorrow.getMonth() + 1).padStart(2, '0')
-    const day = String(tomorrow.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }, [])
 
   useEffect(() => {
     if (!isOpen) return
@@ -181,6 +240,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setContentSectionOrder([...CLINICAL_CONTENT_SECTIONS])
     setDraggingSectionIndex(null)
     setHiddenMedicationFields({})
+    setNarrativeDepth(defaultNarrativeDepth())
   }, [])
 
   const moveContentSection = (fromIndex: number, toIndex: number) => {
@@ -195,6 +255,23 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       return nextOrder
     })
   }
+
+  const eliminateSection = useCallback((section: EliminatableSection) => {
+    setContentSectionOrder((previous) => previous.filter((s) => s !== section))
+    if (section === 'rx') {
+      setContent((c) => ({ ...c, rx: [] }))
+      setHiddenMedicationFields({})
+      return
+    }
+    setContent((c) => ({ ...c, doctor_notes: '' }))
+  }, [])
+
+  const restoreEliminatedSection = useCallback((section: EliminatableSection) => {
+    setContentSectionOrder((previous) => insertEliminatableSectionBack(previous, section))
+    if (section === 'rx') {
+      setContent((c) => ({ ...c, rx: c.rx.length === 0 ? [emptyMedication()] : c.rx }))
+    }
+  }, [])
 
   function syncRedFlagsFromContent(c: TemplateContentPayload) {
     setRedFlagsText(c.red_flags.filter(Boolean).join('\n'))
@@ -236,6 +313,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setContentSectionOrder([...CLINICAL_CONTENT_SECTIONS])
     setDraggingSectionIndex(null)
     setHiddenMedicationFields({})
+    setNarrativeDepth(defaultNarrativeDepth())
   }, [isOpen, resetAll, templateToEdit])
 
   const hasEditChanges = useMemo(() => {
@@ -415,7 +493,11 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
 
           <fieldset className="mt-6 space-y-4 border-b border-gray-100 pb-6">
             <legend className="text-xs font-semibold uppercase tracking-wider text-[#6e7b6c]">Template content</legend>
-            <p className="text-sm text-[#575e70]">Drag and drop these sections to adjust the content order.</p>
+            <p className="text-sm text-[#575e70]">
+              Drag and drop these sections to adjust the content order. Use “Remove section” on medications or doctor notes
+              to drop them from this template; restore them below if needed. For narrative blocks, Brief or Detail will guide
+              generated note length once wired to the backend.
+            </p>
             <div className="space-y-3">
               {contentSectionOrder.map((section, index) => (
                 <div
@@ -433,9 +515,9 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
                   }}
                   onDragEnd={() => setDraggingSectionIndex(null)}
                 >
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#6e7b6c]">drag_indicator</span>
-                    <span className="flex-1 text-sm font-semibold text-[#171d16]">
+                  <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-2">
+                    <span className="material-symbols-outlined shrink-0 text-[#6e7b6c]">drag_indicator</span>
+                    <span className="min-w-0 flex-1 text-sm font-semibold text-[#171d16]">
                       {section === 'assessment'
                         ? 'Assessment'
                         : section === 'plan'
@@ -454,7 +536,42 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
                                     ? 'Data gaps'
                                     : 'Investigations'}
                     </span>
-                    <div className="flex items-center gap-1">
+                    {isNarrativeSection(section) && (
+                      <div className="flex shrink-0 items-center gap-4 rounded-lg border border-[#e3ebe0] bg-white/80 px-3 py-1.5 text-xs text-[#3e4a3d]">
+                        <label className="flex cursor-pointer items-center gap-1.5 font-medium">
+                          <input
+                            checked={narrativeDepth[section] === 'brief'}
+                            className="rounded border-gray-300 text-[#006b2c] focus:ring-[#006b2c]"
+                            onChange={(e) =>
+                              setNarrativeDepth((d) => ({ ...d, [section]: e.target.checked ? 'brief' : 'detail' }))
+                            }
+                            type="checkbox"
+                          />
+                          Brief
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-1.5 font-medium">
+                          <input
+                            checked={narrativeDepth[section] === 'detail'}
+                            className="rounded border-gray-300 text-[#006b2c] focus:ring-[#006b2c]"
+                            onChange={(e) =>
+                              setNarrativeDepth((d) => ({ ...d, [section]: e.target.checked ? 'detail' : 'brief' }))
+                            }
+                            type="checkbox"
+                          />
+                          Detail
+                        </label>
+                      </div>
+                    )}
+                    {isEliminatableSection(section) && (
+                      <button
+                        className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold text-[#575e70] underline-offset-2 hover:bg-[#ecefe9] hover:underline"
+                        onClick={() => eliminateSection(section)}
+                        type="button"
+                      >
+                        Remove section
+                      </button>
+                    )}
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
                       <button
                         aria-label={`Move section up`}
                         className="rounded-md border border-[#d3ddd0] p-1.5 text-[#3e4a3d] hover:bg-[#ecf3e8] disabled:cursor-not-allowed disabled:opacity-40"
@@ -475,43 +592,6 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
                       </button>
                     </div>
                   </div>
-
-                  {(section === 'chief_complaint' ||
-                    section === 'assessment' ||
-                    section === 'plan' ||
-                    section === 'doctor_notes') && (
-                    <textarea
-                      className="min-h-[72px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      value={content[section]}
-                      onChange={(e) => setContent({ ...content, [section]: e.target.value })}
-                    />
-                  )}
-
-                  {section === 'follow_up_date' && (
-                    <input
-                      className="w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      type="date"
-                      min={minFollowUpDate}
-                      value={content.follow_up_date}
-                      onChange={(e) => setContent({ ...content, follow_up_date: e.target.value })}
-                    />
-                  )}
-
-                  {section === 'red_flags' && (
-                    <textarea
-                      className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      value={redFlagsText}
-                      onChange={(e) => setRedFlagsText(e.target.value)}
-                    />
-                  )}
-
-                  {section === 'data_gaps' && (
-                    <textarea
-                      className="min-h-[80px] w-full rounded-xl border border-gray-200 px-4 py-2.5 font-mono text-xs focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                      value={dataGapsText}
-                      onChange={(e) => setDataGapsText(e.target.value)}
-                    />
-                  )}
 
                   {section === 'investigations' && (
                     <div className="space-y-3">
@@ -650,6 +730,32 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
 
                 </div>
               ))}
+              {(!contentSectionOrder.includes('rx') || !contentSectionOrder.includes('doctor_notes')) && (
+                <div className="rounded-xl border border-dashed border-[#bdcaba] bg-[#f6faf4] px-4 py-3 text-sm text-[#575e70]">
+                  <p className="mb-2 font-medium text-[#3e4a3d]">Optional sections omitted</p>
+                  <p className="mb-3 text-xs">Add them again if this template should include medications or doctor notes.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {!contentSectionOrder.includes('rx') && (
+                      <button
+                        className="rounded-lg border border-[#d3ddd0] bg-white px-3 py-2 text-xs font-semibold text-[#006b2c] hover:bg-[#eff6ea]"
+                        onClick={() => restoreEliminatedSection('rx')}
+                        type="button"
+                      >
+                        Include medications
+                      </button>
+                    )}
+                    {!contentSectionOrder.includes('doctor_notes') && (
+                      <button
+                        className="rounded-lg border border-[#d3ddd0] bg-white px-3 py-2 text-xs font-semibold text-[#006b2c] hover:bg-[#eff6ea]"
+                        onClick={() => restoreEliminatedSection('doctor_notes')}
+                        type="button"
+                      >
+                        Include doctor notes
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </fieldset>
 
