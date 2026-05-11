@@ -22,7 +22,6 @@ from src.adapters.external.queue.consumer import TranscriptionQueueConsumer
 from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.adapters.external.storage.object_storage import TranscriptionAudioStore
 from src.application.services.dialogue_pii import scrub_dialogue_turns
-from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
 from src.application.utils.transcript_dialogue import (
     align_segments_with_structured_dialogue,
     audio_duration_from_segments_ms,
@@ -48,6 +47,9 @@ _AUTO_DETECT_LOCALES = [
     "mr-IN",
     "gu-IN",
     "ml-IN",
+    "or-IN",
+    "pa-IN",
+    "ur-IN",
 ]
 _LANGUAGE_NAME_TO_LOCALE = {
     "en": "en-IN",
@@ -79,6 +81,16 @@ _LANGUAGE_NAME_TO_LOCALE = {
     "ml": "ml-IN",
     "malayalam": "ml-IN",
     "ml-in": "ml-IN",
+    "or": "or-IN",
+    "odia": "or-IN",
+    "oriya": "or-IN",
+    "or-in": "or-IN",
+    "pa": "pa-IN",
+    "punjabi": "pa-IN",
+    "pa-in": "pa-IN",
+    "ur": "ur-IN",
+    "urdu": "ur-IN",
+    "ur-in": "ur-IN",
 }
 
 
@@ -178,7 +190,7 @@ class TranscriptionWorker:
             transcription_status = "success" if diarization_status == "success" else "partial_success"
             warnings: list[str] = []
             if diarization_status != "success":
-                warnings.append("Diarization not available or failed; speaker labels defaulted.")
+                warnings.append("Diarization was not returned by Azure for this language/API mode.")
             language_requested = self._normalize_language_request(str(job.get("language_mix", "") or ""))
             language_detected = str(
                 speech_response.get("language_detected") or (segments_to_store[0].get("language") if segments_to_store else "unknown")
@@ -191,13 +203,33 @@ class TranscriptionWorker:
                         if str(seg.get("speaker_label")) in {"Doctor", "Patient", "Family Member"}
                         else None
                     ),
-                    "start_time": int(seg.get("start_ms", 0)),
-                    "end_time": int(seg.get("end_ms", 0)),
+                    "start_time": self._format_ms_to_timestamp(int(seg.get("start_ms", 0))),
+                    "end_time": self._format_ms_to_timestamp(int(seg.get("end_ms", 0))),
                     "language": str(seg.get("language") or language_detected or "unknown"),
                     "text": str(seg.get("text") or ""),
                 }
                 for seg in segments_to_store
             ]
+            speaker_set = sorted(
+                {
+                    str(seg.get("speaker_label") or "Unknown")
+                    for seg in segments_to_store
+                    if str(seg.get("speaker_label") or "").strip()
+                }
+            )
+            logger.info(
+                "transcription_result_summary job_id=%s provider=%s api_mode=%s requested_language=%s detected_language=%s "
+                "diarization_status=%s segment_count=%s speaker_count=%s speakers=%s",
+                job.get("job_id"),
+                "azure_speech",
+                "short_audio_rest_v1",
+                language_requested or "auto",
+                language_detected,
+                diarization_status,
+                len(segments_to_store),
+                len(speaker_set),
+                speaker_set,
+            )
             self.repo.save_result(
                 {
                     "job_id": job["job_id"],
@@ -212,6 +244,7 @@ class TranscriptionWorker:
                     "requires_manual_review": requires_manual_review,
                     "full_transcript_text": full_text,
                     "raw_provider": "azure_speech",
+                    "api_mode": "short_audio_rest_v1",
                     "warnings": warnings,
                     "segments_dialogue": enriched_segments,
                     "segments": segments_to_store,
@@ -229,6 +262,7 @@ class TranscriptionWorker:
                     "transcript_script": "native",
                     "diarization_status": diarization_status,
                     "raw_provider": "azure_speech",
+                    "api_mode": "short_audio_rest_v1",
                     "warnings": warnings,
                     "segments": enriched_segments,
                 },
@@ -315,44 +349,22 @@ class TranscriptionWorker:
         normalized: list[dict[str, Any]],
     ) -> list[dict[str, str]]:
         """
-        Visit dialogue for the API: prefer OpenAI Doctor/Patient turns when configured.
+        Build bundle-style dialogue directly from STT segments only.
 
-        Short-audio Azure Speech REST (`/speech/recognition/.../v1`) typically returns one
-        `NBest` phrase with no speaker diarization — see `tests/fixtures/azure_speech_short_audio_success.json`.
-        `segments_to_structured_dialogue` collapses unknown speakers to Patient-only turns for bundle-style output.
-        When `OPENAI_API_KEY` is set, we restructure the full transcript; persisted segments are then aligned to
-        those turns via `align_segments_with_structured_dialogue` before `save_result`.
+        Do not send clinical transcript text to external LLMs in the worker path.
+        The optional manual `/dialogue/structure` endpoint remains available.
         """
         baseline = segments_to_structured_dialogue(normalized)
-        if not (self.settings.openai_api_key or "").strip():
-            return baseline
-        if not (full_text or "").strip():
-            return baseline
-        try:
-            language_mix = str(job.get("language_mix") or "en")
-            speaker_mode = str(job.get("speaker_mode") or "two_speakers")
-            structured = structure_dialogue_from_transcript_sync(
-                raw_transcript=full_text,
-                language=language_mix,
-                speaker_mode=speaker_mode,
-            )
-            if structured:
-                cleaned = scrub_dialogue_turns(structured)
-                coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
-                # If LLM omitted too many lines, keep complete baseline instead of a partial summary-like dialogue.
-                if coverage < 0.75:
-                    logger.warning(
-                        "structured_dialogue_low_coverage job_id=%s coverage=%.3f turns=%s segments=%s fallback=baseline",
-                        job.get("job_id"),
-                        coverage,
-                        len(cleaned),
-                        len(normalized),
-                    )
-                    return baseline
-                return cleaned
-        except Exception:
-            return baseline
-        return baseline
+        cleaned = scrub_dialogue_turns(baseline)
+        coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
+        logger.info(
+            "structured_dialogue_local job_id=%s turns=%s segments=%s coverage=%.3f",
+            job.get("job_id"),
+            len(cleaned),
+            len(normalized),
+            coverage,
+        )
+        return cleaned
 
     def _sync_visit_completed(
         self,
@@ -835,13 +847,20 @@ class TranscriptionWorker:
         locale_plan = self._build_locale_plan(language_request)
         primary_locale = locale_plan["primary_locale"]
         logger.info(
-            "transcription_job_received job_id=%s audio_id=%s requested_language=%s locale_mode=%s primary_locale=%s diarization_requested=%s",
+            "transcription_job_received job_id=%s audio_id=%s provider=%s api_mode=%s requested_language=%s "
+            "locale_mode=%s primary_locale=%s locale_candidates=%s auto_detect_enabled=%s "
+            "diarization_requested=%s diarization_supported=%s",
             job.get("job_id"),
             audio_doc.get("audio_id"),
+            "azure_speech",
+            "short_audio_rest_v1",
             language_request or "auto",
             locale_plan["mode"],
             primary_locale,
+            locale_plan["candidates"],
+            bool(locale_plan["mode"] in {"auto_detect", "hinglish_auto"}),
             True,
+            False,
         )
         storage_ref = self._storage_ref_from_audio_doc(audio_doc)
         if not storage_ref:
@@ -1333,6 +1352,17 @@ class TranscriptionWorker:
                 return f"Speaker {lowered.split('_', 1)[1]}"
             return raw
         return "Unknown"
+
+    @staticmethod
+    def _format_ms_to_timestamp(value_ms: int) -> str:
+        total_ms = max(0, int(value_ms or 0))
+        hours = total_ms // 3_600_000
+        rem = total_ms % 3_600_000
+        minutes = rem // 60_000
+        rem = rem % 60_000
+        seconds = rem // 1000
+        millis = rem % 1000
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
 
 
 async def _worker_loop(worker_id: int, stop_event: asyncio.Event, poll_interval_sec: float) -> None:

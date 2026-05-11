@@ -63,7 +63,7 @@ async def upload_transcription_audio(
     patient_id: str = Form(...),
     visit_id: str = Form(...),
     audio_file: UploadFile = File(...),
-    language_mix: str = Form(default="en"),
+    language_mix: str = Form(default="auto"),
     speaker_mode: SpeakerMode = Form(default="two_speakers"),
 ) -> TranscriptionUploadAcceptedResponse:
     """Upload audio, create job and enqueue async processing (visit session when visit_id is set)."""
@@ -334,6 +334,6 @@ async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONRespon
 def _normalize_language_mix(value: str) -> str:
     """Normalize input language hints; guard against Swagger default placeholder."""
     normalized = str(value or "").strip().lower()
-    if normalized in {"", "string", "default"}:
-        return "en"
+    if normalized in {"", "string", "default", "auto"}:
+        return "auto"
     return normalized

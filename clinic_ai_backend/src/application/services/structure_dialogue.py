@@ -139,7 +139,7 @@ def _structure_one_chunk_openai(
         "Do NOT merge multiple distinct clinical sentences into one short turn; prefer more, shorter turns "
         "so multi-step exams, medication lists, and counseling blocks stay complete. "
         "Verbatim wording is strongly preferred over paraphrase; do not invent lines not in the fragment. "
-        f"Write spoken text in {output_language}. "
+        f"Write spoken text in {output_language}. Do not translate or romanize the transcript. "
         "Return ONLY valid JSON array, no markdown."
     )
     if chunk_total > 1:
@@ -198,8 +198,8 @@ def structure_dialogue_from_transcript_sync(
     if not (raw_transcript or "").strip():
         return []
 
-    lang = (language or "en").strip().lower()
-    output_language = "Spanish" if lang in {"sp", "es", "es-es", "es-mx", "spanish", "español"} else "English"
+    _lang = (language or "auto").strip().lower()
+    output_language = "the same original language and script as the input transcript"
 
     max_chars = max(2000, int(settings.structure_dialogue_max_chunk_chars))
     chunks = chunk_transcript_for_structure(raw_transcript, max_chars)

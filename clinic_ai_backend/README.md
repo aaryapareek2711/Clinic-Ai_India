@@ -98,13 +98,27 @@ Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants d
   - `marathi`/`mr` -> `mr-IN`
   - `gujarati`/`gu` -> `gu-IN`
   - `malayalam`/`ml` -> `ml-IN`
+  - `odia`/`oriya`/`or` -> `or-IN`
+  - `punjabi`/`pa` -> `pa-IN`
+  - `urdu`/`ur` -> `ur-IN`
 - Hinglish (`hinglish`, `hi-en`, `en-hi`) uses a two-locale candidate set (`hi-IN`, `en-IN`) and preserves recognized mixed-script output.
-- If language is empty/auto, the worker tries multilingual candidates (`en-IN`, `hi-IN`, `kn-IN`, `bn-IN`, `ta-IN`, `te-IN`, `mr-IN`, `gu-IN`, `ml-IN`) and keeps provider text in original recognized script.
+- If language is empty/auto, the worker tries multilingual candidates (`en-IN`, `hi-IN`, `kn-IN`, `bn-IN`, `ta-IN`, `te-IN`, `mr-IN`, `gu-IN`, `ml-IN`, `or-IN`, `pa-IN`, `ur-IN`) and keeps provider text in original recognized script.
+- The backend worker does not call LLMs for transcript restructuring in the async transcription path.
 - The backend does not call translation APIs in transcription flow; transcript text is stored as recognized.
 - Azure short-audio REST often returns no reliable speaker IDs. In that case:
   - transcript still succeeds (`partial_success`)
   - speakers remain `Unknown` / `Speaker 1` / `Speaker 2` (no forced Doctor/Patient labeling)
   - metadata includes `diarization_status=not_supported_or_failed` with warnings.
+
+### API mode and limitation
+- Current production mode is Azure Speech **short-audio REST v1** (`/speech/recognition/{interactive|conversation}/cognitiveservices/v1`).
+- This mode uses direct audio bytes POST with query locale (`language=<locale>`). Batch diarization endpoints are not used in this backend path.
+- Diarization is treated as best-effort in this mode and does not block transcript success.
+
+### Request language behavior
+- Upload API accepts `language_mix` values like `english`, `hindi`, `kannada`, `bengali`, `tamil`, `telugu`, `hinglish`, etc.
+- Use `language_mix=auto` for multilingual candidate detection flow.
+- Frontend upload now defaults `language_mix` to `auto` (previously hardcoded to `en`).
 
 ## Endpoint Module Map
 - Health: `src/api/routers/health.py`

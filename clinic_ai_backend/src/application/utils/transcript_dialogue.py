@@ -6,7 +6,7 @@ import re
 from difflib import SequenceMatcher
 from typing import Any
 
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 # Below this overlap (segment recall), keep Azure as Unknown rather than forcing a role.
 _MIN_SPEAKER_ALIGNMENT_OVERLAP = 0.06
 
