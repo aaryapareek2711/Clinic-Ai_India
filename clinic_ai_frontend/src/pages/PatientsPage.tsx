@@ -80,13 +80,13 @@ function PatientsPage() {
       </header>
 
       <main className="p-8 min-h-[calc(100vh-4rem)]">
-        <div className="mb-8 flex justify-between items-end">
-          <div className="flex items-start gap-2">
-            <BackButton to="/dashboard" className="-ml-2 mt-1" />
-            <div>
-              <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">Patient Directory</h2>
-              <p className="text-slate-500 mt-1">Manage and monitor registered medical profiles.</p>
-            </div>
+        <div className="mb-8 flex justify-between items-end gap-4">
+          <div className="grid max-w-[min(100%,42rem)] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
+            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em] text-[#171d16]">
+              Patient Directory
+            </h2>
+            <p className="col-start-2 row-start-2 text-slate-500">Manage and monitor registered medical profiles.</p>
           </div>
           <div className="flex items-center gap-3">
             <button

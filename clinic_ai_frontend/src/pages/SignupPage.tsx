@@ -222,11 +222,13 @@ function SignupPage() {
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Morning Shift</p>
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningStartHour ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningStartHour(e.target.value)}
                         value={morningStartHour}
                       >
-                        <option value="">HH</option>
+                        <option value="" disabled hidden>
+                          HH
+                        </option>
                         {HOUR_OPTIONS_12H.map((opt) => (
                           <option key={`msh-${opt}`} value={opt}>
                             {opt}
@@ -234,11 +236,13 @@ function SignupPage() {
                         ))}
                       </select>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningStartMinute ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningStartMinute(e.target.value)}
                         value={morningStartMinute}
                       >
-                        <option value="">MM</option>
+                        <option value="" disabled hidden>
+                          MM
+                        </option>
                         {MINUTE_OPTIONS.map((opt) => (
                           <option key={`msm-${opt}`} value={opt}>
                             {opt}
@@ -246,21 +250,25 @@ function SignupPage() {
                         ))}
                       </select>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningStartPeriod ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningStartPeriod(e.target.value)}
                         value={morningStartPeriod}
                       >
-                        <option value="">AM/PM</option>
+                        <option value="" disabled hidden>
+                          AM/PM
+                        </option>
                         <option value="AM">AM</option>
                         <option value="PM">PM</option>
                       </select>
                       <span className="px-1 text-slate-500">to</span>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningEndHour ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningEndHour(e.target.value)}
                         value={morningEndHour}
                       >
-                        <option value="">HH</option>
+                        <option value="" disabled hidden>
+                          HH
+                        </option>
                         {HOUR_OPTIONS_12H.map((opt) => (
                           <option key={`meh-${opt}`} value={opt}>
                             {opt}
@@ -268,11 +276,13 @@ function SignupPage() {
                         ))}
                       </select>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningEndMinute ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningEndMinute(e.target.value)}
                         value={morningEndMinute}
                       >
-                        <option value="">MM</option>
+                        <option value="" disabled hidden>
+                          MM
+                        </option>
                         {MINUTE_OPTIONS.map((opt) => (
                           <option key={`mem-${opt}`} value={opt}>
                             {opt}
@@ -280,11 +290,13 @@ function SignupPage() {
                         ))}
                       </select>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!morningEndPeriod ? 'text-slate-400' : 'text-slate-900'}`}
                         onChange={(e) => setMorningEndPeriod(e.target.value)}
                         value={morningEndPeriod}
                       >
-                        <option value="">AM/PM</option>
+                        <option value="" disabled hidden>
+                          AM/PM
+                        </option>
                         <option value="AM">AM</option>
                         <option value="PM">PM</option>
                       </select>
@@ -306,11 +318,13 @@ function SignupPage() {
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Evening Shift</p>
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningStartHour ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningStartHour(e.target.value)}
                           value={eveningStartHour}
                         >
-                          <option value="">HH</option>
+                          <option value="" disabled hidden>
+                            HH
+                          </option>
                           {HOUR_OPTIONS_12H.map((opt) => (
                             <option key={`esh-${opt}`} value={opt}>
                               {opt}
@@ -318,11 +332,13 @@ function SignupPage() {
                           ))}
                         </select>
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningStartMinute ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningStartMinute(e.target.value)}
                           value={eveningStartMinute}
                         >
-                          <option value="">MM</option>
+                          <option value="" disabled hidden>
+                            MM
+                          </option>
                           {MINUTE_OPTIONS.map((opt) => (
                             <option key={`esm-${opt}`} value={opt}>
                               {opt}
@@ -330,21 +346,25 @@ function SignupPage() {
                           ))}
                         </select>
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningStartPeriod ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningStartPeriod(e.target.value)}
                           value={eveningStartPeriod}
                         >
-                          <option value="">AM/PM</option>
+                          <option value="" disabled hidden>
+                            AM/PM
+                          </option>
                           <option value="AM">AM</option>
                           <option value="PM">PM</option>
                         </select>
                         <span className="px-1 text-slate-500">to</span>
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningEndHour ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningEndHour(e.target.value)}
                           value={eveningEndHour}
                         >
-                          <option value="">HH</option>
+                          <option value="" disabled hidden>
+                            HH
+                          </option>
                           {HOUR_OPTIONS_12H.map((opt) => (
                             <option key={`eeh-${opt}`} value={opt}>
                               {opt}
@@ -352,11 +372,13 @@ function SignupPage() {
                           ))}
                         </select>
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningEndMinute ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningEndMinute(e.target.value)}
                           value={eveningEndMinute}
                         >
-                          <option value="">MM</option>
+                          <option value="" disabled hidden>
+                            MM
+                          </option>
                           {MINUTE_OPTIONS.map((opt) => (
                             <option key={`eem-${opt}`} value={opt}>
                               {opt}
@@ -364,11 +386,13 @@ function SignupPage() {
                           ))}
                         </select>
                         <select
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          className={`rounded-lg border border-slate-200 bg-white px-3 py-2 ${!eveningEndPeriod ? 'text-slate-400' : 'text-slate-900'}`}
                           onChange={(e) => setEveningEndPeriod(e.target.value)}
                           value={eveningEndPeriod}
                         >
-                          <option value="">AM/PM</option>
+                          <option value="" disabled hidden>
+                            AM/PM
+                          </option>
                           <option value="AM">AM</option>
                           <option value="PM">PM</option>
                         </select>

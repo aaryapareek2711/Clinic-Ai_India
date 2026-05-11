@@ -70,6 +70,33 @@ function split24hToClockAndMeridiem(hhmm24: string): { clock: string; meridiem: 
   return { clock: `${pad2(h12)}:${pad2(m)}`, meridiem }
 }
 
+function MeridiemToggle({
+  ariaLabel,
+  disabled,
+  onChange,
+  value,
+}: {
+  ariaLabel: string
+  disabled?: boolean
+  onChange: (next: 'AM' | 'PM') => void
+  value: 'AM' | 'PM'
+}) {
+  const btn = (period: 'AM' | 'PM') =>
+    `min-w-[36px] px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+      value === period ? 'bg-[#e9f0e5] text-[#006b2c]' : 'bg-white text-[#171d16] hover:bg-gray-50'
+    }`
+  return (
+    <div aria-label={ariaLabel} className="inline-flex divide-x divide-gray-200 overflow-hidden rounded-md border border-gray-200" role="group">
+      <button aria-pressed={value === 'AM'} className={btn('AM')} disabled={disabled} onClick={() => onChange('AM')} type="button">
+        AM
+      </button>
+      <button aria-pressed={value === 'PM'} className={btn('PM')} disabled={disabled} onClick={() => onChange('PM')} type="button">
+        PM
+      </button>
+    </div>
+  )
+}
+
 function SettingsEditProfilePage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -533,20 +560,14 @@ function SettingsEditProfilePage() {
                                   value={row.startClock}
                                 />
 
-                                <select
-                                  aria-label={`${d.label} start am pm`}
-                                  className="w-[70px] rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[#171d16] disabled:opacity-60"
+                                <MeridiemToggle
+                                  ariaLabel={`${d.label} start AM or PM`}
                                   disabled={row.closed}
-                                  onChange={(ev) =>
-                                    setDayAvailability((prev) =>
-                                      prev.map((x) => (x.key === d.key ? { ...x, startMeridiem: ev.target.value as 'AM' | 'PM' } : x)),
-                                    )
+                                  onChange={(next) =>
+                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, startMeridiem: next } : x)))
                                   }
                                   value={row.startMeridiem}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                />
 
                                 <span className="text-sm text-gray-500">to</span>
 
@@ -561,20 +582,14 @@ function SettingsEditProfilePage() {
                                   value={row.endClock}
                                 />
 
-                                <select
-                                  aria-label={`${d.label} end am pm`}
-                                  className="w-[70px] rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[#171d16] disabled:opacity-60"
+                                <MeridiemToggle
+                                  ariaLabel={`${d.label} end AM or PM`}
                                   disabled={row.closed}
-                                  onChange={(ev) =>
-                                    setDayAvailability((prev) =>
-                                      prev.map((x) => (x.key === d.key ? { ...x, endMeridiem: ev.target.value as 'AM' | 'PM' } : x)),
-                                    )
+                                  onChange={(next) =>
+                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, endMeridiem: next } : x)))
                                   }
                                   value={row.endMeridiem}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                />
                               </div>
                             </div>
                           </div>

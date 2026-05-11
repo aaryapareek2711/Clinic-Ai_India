@@ -136,12 +136,10 @@ function VisitsPage() {
         </header>
 
         <div className="pt-24 px-8 pb-12">
-          <div className="mb-8 flex items-start gap-2">
-            <BackButton to="/dashboard" className="-ml-2 mt-1" />
-            <div>
-              <h2 className="text-[28px] font-bold">All Visits</h2>
-              <p className="text-[#3e4a3d] mt-1">Manage patient visits and documentation</p>
-            </div>
+          <div className="mb-8 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
+            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">All Visits</h2>
+            <p className="col-start-2 row-start-2 text-[#3e4a3d]">Manage patient visits and documentation</p>
           </div>
 
           {listError && (

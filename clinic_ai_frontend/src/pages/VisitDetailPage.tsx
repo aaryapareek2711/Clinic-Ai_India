@@ -1903,7 +1903,7 @@ export default function VisitDetailPage() {
                       Follow-up time (optional)
                       <div className="mt-2 flex w-full max-w-xs items-center gap-2">
                         <select
-                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          className={`w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm ${!recapFollowUpTimeParts.hour ? 'text-slate-400' : 'text-[#171d16]'}`}
                           onChange={(e) => {
                             const nextParts = {
                               hour: e.target.value,
@@ -1924,7 +1924,7 @@ export default function VisitDetailPage() {
                           ))}
                         </select>
                         <select
-                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          className={`w-20 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm ${!recapFollowUpTimeParts.minute ? 'text-slate-400' : 'text-[#171d16]'}`}
                           onChange={(e) => {
                             const nextParts = {
                               hour: recapFollowUpTimeParts.hour,
@@ -1945,7 +1945,7 @@ export default function VisitDetailPage() {
                           ))}
                         </select>
                         <select
-                          className="w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm text-[#171d16]"
+                          className={`w-24 rounded-lg border border-[#bdcaba] px-2 py-2 text-sm ${!recapFollowUpTimeParts.period ? 'text-slate-400' : 'text-[#171d16]'}`}
                           onChange={(e) => {
                             const nextParts = {
                               hour: recapFollowUpTimeParts.hour,
