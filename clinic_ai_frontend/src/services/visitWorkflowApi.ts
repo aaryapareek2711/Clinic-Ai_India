@@ -445,6 +445,8 @@ export type PostVisitSummaryPayload = {
   next_visit_date?: string | null
 }
 
+export type PostVisitSummaryPayloadByLanguage = Record<string, PostVisitSummaryPayload>
+
 export type PostVisitSummaryResponse = {
   note_id: string
   patient_id: string
@@ -452,6 +454,10 @@ export type PostVisitSummaryResponse = {
   note_type: string
   payload: PostVisitSummaryPayload
   whatsapp_payload?: string | null
+  payload_by_language?: PostVisitSummaryPayloadByLanguage | null
+  whatsapp_payload_by_language?: Record<string, string> | null
+  default_language?: string | null
+  preferred_language?: string | null
 }
 
 export type PostVisitWhatsAppSendResponse = {

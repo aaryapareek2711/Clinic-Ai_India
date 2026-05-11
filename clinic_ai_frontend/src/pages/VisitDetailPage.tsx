@@ -567,6 +567,7 @@ export default function VisitDetailPage() {
   const postVisitLanguage = toPostVisitPatientLanguage(
     effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
+  const patientPreferredPostVisitLanguage = toPostVisitPatientLanguage(preferredLanguageCode)
   const transcriptionLanguageMix = toTranscriptionLanguageMix(preferredLanguageCode)
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
   const visitStatus = visitStatusChip(visit?.status)
@@ -665,6 +666,15 @@ export default function VisitDetailPage() {
     translatedDisplayBundle?.transcriptionStructuredDialogue ?? transcriptionStructuredDialogue
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
+  const postVisitSource = postVisitSummary ?? displayPostVisitSummary
+  const displayPostVisitWhatsAppPreview = useMemo(() => {
+    const summary = postVisitSource
+    if (!summary) return ''
+    const byLanguage = summary.whatsapp_payload_by_language ?? {}
+    const preferredPreview = effectiveLanguageMode === 'english' ? 'en' : patientPreferredPostVisitLanguage
+    const candidate = byLanguage[preferredPreview] || byLanguage.en || summary.whatsapp_payload || ''
+    return String(candidate || '').trim()
+  }, [effectiveLanguageMode, patientPreferredPostVisitLanguage, postVisitSource])
   const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
 
   const clinicalFollowUpIn = useMemo(() => {
@@ -1994,11 +2004,11 @@ export default function VisitDetailPage() {
                     </label>
                   </div>
 
-                  {displayPostVisitSummary?.whatsapp_payload?.trim() && (
+                  {displayPostVisitWhatsAppPreview && (
                     <div className="rounded-xl border border-[#62df7d]/40 bg-[#e8f8eb] p-4">
                       <p className="mb-2 text-xs font-semibold text-[#006b2c]">Preview</p>
                       <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-[#171d16]">
-                        {displayPostVisitSummary.whatsapp_payload.trim()}
+                        {displayPostVisitWhatsAppPreview}
                       </pre>
                       <p className="mt-2 text-xs text-[#575e70]">Approved WhatsApp template · post-visit recap</p>
                     </div>
@@ -2017,7 +2027,7 @@ export default function VisitDetailPage() {
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: postVisitLanguage,
+                              preferred_language: patientPreferredPostVisitLanguage,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                             })
@@ -2052,7 +2062,7 @@ export default function VisitDetailPage() {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const refreshedSummary = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: postVisitLanguage,
+                              preferred_language: patientPreferredPostVisitLanguage,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                               follow_up_time: nextVisitTime || undefined,
