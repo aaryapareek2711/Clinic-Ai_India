@@ -118,6 +118,10 @@ function VisitsPage() {
 
   const handlePrimaryAction = (card: VisitKanbanCardModel) => {
     if (!card.visitId) return
+    if (card.stage === 'intake') {
+      navigate(`/careprep/intake/${encodeURIComponent(card.visitId)}`)
+      return
+    }
     openVisitWithTab(card.visitId, card.primaryAction.tab)
   }
 

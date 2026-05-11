@@ -397,9 +397,11 @@ export default function VisitDetailPage() {
 
   const tab = useMemo((): VisitWorkflowTab => {
     const defaultTab: VisitWorkflowTab = 'vitals'
-    const seed = tabParamRaw.length > 0 ? tabParamRaw : defaultTab
+    const hasExplicitTab = tabParamRaw.length > 0
+    const seed = hasExplicitTab ? tabParamRaw : defaultTab
     let t = normalizeWorkflowTab(seed)
-    if (skipPreVisitWorkflow && t === 'pre-visit') t = 'vitals'
+    // Walk-in flow defaults to vitals, but allow deep-links (e.g., Kanban "View Intake") to open pre-visit explicitly.
+    if (!hasExplicitTab && skipPreVisitWorkflow && t === 'pre-visit') t = 'vitals'
     return t
   }, [tabParamRaw, skipPreVisitWorkflow])
 

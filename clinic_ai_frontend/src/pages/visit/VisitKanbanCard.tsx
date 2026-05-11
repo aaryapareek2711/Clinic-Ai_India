@@ -64,11 +64,12 @@ export default function VisitKanbanCard({ visit, onOpen, onPrimaryAction }: Visi
         </span>
       </div>
 
-      <p className="mt-2 text-xs font-medium text-[#3e4a3d] line-clamp-1">{visit.subtitle}</p>
+      {visit.subtitle ? (
+        <p className="mt-2 text-xs font-medium text-[#3e4a3d] line-clamp-1">{visit.subtitle}</p>
+      ) : null}
       <p className="mt-1 text-xs text-gray-500">Appt: {appointmentDisplay(visit.scheduledStart)}</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className={visit.stageBadge.className}>{visit.stageBadge.label}</span>
         {visit.tags.map((tag) => (
           <span
             className="rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600"

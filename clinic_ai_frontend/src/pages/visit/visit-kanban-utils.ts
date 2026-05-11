@@ -290,7 +290,7 @@ export function getVisitPrimaryAction(visit: ProviderVisitListItem): VisitPrimar
   if (stage === 'appointment-created') {
     return { label: flow === 'walk-in' ? 'Start Vitals' : 'Start Intake', tab: flow === 'walk-in' ? 'vitals' : 'pre-visit' }
   }
-  if (stage === 'intake') return { label: 'Continue Intake', tab: 'pre-visit' }
+  if (stage === 'intake') return { label: 'View Intake', tab: 'pre-visit' }
   if (stage === 'pre-visit') return { label: 'Generate / View Pre-Visit', tab: 'pre-visit' }
   if (stage === 'vitals') return { label: 'Add / View Vitals', tab: 'vitals' }
   if (stage === 'transcription') {
@@ -318,26 +318,27 @@ export function getVisitTags(visit: ProviderVisitListItem): string[] {
   if (tx === 'failed') tags.add('Transcription')
   if (tx === 'completed' && completedTranscriptionStageOverride(visit)) tags.add('Transcript ready')
 
-  if (step.includes('intake') || stage === 'intake') tags.add('Intake')
-  if (step.includes('pre_visit') || stage === 'pre-visit') tags.add('Pre-Visit')
-  if (step.includes('vitals') || stage === 'vitals') tags.add('Vitals')
-  if (step.includes('transcription') || stage === 'transcription') tags.add('Transcription')
-  if (step.includes('clinical_note') || step.includes('soap') || stage === 'clinical-note') tags.add('Clinical Note')
-  if (step.includes('post_visit') || step.includes('summary') || stage === 'post-visit-summary') tags.add('Summary')
+  // Avoid duplicating the column title as a tag (e.g., "Intake" inside Intake column).
+  if (step.includes('intake') && stage !== 'intake') tags.add('Intake')
+  if (step.includes('pre_visit') && stage !== 'pre-visit') tags.add('Pre-Visit')
+  if (step.includes('vitals') && stage !== 'vitals') tags.add('Vitals')
+  if (step.includes('transcription') && stage !== 'transcription') tags.add('Transcription')
+  if ((step.includes('clinical_note') || step.includes('soap')) && stage !== 'clinical-note') tags.add('Clinical Note')
+  if ((step.includes('post_visit') || step.includes('summary')) && stage !== 'post-visit-summary') tags.add('Summary')
   if (step.includes('recap') || (stage === 'post-visit-summary' && ['completed', 'complete', 'closed', 'ended'].includes(status)))
     tags.add('Recap')
   if (status === 'queued' || status === 'in_queue') tags.add('Queue')
 
-  if (tags.size === 0) tags.add(stageLabel(stage))
   return Array.from(tags).slice(0, 3)
 }
 
 export function toVisitKanbanCardModel(visit: ProviderVisitListItem): VisitKanbanCardModel {
   const displayName = toDisplayName(visit.patient_name || '') || 'Patient'
-  const subtitle =
-    visit.visit_type && visit.visit_type.trim() && visit.visit_type.toLowerCase() !== 'visit'
-      ? visit.visit_type.trim()
-      : visit.chief_complaint?.trim() || 'Consultation'
+  const visitTypeToken = norm(visit.visit_type)
+  const visitTypeIsRedundant = ['visit', 'walk_in', 'walkin', 'scheduled'].includes(visitTypeToken)
+  const rawVisitType = (visit.visit_type || '').trim()
+  const rawChiefComplaint = (visit.chief_complaint || '').trim()
+  const subtitle = !visitTypeIsRedundant && rawVisitType ? rawVisitType : rawChiefComplaint || ''
   const flowType = getVisitFlowType(visit)
   const stage = getVisitKanbanStage(visit)
   const currentStep = getVisitCurrentStep(visit)
