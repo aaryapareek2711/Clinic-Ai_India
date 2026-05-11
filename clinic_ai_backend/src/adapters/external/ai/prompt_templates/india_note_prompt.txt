@@ -17,6 +17,16 @@ Return JSON only with exactly these keys:
 Rules:
 - Use exactly one of follow_up_in or follow_up_date.
 - If context JSON includes "staff_confirmed_follow_up_date" (ISO YYYY-MM-DD), you MUST set follow_up_date to that exact string and set follow_up_in to null.
+- If context JSON contains "selected_template", it may include:
+  - included_sections: array of section keys to include (e.g. chief_complaint, assessment, plan, investigations, red_flags, data_gaps, rx, doctor_notes, follow_up_date)
+  - section_detail_level: object mapping section key -> "brief" or "detail"
+  Apply these rules:
+  - If a section key is NOT in included_sections:
+    - For string fields, return null (except assessment/plan: return empty string "")
+    - For arrays (rx, investigations, red_flags, data_gaps), return []
+  - If a section key IS in included_sections:
+    - If section_detail_level[key] is "brief" (or missing): keep the current concise style.
+    - If section_detail_level[key] is "detail": make ONLY that section a little more detailed (roughly 2–3 lines), still clinically safe and without extra keys.
 - Do not add extra top-level keys.
 - If any context is missing, include explicit entries in data_gaps.
 - Keep output concise and clinically safe.

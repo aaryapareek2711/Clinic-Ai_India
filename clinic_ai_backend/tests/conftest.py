@@ -37,18 +37,34 @@ class InMemoryCollection:
         return InsertOneResult(item["_id"])
 
     def _matches(self, doc: dict, query: dict) -> bool:
+        # Minimal subset of MongoDB query operators used in the codebase.
+        if "$or" in query:
+            clauses = query.get("$or") or []
+            if not isinstance(clauses, list) or not clauses:
+                return False
+            return any(self._matches(doc, clause) for clause in clauses if isinstance(clause, dict))
+
         for key, value in query.items():
+            if key == "$or":
+                continue
             doc_value = doc.get(key)
             if isinstance(value, dict):
                 if "$lt" in value and not (doc_value is not None and doc_value < value["$lt"]):
                     return False
                 if "$in" in value and doc_value not in value["$in"]:
                     return False
+                if "$ne" in value and doc_value == value["$ne"]:
+                    return False
             elif doc_value != value:
                 return False
         return True
 
-    def find_one(self, query: dict | None = None, sort: list[tuple[str, int]] | None = None) -> dict | None:
+    def find_one(
+        self,
+        query: dict | None = None,
+        projection: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+    ) -> dict | None:
         query = query or {}
         filtered = [doc for doc in self.docs if self._matches(doc, query)]
         if not filtered:
@@ -57,7 +73,13 @@ class InMemoryCollection:
             for field, direction in reversed(sort):
                 reverse = direction < 0
                 filtered.sort(key=lambda item: item.get(field), reverse=reverse)
-        return deepcopy(filtered[0])
+        item = deepcopy(filtered[0])
+        if projection is None:
+            return item
+        include_keys = {key for key, value in projection.items() if value}
+        if include_keys:
+            return {key: item.get(key) for key in include_keys if key in item}
+        return item
 
     def find(self, query: dict | None = None, projection: dict | None = None) -> list[dict]:
         query = query or {}
@@ -130,6 +152,8 @@ class InMemoryDatabase:
         self.vitals_forms = InMemoryCollection()
         self.patient_vitals = InMemoryCollection()
         self.clinical_notes = InMemoryCollection()
+        self.templates = InMemoryCollection()
+        self.template_usage_events = InMemoryCollection()
         self.follow_up_reminders = InMemoryCollection()
         self.follow_through_lab_records = InMemoryCollection()
         self.visit_transcription_sessions = InMemoryCollection()
@@ -156,7 +180,9 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     monkeypatch.setattr("src.api.routers.transcription.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.followthrough.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.patients.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.api.routers.templates.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.visits.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.api.routers.notes.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.contextai.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.external.queue.producer.get_database", lambda: fake_db)
     monkeypatch.setattr("src.adapters.external.queue.consumer.get_database", lambda: fake_db)

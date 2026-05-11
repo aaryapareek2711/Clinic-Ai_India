@@ -64,7 +64,7 @@ class GenerateIndiaClinicalNoteUseCase:
             context["staff_confirmed_follow_up_time"] = str(follow_up_time).strip()
         payload = self._generate_payload(context)
         if template_content:
-            payload = self._apply_template_defaults(payload, template_content)
+            payload = self._apply_template(payload, template_content)
         if follow_up_date is not None:
             payload["follow_up_date"] = follow_up_date.isoformat()
             payload["follow_up_in"] = None
@@ -72,6 +72,13 @@ class GenerateIndiaClinicalNoteUseCase:
             payload["follow_up_time"] = str(follow_up_time).strip()
             payload = self._normalize_payload(payload, context=context)
         version = self._next_version(patient_id=patient_id, visit_id=visit_id, note_type="india_clinical")
+        template_key = str(template_id or "").strip() or None
+        template_included_snapshot = (
+            list(template_content.get("included_sections") or []) if isinstance(template_content, dict) else []
+        )
+        template_detail_snapshot = (
+            dict(template_content.get("section_detail_level") or {}) if isinstance(template_content, dict) else {}
+        )
         note_doc = {
             "note_id": str(uuid4()),
             "patient_id": patient_id,
@@ -82,6 +89,10 @@ class GenerateIndiaClinicalNoteUseCase:
             "version": version,
             "created_at": _utc_now(),
             "payload": payload,
+            # Reproducibility metadata (template choices at generation time).
+            "template_id_used": template_key,
+            "included_sections_snapshot": template_included_snapshot,
+            "section_detail_level_snapshot": template_detail_snapshot,
         }
         created = self.note_repo.create_note(note_doc)
         created.pop("_id", None)
@@ -96,6 +107,97 @@ class GenerateIndiaClinicalNoteUseCase:
             return None
         content = doc.get("content")
         return content if isinstance(content, dict) else None
+
+    @staticmethod
+    def _apply_template(payload: dict, template: dict) -> dict:
+        """
+        Apply template behavior.
+
+        - Backward compatible: if template doesn't specify included_sections, use legacy fallback merging.
+        - Strict mode: when included_sections is provided, filter payload to exactly those sections and only
+          fill missing selected sections from template starters.
+        """
+        tpl = template if isinstance(template, dict) else {}
+        included_sections = tpl.get("included_sections")
+        if isinstance(included_sections, list) and len(included_sections) > 0:
+            return GenerateIndiaClinicalNoteUseCase._apply_template_strict(payload, tpl)
+        return GenerateIndiaClinicalNoteUseCase._apply_template_defaults(payload, tpl)
+
+    @staticmethod
+    def _apply_template_strict(payload: dict, template: dict) -> dict:
+        out = deepcopy(payload) if isinstance(payload, dict) else {}
+        tpl = template if isinstance(template, dict) else {}
+        selected = {str(s).strip() for s in (tpl.get("included_sections") or []) if str(s).strip()}
+
+        def _first_text(*vals: object) -> str | None:
+            for v in vals:
+                s = str(v or "").strip()
+                if s:
+                    return s
+            return None
+
+        def _is_non_empty_list(value: object) -> bool:
+            return isinstance(value, list) and len(value) > 0
+
+        # Clear unselected sections first (strict).
+        # NOTE: follow-up fields must remain valid for IndiaClinicalNotePayload: exactly one of follow_up_in/date.
+        if "chief_complaint" not in selected:
+            out["chief_complaint"] = None
+        if "assessment" not in selected:
+            # Schema requires string; use empty string to avoid response validation failures.
+            out["assessment"] = ""
+        if "plan" not in selected:
+            out["plan"] = ""
+        if "doctor_notes" not in selected:
+            out["doctor_notes"] = None
+        if "rx" not in selected:
+            out["rx"] = []
+        if "investigations" not in selected:
+            out["investigations"] = []
+        if "red_flags" not in selected:
+            out["red_flags"] = []
+        if "data_gaps" not in selected:
+            out["data_gaps"] = []
+
+        # Fill missing selected sections from template starters (only for selected fields).
+        if "chief_complaint" in selected and not str(out.get("chief_complaint") or "").strip():
+            out["chief_complaint"] = _first_text(tpl.get("chief_complaint"))
+        if "assessment" in selected and not str(out.get("assessment") or "").strip():
+            if _first_text(tpl.get("assessment")):
+                out["assessment"] = _first_text(tpl.get("assessment"))
+        if "plan" in selected and not str(out.get("plan") or "").strip():
+            if _first_text(tpl.get("plan")):
+                out["plan"] = _first_text(tpl.get("plan"))
+        if "doctor_notes" in selected and not str(out.get("doctor_notes") or "").strip():
+            out["doctor_notes"] = _first_text(tpl.get("doctor_notes")) if _first_text(tpl.get("doctor_notes")) else None
+
+        if "rx" in selected and (not isinstance(out.get("rx"), list) or len(out.get("rx") or []) == 0):
+            out["rx"] = list(tpl.get("rx") or [])
+        if "investigations" in selected and (not isinstance(out.get("investigations"), list) or len(out.get("investigations") or []) == 0):
+            out["investigations"] = list(tpl.get("investigations") or [])
+        if "red_flags" in selected and (not isinstance(out.get("red_flags"), list) or len(out.get("red_flags") or []) == 0):
+            out["red_flags"] = list(tpl.get("red_flags") or [])
+        if "data_gaps" in selected and (not isinstance(out.get("data_gaps"), list) or len(out.get("data_gaps") or []) == 0):
+            out["data_gaps"] = list(tpl.get("data_gaps") or [])
+
+        # Follow-up: keep payload valid even if not selected (API schema requires one selector).
+        has_follow_up_in = bool(str(out.get("follow_up_in") or "").strip())
+        has_follow_up_date = bool(str(out.get("follow_up_date") or "").strip())
+        if not has_follow_up_in and not has_follow_up_date:
+            tpl_follow_in = _first_text(tpl.get("follow_up_in"))
+            tpl_follow_date = _first_text(tpl.get("follow_up_date"))
+            if tpl_follow_date:
+                out["follow_up_date"] = tpl_follow_date
+                out["follow_up_in"] = None
+            elif tpl_follow_in:
+                out["follow_up_in"] = tpl_follow_in
+                out["follow_up_date"] = None
+            else:
+                out["follow_up_in"] = "7 days"
+                out["follow_up_date"] = None
+
+        # Ensure unselected rx/doctor_notes never auto-filled later by template defaults.
+        return out
 
     @staticmethod
     def _apply_template_defaults(payload: dict, template: dict) -> dict:

@@ -4,9 +4,32 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 TemplateType = Literal["personal", "practice", "community"]
+TemplateSectionDetailLevel = Literal["brief", "detail"]
+
+ALLOWED_TEMPLATE_SECTIONS = {
+    "chief_complaint",
+    "assessment",
+    "plan",
+    "investigations",
+    "red_flags",
+    "data_gaps",
+    "follow_up_date",
+    "rx",
+    "doctor_notes",
+}
+
+# Sections where brief/detail meaningfully controls generated narrative verbosity.
+NARRATIVE_TEMPLATE_SECTIONS = {
+    "chief_complaint",
+    "assessment",
+    "plan",
+    "doctor_notes",
+    "red_flags",
+    "data_gaps",
+}
 
 
 class TemplateMedication(BaseModel):
@@ -41,6 +64,55 @@ class TemplateContent(BaseModel):
     doctor_notes: str = ""
     chief_complaint: str = ""
     data_gaps: list[str] = []
+    # Template-driven generation controls (round-tripped to the frontend).
+    included_sections: list[str] = []
+    section_detail_level: dict[str, TemplateSectionDetailLevel] = {}
+    section_order: list[str] = []
+
+    @model_validator(mode="after")
+    def validate_generation_controls(self) -> "TemplateContent":
+        # Validate included sections are known keys (and normalized).
+        normalized_included: list[str] = []
+        seen: set[str] = set()
+        for raw in self.included_sections or []:
+            key = str(raw or "").strip()
+            if not key:
+                continue
+            if key not in ALLOWED_TEMPLATE_SECTIONS:
+                raise ValueError(f"invalid_included_section:{key}")
+            if key not in seen:
+                seen.add(key)
+                normalized_included.append(key)
+        self.included_sections = normalized_included
+
+        # section_detail_level keys must be a subset of included_sections.
+        included_set = set(self.included_sections)
+        normalized_detail: dict[str, TemplateSectionDetailLevel] = {}
+        for raw_key, raw_val in (self.section_detail_level or {}).items():
+            key = str(raw_key or "").strip()
+            if not key:
+                continue
+            if key not in included_set:
+                raise ValueError(f"detail_level_key_not_included:{key}")
+            if raw_val not in ("brief", "detail"):
+                raise ValueError(f"invalid_detail_level:{key}")
+            normalized_detail[key] = raw_val  # type: ignore[assignment]
+
+        # Default brief/detail for included narrative sections when omitted.
+        for key in included_set.intersection(NARRATIVE_TEMPLATE_SECTIONS):
+            if key not in normalized_detail:
+                normalized_detail[key] = "brief"
+
+        self.section_detail_level = normalized_detail
+
+        # Follow-up constraint: if either follow-up selector is provided, require exactly one.
+        # Allow both empty so templates can omit follow-up hints entirely.
+        has_in = bool(str(self.follow_up_in or "").strip())
+        has_date = bool(str(self.follow_up_date or "").strip())
+        if has_in and has_date:
+            raise ValueError("use_exactly_one_of_follow_up_in_or_follow_up_date")
+
+        return self
 
 
 class CreateTemplateRequest(BaseModel):
