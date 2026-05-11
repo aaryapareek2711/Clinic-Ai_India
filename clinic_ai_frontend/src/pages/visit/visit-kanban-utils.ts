@@ -12,7 +12,6 @@ export type VisitKanbanStage =
   | 'transcription'
   | 'clinical-note'
   | 'post-visit-summary'
-  | 'completed'
 
 /** Same values as Visits page sort dropdown — used for client-side column ordering. */
 export type VisitKanbanSortKey =
@@ -67,8 +66,11 @@ export const KANBAN_STAGES: KanbanStageDefinition[] = [
   { id: 'vitals', title: 'Vitals', helper: 'Vitals capture stage' },
   { id: 'transcription', title: 'Transcription', helper: 'Consultation transcript processing' },
   { id: 'clinical-note', title: 'Clinical Note', helper: 'Clinical note generation/review' },
-  { id: 'post-visit-summary', title: 'Post Visit Summary', helper: 'Summary generation/review' },
-  { id: 'completed', title: 'Completed', helper: 'Post-visit recap sent or visit closed' },
+  {
+    id: 'post-visit-summary',
+    title: 'Post Visit Summary / Completed',
+    helper: 'Summary & recap work, or visit fully closed',
+  },
 ]
 
 function norm(value: unknown): string {
@@ -141,17 +143,22 @@ function stageForToken(token: string): VisitKanbanStage | null {
   }
 
   if (
-    ['post_visit', 'post_visit_summary', 'post_visit_summary_pending', 'post_summary_in_progress'].includes(token)
+    [
+      'post_visit',
+      'post_visit_summary',
+      'post_visit_summary_pending',
+      'post_summary_in_progress',
+      'recap_sent',
+      'post_recap_sent',
+      'recap_delivered',
+      'whatsapp_sent',
+      'completed',
+      'complete',
+      'closed',
+      'ended',
+    ].includes(token)
   ) {
     return 'post-visit-summary'
-  }
-
-  if (
-    ['recap_sent', 'post_recap_sent', 'recap_delivered', 'whatsapp_sent', 'completed', 'complete', 'closed', 'ended'].includes(
-      token,
-    )
-  ) {
-    return 'completed'
   }
 
   return null
@@ -162,7 +169,6 @@ function stageLabel(stage: VisitKanbanStage): string {
 }
 
 function badgeClassForStage(stage: VisitKanbanStage): string {
-  if (stage === 'completed') return 'bg-emerald-100 text-emerald-700 border border-emerald-200'
   if (stage === 'appointment-created' || stage === 'intake' || stage === 'pre-visit') {
     return 'bg-amber-100 text-amber-700 border border-amber-200'
   }
@@ -200,6 +206,19 @@ function transcriptionStageOverride(visit: ProviderVisitListItem): VisitKanbanSt
   return null
 }
 
+/**
+ * Backend often leaves `current_workflow_stage` on `vitals` while `transcription_status` is already
+ * `completed` (workflow advances on a different cadence). Until stage moves to clinical note or later,
+ * show the visit under Transcription so the board matches reality.
+ */
+function completedTranscriptionStageOverride(visit: ProviderVisitListItem): VisitKanbanStage | null {
+  if (norm(visit.transcription_status) !== 'completed') return null
+  const wf = norm(visit.current_workflow_stage)
+  if (['clinical_note', 'post_visit', 'completed', 'cancelled', 'no_show'].includes(wf)) return null
+  if (wf === 'vitals' || wf === 'transcription' || wf === '') return 'transcription'
+  return null
+}
+
 export function getVisitFlowType(visit: ProviderVisitListItem): VisitFlowType {
   const rawType = norm(visit.visit_type)
   if (isWalkInVisitType(rawType)) return 'walk-in'
@@ -214,6 +233,7 @@ export function getVisitFlowType(visit: ProviderVisitListItem): VisitFlowType {
 export function getVisitCurrentStep(visit: ProviderVisitListItem): string {
   const ts = norm(visit.transcription_status)
   if (['queued', 'uploading', 'processing', 'stale_processing', 'failed'].includes(ts)) return `transcription_${ts}`
+  if (ts === 'completed' && completedTranscriptionStageOverride(visit)) return 'transcription_completed'
 
   const tokens = collectCandidateTokens(visit)
   for (const token of tokens) {
@@ -228,8 +248,11 @@ export function getVisitKanbanStage(visit: ProviderVisitListItem): VisitKanbanSt
   const fromTranscription = transcriptionStageOverride(visit)
   if (fromTranscription) return fromTranscription
 
+  const fromCompletedTranscription = completedTranscriptionStageOverride(visit)
+  if (fromCompletedTranscription) return fromCompletedTranscription
+
   const statusEarly = norm(visit.status)
-  if (['completed', 'complete', 'closed', 'ended'].includes(statusEarly)) return 'completed'
+  if (['completed', 'complete', 'closed', 'ended'].includes(statusEarly)) return 'post-visit-summary'
 
   const explicit = collectCandidateTokens(visit)
   for (const token of explicit) {
@@ -246,9 +269,17 @@ export function getVisitKanbanStage(visit: ProviderVisitListItem): VisitKanbanSt
 
 export function getVisitStageBadge(visit: ProviderVisitListItem): VisitStageBadge {
   const stage = getVisitKanbanStage(visit)
+  const st = norm(visit.status)
+  const terminal = ['completed', 'complete', 'closed', 'ended'].includes(st)
+  let label = stageLabel(stage)
+  let toneClass = badgeClassForStage(stage)
+  if (stage === 'post-visit-summary') {
+    label = terminal ? 'Completed' : 'Post visit summary'
+    if (terminal) toneClass = 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+  }
   return {
-    label: stageLabel(stage),
-    className: `inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${badgeClassForStage(stage)}`,
+    label,
+    className: `inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${toneClass}`,
   }
 }
 
@@ -262,10 +293,17 @@ export function getVisitPrimaryAction(visit: ProviderVisitListItem): VisitPrimar
   if (stage === 'intake') return { label: 'Continue Intake', tab: 'pre-visit' }
   if (stage === 'pre-visit') return { label: 'Generate / View Pre-Visit', tab: 'pre-visit' }
   if (stage === 'vitals') return { label: 'Add / View Vitals', tab: 'vitals' }
-  if (stage === 'transcription') return { label: 'Start / Open Transcription', tab: 'transcription' }
+  if (stage === 'transcription') {
+    const ts = norm(visit.transcription_status)
+    if (ts === 'completed') return { label: 'Review Transcription', tab: 'transcription' }
+    return { label: 'Start / Open Transcription', tab: 'transcription' }
+  }
   if (stage === 'clinical-note') return { label: 'Generate / View Clinical Note', tab: 'clinical-note' }
-  if (stage === 'post-visit-summary') return { label: 'Generate / View Summary', tab: 'post-visit' }
-  if (stage === 'completed') return { label: 'View Visit', tab: 'post-visit' }
+  if (stage === 'post-visit-summary') {
+    const st = norm(visit.status)
+    if (['completed', 'complete', 'closed', 'ended'].includes(st)) return { label: 'View Visit', tab: 'post-visit' }
+    return { label: 'Generate / View Summary', tab: 'post-visit' }
+  }
   return { label: 'View Visit', tab: 'post-visit' }
 }
 
@@ -278,6 +316,7 @@ export function getVisitTags(visit: ProviderVisitListItem): string[] {
 
   if (['queued', 'uploading', 'processing', 'stale_processing'].includes(tx)) tags.add('Transcription')
   if (tx === 'failed') tags.add('Transcription')
+  if (tx === 'completed' && completedTranscriptionStageOverride(visit)) tags.add('Transcript ready')
 
   if (step.includes('intake') || stage === 'intake') tags.add('Intake')
   if (step.includes('pre_visit') || stage === 'pre-visit') tags.add('Pre-Visit')
@@ -285,7 +324,8 @@ export function getVisitTags(visit: ProviderVisitListItem): string[] {
   if (step.includes('transcription') || stage === 'transcription') tags.add('Transcription')
   if (step.includes('clinical_note') || step.includes('soap') || stage === 'clinical-note') tags.add('Clinical Note')
   if (step.includes('post_visit') || step.includes('summary') || stage === 'post-visit-summary') tags.add('Summary')
-  if (step.includes('recap') || stage === 'completed') tags.add('Recap')
+  if (step.includes('recap') || (stage === 'post-visit-summary' && ['completed', 'complete', 'closed', 'ended'].includes(status)))
+    tags.add('Recap')
   if (status === 'queued' || status === 'in_queue') tags.add('Queue')
 
   if (tags.size === 0) tags.add(stageLabel(stage))
@@ -410,7 +450,6 @@ function emptyGroupedVisits(): Record<VisitKanbanStage, ProviderVisitListItem[]>
     transcription: [],
     'clinical-note': [],
     'post-visit-summary': [],
-    completed: [],
   }
 }
 
@@ -454,7 +493,6 @@ export function groupVisitsByKanbanStage(
     transcription: [],
     'clinical-note': [],
     'post-visit-summary': [],
-    completed: [],
   }
 
   for (const stage of Object.keys(grouped) as VisitKanbanStage[]) {

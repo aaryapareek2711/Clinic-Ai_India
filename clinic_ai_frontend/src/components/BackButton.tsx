@@ -51,11 +51,13 @@ export default function BackButton({
   return (
     <button
       aria-label={ariaLabel}
-      className={`rounded-full p-2 text-[#006b2c] transition-all hover:bg-gray-50 ${className}`.trim()}
+      className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full text-[#006b2c] transition-all hover:bg-gray-50 ${className}`.trim()}
       onClick={handleClick}
       type="button"
     >
-      <span className="material-symbols-outlined">arrow_back</span>
+      <span aria-hidden className="text-[22px] font-semibold leading-none tracking-tight">
+        {'<'}
+      </span>
     </button>
   )
 }

@@ -275,7 +275,7 @@ function CalendarPage() {
         <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div className="flex items-center gap-2">
             <BackButton to="/dashboard" className="-ml-2" />
-            <h2 className="text-[28px] font-bold">Calendar</h2>
+            <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Calendar</h2>
           </div>
           <div className="flex flex-wrap gap-3">
             <button

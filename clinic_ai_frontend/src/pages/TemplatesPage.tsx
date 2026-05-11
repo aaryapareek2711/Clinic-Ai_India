@@ -157,12 +157,12 @@ function TemplatesPage() {
               {templateSavedMessage}
             </div>
           )}
-          <div className="mb-6 flex items-start gap-2">
-            <BackButton to="/dashboard" className="-ml-2 mt-1" />
-            <div>
-              <h2 className="text-[28px] leading-[1.2] tracking-[-0.02em] font-bold">Clinical Templates</h2>
-              <p className="text-[#3e4a3d] mt-1">Manage and create reusable clinical documentation structures.</p>
-            </div>
+          <div className="mb-6 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
+            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Clinical Templates</h2>
+            <p className="col-start-2 row-start-2 text-[#3e4a3d]">
+              Manage and create reusable clinical documentation structures.
+            </p>
           </div>
 
           <div className="flex items-center border-b border-[#bdcaba] mb-8">
