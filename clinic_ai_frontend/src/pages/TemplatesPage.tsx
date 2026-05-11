@@ -283,78 +283,63 @@ function TemplatesPage() {
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{templatesError}</div>
           )}
 
-          <div className="rounded-2xl border border-dashed border-[#bdcaba] bg-white py-12">
-            {templatesLoading && <p className="text-center text-sm text-[#575e70]">Loading templates…</p>}
-            {!templatesLoading && myTemplates.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4">
-                <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#00873a]/20">
-                  <span className="material-symbols-outlined text-4xl text-[#006b2c]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                    auto_awesome_motion
-                  </span>
-                </div>
-                <h3 className="mb-2 text-[18px] font-semibold">No templates found</h3>
-                <p className="mb-8 max-w-sm text-center text-[#3e4a3d]">
-                  No templates found with the current filters. Create one below or widen search.
+          <div className="rounded-2xl border border-[#dfe6db] bg-white shadow-sm">
+            {templatesLoading && (
+              <p className="px-8 py-12 text-center text-sm text-[#575e70]">Loading templates…</p>
+            )}
+            {!templatesLoading && myTemplates.length === 0 && (
+              <div className="max-w-xl mx-auto px-8 py-12 text-center text-sm leading-relaxed">
+                <p className="text-[#171d16] font-medium">No saved templates appear here.</p>
+                <p className="mt-2 text-[#575e70]">
+                  After you save templates they will show in this grid. Clear your search term or widen filters above if something is missing.
                 </p>
-                <button
-                  className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-semibold text-white transition-all hover:shadow-lg active:scale-95"
-                  onClick={() => {
-                    setTemplateToEdit(null)
-                    setIsCreateModalOpen(true)
-                  }}
-                  type="button"
-                >
-                  <span className="material-symbols-outlined">add_circle</span>
-                  <span>Create New Template</span>
-                </button>
               </div>
-            ) : (
-              !templatesLoading && (
-                <div className="grid grid-cols-1 gap-4 px-8 md:grid-cols-2 lg:grid-cols-3">
-                  {myTemplates.map((t) => {
-                    const isOpening = templateActionLoadingId === t.id
-                    const openTemplate = async () => {
-                      if (templateActionLoadingId) return
-                      setTemplateActionLoadingId(t.id)
-                      try {
-                        const fullTemplate = await getClinicalTemplate(t.id)
-                        setTemplateToEdit(fullTemplate)
-                        setIsCreateModalOpen(true)
-                      } catch (e) {
-                        setTemplatesError(getApiErrorMessage(e))
-                      } finally {
-                        setTemplateActionLoadingId(null)
-                      }
+            )}
+            {!templatesLoading && myTemplates.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 p-8 md:grid-cols-2 lg:grid-cols-3">
+                {myTemplates.map((t) => {
+                  const isOpening = templateActionLoadingId === t.id
+                  const openTemplate = async () => {
+                    if (templateActionLoadingId) return
+                    setTemplateActionLoadingId(t.id)
+                    try {
+                      const fullTemplate = await getClinicalTemplate(t.id)
+                      setTemplateToEdit(fullTemplate)
+                      setIsCreateModalOpen(true)
+                    } catch (e) {
+                      setTemplatesError(getApiErrorMessage(e))
+                    } finally {
+                      setTemplateActionLoadingId(null)
                     }
-                    return (
-                      <div
-                        key={t.id}
-                        aria-busy={isOpening}
-                        aria-disabled={isOpening}
-                        className={`group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:border-[#006b2c] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb] ${isOpening ? 'opacity-70' : 'cursor-pointer'}`}
-                        onClick={() => void openTemplate()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            void openTemplate()
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
-                        <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
-                          <span className="text-xs font-semibold text-[#006b2c] group-hover:underline">
-                            {isOpening ? 'Opening…' : 'View/Edit'}
-                          </span>
-                        </div>
+                  }
+                  return (
+                    <div
+                      key={t.id}
+                      aria-busy={isOpening}
+                      aria-disabled={isOpening}
+                      className={`group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:border-[#006b2c] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb] ${isOpening ? 'opacity-70' : 'cursor-pointer'}`}
+                      onClick={() => void openTemplate()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          void openTemplate()
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <h5 className="mb-1 text-lg font-semibold">{t.name}</h5>
+                      <p className="mb-2 line-clamp-3 text-sm text-[#3e4a3d]">{t.description || '—'}</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-wide text-[#575e70]">{t.specialty || t.category}</p>
+                        <span className="text-xs font-semibold text-[#006b2c] group-hover:underline">
+                          {isOpening ? 'Opening…' : 'View/Edit'}
+                        </span>
                       </div>
-                    )
-                  })}
-                </div>
-              )
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
 
