@@ -14,7 +14,7 @@ export default function VisitKanbanColumn({ stage, visits, onOpenVisit, onPrimar
       <header className="mb-3 border-b border-[#dbe6d6] pb-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-[#171d16]">{stage.title}</h3>
-          <span className="rounded-full border border-[#bdcaba] bg-white px-2 py-0.5 text-xs font-semibold text-[#3e4a3d]">
+          <span className="inline-flex min-w-7 items-center justify-center rounded-full border border-[#006b2c]/25 bg-[#006b2c]/10 px-2 py-0.5 text-xs font-extrabold text-[#006b2c] shadow-sm">
             {visits.length}
           </span>
         </div>

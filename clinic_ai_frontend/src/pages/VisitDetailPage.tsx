@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import BackButton from '../components/BackButton'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -398,9 +397,11 @@ export default function VisitDetailPage() {
 
   const tab = useMemo((): VisitWorkflowTab => {
     const defaultTab: VisitWorkflowTab = 'vitals'
-    const seed = tabParamRaw.length > 0 ? tabParamRaw : defaultTab
+    const hasExplicitTab = tabParamRaw.length > 0
+    const seed = hasExplicitTab ? tabParamRaw : defaultTab
     let t = normalizeWorkflowTab(seed)
-    if (skipPreVisitWorkflow && t === 'pre-visit') t = 'vitals'
+    // Walk-in flow defaults to vitals, but allow deep-links (e.g., Kanban "View Intake") to open pre-visit explicitly.
+    if (!hasExplicitTab && skipPreVisitWorkflow && t === 'pre-visit') t = 'vitals'
     return t
   }, [tabParamRaw, skipPreVisitWorkflow])
 
@@ -534,6 +535,8 @@ export default function VisitDetailPage() {
   const preferredLanguageCode = resolvePreferredLanguageCode(intake?.language, preVisit?.language)
   const langBadge = languageLabel(preferredLanguageCode)
   const languageToggleVisible = tab === 'post-visit'
+  /** Pre-visit should default to English display regardless of patient's preferred language. */
+  const preVisitEnglishDefault = tab === 'pre-visit'
   const effectiveLanguageMode: 'english' | 'preferred' = languageToggleVisible ? languageMode : 'english'
   const scheduledVisitDisplay = useMemo(() => {
     const raw = (visit?.scheduled_start || '').trim()
@@ -575,14 +578,15 @@ export default function VisitDetailPage() {
 
   useEffect(() => {
     let cancelled = false
-    if (!languageToggleVisible) {
+    if (!languageToggleVisible && !preVisitEnglishDefault) {
       setTranslatedDisplayBundle(null)
       setTranslatingDisplay(false)
       return
     }
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
-    const shouldTranslateToEnglish = effectiveLanguageMode === 'english' && !!pref && pref !== 'en'
-    const shouldTranslateToPreferred = effectiveLanguageMode === 'preferred' && !!pref && pref !== 'en'
+    const shouldTranslateToEnglish =
+      (preVisitEnglishDefault || effectiveLanguageMode === 'english') && !!pref && pref !== 'en'
+    const shouldTranslateToPreferred = !preVisitEnglishDefault && effectiveLanguageMode === 'preferred' && !!pref && pref !== 'en'
     if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedDisplayBundle(null)
       setTranslatingDisplay(false)
@@ -624,6 +628,7 @@ export default function VisitDetailPage() {
   }, [
     effectiveLanguageMode,
     languageToggleVisible,
+    preVisitEnglishDefault,
     preferredLanguageCode,
     intake,
     preVisit,
@@ -1304,8 +1309,6 @@ export default function VisitDetailPage() {
           <>
             <div className="p-8 pb-0">
               <nav className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-[#575e70]">
-                <BackButton ariaLabel="Go back" fallback="/visits" className="-ml-2 shrink-0" />
-                <span aria-hidden className="hidden h-4 w-px shrink-0 bg-slate-300 sm:block" />
                 <button className="hover:text-[#006b2c]" onClick={() => navigate('/dashboard')} type="button">
                   Dashboard
                 </button>
