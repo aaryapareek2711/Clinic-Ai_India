@@ -20,6 +20,7 @@ Rules:
 - If context JSON contains "selected_template", it may include:
   - included_sections: array of section keys to include (e.g. chief_complaint, assessment, plan, investigations, red_flags, data_gaps, rx, doctor_notes, follow_up_date)
   - section_detail_level: object mapping section key -> "brief" or "detail"
+  - optional_preferences: free-text clinician preferences to follow while drafting this note
   Apply these rules:
   - If a section key is NOT in included_sections:
     - For string fields, return null (except assessment/plan: return empty string "")
@@ -27,6 +28,7 @@ Rules:
   - If a section key IS in included_sections:
     - If section_detail_level[key] is "brief" (or missing): keep the current concise style.
     - If section_detail_level[key] is "detail": make ONLY that section a little more detailed (roughly 2–3 lines), still clinically safe and without extra keys.
+  - If optional_preferences is present and non-empty, follow it where clinically safe and incorporate it in doctor_notes/plan wording.
 - Do not add extra top-level keys.
 - If any context is missing, include explicit entries in data_gaps.
 - Keep output concise and clinically safe.

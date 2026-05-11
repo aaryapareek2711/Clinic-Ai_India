@@ -65,6 +65,7 @@ class GenerateIndiaClinicalNoteUseCase:
         payload = self._generate_payload(context)
         if template_content:
             payload = self._apply_template(payload, template_content)
+        payload = self._apply_previsit_intake_context(payload=payload, context=context)
         if follow_up_date is not None:
             payload["follow_up_date"] = follow_up_date.isoformat()
             payload["follow_up_in"] = None
@@ -172,8 +173,11 @@ class GenerateIndiaClinicalNoteUseCase:
             # If template includes doctor notes, treat it as authoritative starter text.
             # Fallback to generated note text only when template doctor_notes is empty.
             template_note = _first_text(tpl.get("doctor_notes"))
+            template_preferences = _first_text(tpl.get("optional_preferences"))
             if template_note:
                 out["doctor_notes"] = template_note
+            elif template_preferences:
+                out["doctor_notes"] = template_preferences
             elif not str(out.get("doctor_notes") or "").strip():
                 out["doctor_notes"] = None
 
@@ -228,8 +232,11 @@ class GenerateIndiaClinicalNoteUseCase:
                     out[key] = _first_text(tpl.get(key))
 
         template_note = _first_text(tpl.get("doctor_notes"))
+        template_preferences = _first_text(tpl.get("optional_preferences"))
         if template_note:
             out["doctor_notes"] = template_note
+        elif template_preferences:
+            out["doctor_notes"] = template_preferences
         elif not str(out.get("doctor_notes") or "").strip():
             out["doctor_notes"] = None
 
@@ -405,6 +412,153 @@ class GenerateIndiaClinicalNoteUseCase:
         except Exception:
             payload = self._fallback_payload(context=context)
         return payload
+
+    @staticmethod
+    def _clean_context_text(value: object) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        lowered = text.lower()
+        if lowered in {"not provided", "n/a", "na", "none", "null", "unknown"}:
+            return ""
+        return text
+
+    @classmethod
+    def _extract_previsit_intake_hints(cls, *, context: dict) -> dict:
+        sections = context.get("previsit_sections") if isinstance(context.get("previsit_sections"), dict) else {}
+        intake_answers = context.get("intake_answers") if isinstance(context.get("intake_answers"), list) else []
+
+        chief = sections.get("chief_complaint") if isinstance(sections.get("chief_complaint"), dict) else {}
+        hpi = sections.get("hpi") if isinstance(sections.get("hpi"), dict) else {}
+        meds = (
+            sections.get("current_medication")
+            if isinstance(sections.get("current_medication"), dict)
+            else {}
+        )
+        pmh = (
+            sections.get("past_medical_history_allergies")
+            if isinstance(sections.get("past_medical_history_allergies"), dict)
+            else {}
+        )
+
+        reason_for_visit = cls._clean_context_text(chief.get("reason_for_visit"))
+        onset = cls._clean_context_text(chief.get("symptom_duration_or_onset"))
+        severity = cls._clean_context_text(hpi.get("symptom_severity_or_progression"))
+        impact = cls._clean_context_text(hpi.get("impact_on_daily_life"))
+        meds_text = cls._clean_context_text(meds.get("medications_or_home_remedies"))
+        past_history = cls._clean_context_text(pmh.get("past_medical_history"))
+        allergies = cls._clean_context_text(pmh.get("allergies"))
+        additional_doctor_note = cls._clean_context_text(sections.get("additional_doctor_note"))
+
+        associated_symptoms_raw = hpi.get("associated_symptoms") if isinstance(hpi.get("associated_symptoms"), list) else []
+        associated_symptoms = [cls._clean_context_text(x) for x in associated_symptoms_raw]
+        associated_symptoms = [x for x in associated_symptoms if x]
+
+        previsit_red_flags_raw = sections.get("red_flag_indicators") if isinstance(sections.get("red_flag_indicators"), list) else []
+        previsit_red_flags = [cls._clean_context_text(x) for x in previsit_red_flags_raw]
+        previsit_red_flags = [x for x in previsit_red_flags if x]
+
+        intake_topic_values: dict[str, list[str]] = {}
+        for item in intake_answers:
+            if not isinstance(item, dict):
+                continue
+            topic = str(item.get("topic") or "").strip().lower()
+            answer = cls._clean_context_text(item.get("answer"))
+            if not topic or not answer:
+                continue
+            intake_topic_values.setdefault(topic, [])
+            if answer not in intake_topic_values[topic]:
+                intake_topic_values[topic].append(answer)
+
+        if not reason_for_visit:
+            reason_for_visit = (intake_topic_values.get("reason_for_visit") or [""])[0]
+        if not onset:
+            onset = (intake_topic_values.get("onset_duration") or [""])[0]
+        if not severity:
+            severity = (intake_topic_values.get("severity_progression") or [""])[0]
+        if not impact:
+            impact = (intake_topic_values.get("impact_daily_life") or [""])[0]
+        if not meds_text:
+            meds_text = (intake_topic_values.get("current_medications") or [""])[0]
+        if not past_history:
+            past_history = (intake_topic_values.get("past_medical_history") or [""])[0]
+        if not allergies:
+            allergies = (intake_topic_values.get("allergies") or [""])[0]
+        if not associated_symptoms:
+            associated_symptoms = intake_topic_values.get("associated_symptoms") or []
+
+        intake_red_flags = intake_topic_values.get("red_flag_check") or []
+        red_flags = []
+        for value in [*previsit_red_flags, *intake_red_flags]:
+            if value and value not in red_flags:
+                red_flags.append(value)
+
+        return {
+            "reason_for_visit": reason_for_visit,
+            "onset": onset,
+            "associated_symptoms": associated_symptoms,
+            "severity": severity,
+            "impact": impact,
+            "meds_text": meds_text,
+            "past_history": past_history,
+            "allergies": allergies,
+            "additional_doctor_note": additional_doctor_note,
+            "red_flags": red_flags,
+        }
+
+    @classmethod
+    def _apply_previsit_intake_context(cls, *, payload: dict, context: dict) -> dict:
+        out = deepcopy(payload) if isinstance(payload, dict) else {}
+        hints = cls._extract_previsit_intake_hints(context=context)
+
+        if not cls._clean_context_text(out.get("chief_complaint")) and hints["reason_for_visit"]:
+            out["chief_complaint"] = hints["reason_for_visit"]
+
+        merged_red_flags: list[str] = [str(x).strip() for x in (out.get("red_flags") or []) if str(x).strip()]
+        for rf in hints["red_flags"]:
+            if rf not in merged_red_flags:
+                merged_red_flags.append(rf)
+        out["red_flags"] = merged_red_flags
+
+        note_lines: list[str] = []
+        if hints["additional_doctor_note"]:
+            note_lines.append(f"Pre-visit doctor note: {hints['additional_doctor_note']}")
+        if hints["meds_text"]:
+            note_lines.append(f"Current medications/home remedies: {hints['meds_text']}")
+        if hints["past_history"]:
+            note_lines.append(f"Past medical history: {hints['past_history']}")
+        if hints["allergies"]:
+            note_lines.append(f"Allergies: {hints['allergies']}")
+        if hints["impact"]:
+            note_lines.append(f"Functional impact: {hints['impact']}")
+        if note_lines:
+            existing = cls._clean_context_text(out.get("doctor_notes"))
+            merged_notes = [existing] if existing else []
+            for line in note_lines:
+                if not any(line.lower() in x.lower() for x in merged_notes):
+                    merged_notes.append(line)
+            out["doctor_notes"] = "\n".join(merged_notes) if merged_notes else None
+
+        assessment_prefix_parts: list[str] = []
+        if hints["onset"]:
+            assessment_prefix_parts.append(f"Onset/duration: {hints['onset']}")
+        if hints["associated_symptoms"]:
+            assessment_prefix_parts.append(
+                f"Associated symptoms: {', '.join(hints['associated_symptoms'][:4])}"
+            )
+        if hints["severity"]:
+            assessment_prefix_parts.append(f"Severity/progression: {hints['severity']}")
+        if assessment_prefix_parts:
+            existing_assessment = str(out.get("assessment") or "").strip()
+            prefix_text = " | ".join(assessment_prefix_parts)
+            if prefix_text and prefix_text.lower() not in existing_assessment.lower():
+                out["assessment"] = (
+                    f"{existing_assessment} {prefix_text}".strip()
+                    if existing_assessment
+                    else prefix_text
+                )
+
+        return out
 
     def _normalize_payload(self, generated: dict, *, context: dict) -> dict:
         payload = deepcopy(generated) if isinstance(generated, dict) else {}

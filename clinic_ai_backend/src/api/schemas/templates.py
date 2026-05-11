@@ -64,6 +64,7 @@ class TemplateContent(BaseModel):
     doctor_notes: str = ""
     chief_complaint: str = ""
     data_gaps: list[str] = []
+    optional_preferences: str = ""
     # Template-driven generation controls (round-tripped to the frontend).
     included_sections: list[str] = []
     section_detail_level: dict[str, TemplateSectionDetailLevel] = {}

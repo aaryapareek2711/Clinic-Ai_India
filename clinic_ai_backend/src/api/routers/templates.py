@@ -46,6 +46,7 @@ def _serialize(doc: dict[str, Any]) -> dict[str, Any]:
         "doctor_notes": str(raw_content.get("doctor_notes") or raw_content.get("subjective") or ""),
         "chief_complaint": str(raw_content.get("chief_complaint") or raw_content.get("objective") or ""),
         "data_gaps": list(raw_content.get("data_gaps") or []),
+        "optional_preferences": str(raw_content.get("optional_preferences") or ""),
         "included_sections": list(included_sections) if isinstance(included_sections, list) else [],
         "section_detail_level": dict(section_detail_level) if isinstance(section_detail_level, dict) else {},
         "section_order": list(section_order) if isinstance(section_order, list) else [],
