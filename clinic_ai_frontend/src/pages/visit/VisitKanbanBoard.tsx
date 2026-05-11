@@ -5,11 +5,15 @@ import {
   groupVisitsByKanbanStage,
   KANBAN_STAGES,
   type VisitKanbanCardModel,
+  type VisitKanbanSortKey,
+  type VisitKanbanSortScope,
 } from './visit-kanban-utils'
 
 type VisitKanbanBoardProps = {
   visits: ProviderVisitListItem[]
   searchQuery: string
+  sortBy: VisitKanbanSortKey
+  sortScope: VisitKanbanSortScope
   onOpenVisit: (visit: VisitKanbanCardModel) => void
   onPrimaryAction: (visit: VisitKanbanCardModel) => void
 }
@@ -17,11 +21,13 @@ type VisitKanbanBoardProps = {
 export default function VisitKanbanBoard({
   visits,
   searchQuery,
+  sortBy,
+  sortScope,
   onOpenVisit,
   onPrimaryAction,
 }: VisitKanbanBoardProps) {
   const filtered = filterVisitsBySearch(visits, searchQuery)
-  const grouped = groupVisitsByKanbanStage(filtered)
+  const grouped = groupVisitsByKanbanStage(filtered, sortBy, sortScope)
 
   return (
     <div className="overflow-x-auto pb-6">

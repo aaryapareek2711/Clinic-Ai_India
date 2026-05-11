@@ -5,7 +5,6 @@ import { isWalkInVisitType } from './intakeUtils'
 export type VisitFlowType = 'scheduled' | 'walk-in' | 'unknown'
 
 export type VisitKanbanStage =
-  | 'registered'
   | 'appointment-created'
   | 'intake'
   | 'pre-visit'
@@ -13,7 +12,22 @@ export type VisitKanbanStage =
   | 'transcription'
   | 'clinical-note'
   | 'post-visit-summary'
-  | 'recap-completed'
+  | 'completed'
+
+/** Same values as Visits page sort dropdown — used for client-side column ordering. */
+export type VisitKanbanSortKey =
+  | 'patient_newest'
+  | 'patient_oldest'
+  | 'visit_latest'
+  | 'visit_oldest'
+  | 'time_newest'
+  | 'time_oldest'
+  | 'name_az'
+  | 'name_za'
+  | 'visit_id'
+
+/** `all` = apply selected sort inside every column; otherwise only that column is re-ordered. */
+export type VisitKanbanSortScope = 'all' | VisitKanbanStage
 
 export type VisitPrimaryAction = {
   label: string
@@ -47,7 +61,6 @@ export type VisitKanbanCardModel = {
 }
 
 export const KANBAN_STAGES: KanbanStageDefinition[] = [
-  { id: 'registered', title: 'Registered', helper: 'Patient profile created' },
   { id: 'appointment-created', title: 'Appointment / Visit Created', helper: 'Visit generated and ready' },
   { id: 'intake', title: 'Intake', helper: 'Intake pending or in progress' },
   { id: 'pre-visit', title: 'Pre-Visit', helper: 'Pre-visit summary preparation' },
@@ -55,7 +68,7 @@ export const KANBAN_STAGES: KanbanStageDefinition[] = [
   { id: 'transcription', title: 'Transcription', helper: 'Consultation transcript processing' },
   { id: 'clinical-note', title: 'Clinical Note', helper: 'Clinical note generation/review' },
   { id: 'post-visit-summary', title: 'Post Visit Summary', helper: 'Summary generation/review' },
-  { id: 'recap-completed', title: 'Recap Sent / Completed', helper: 'Recap sent or visit closed' },
+  { id: 'completed', title: 'Completed', helper: 'Post-visit recap sent or visit closed' },
 ]
 
 function norm(value: unknown): string {
@@ -83,7 +96,7 @@ function titleCaseToken(value: string): string {
 function stageForToken(token: string): VisitKanbanStage | null {
   if (!token) return null
 
-  if (['patient_registered', 'registered'].includes(token)) return 'registered'
+  if (['patient_registered', 'registered'].includes(token)) return 'appointment-created'
 
   if (
     [
@@ -133,7 +146,13 @@ function stageForToken(token: string): VisitKanbanStage | null {
     return 'post-visit-summary'
   }
 
-  if (['recap_sent', 'post_recap_sent', 'completed', 'closed', 'ended'].includes(token)) return 'recap-completed'
+  if (
+    ['recap_sent', 'post_recap_sent', 'recap_delivered', 'whatsapp_sent', 'completed', 'complete', 'closed', 'ended'].includes(
+      token,
+    )
+  ) {
+    return 'completed'
+  }
 
   return null
 }
@@ -143,7 +162,7 @@ function stageLabel(stage: VisitKanbanStage): string {
 }
 
 function badgeClassForStage(stage: VisitKanbanStage): string {
-  if (stage === 'recap-completed') return 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+  if (stage === 'completed') return 'bg-emerald-100 text-emerald-700 border border-emerald-200'
   if (stage === 'appointment-created' || stage === 'intake' || stage === 'pre-visit') {
     return 'bg-amber-100 text-amber-700 border border-amber-200'
   }
@@ -173,6 +192,14 @@ function collectCandidateTokens(visit: ProviderVisitListItem): string[] {
     .filter(Boolean)
 }
 
+/** When true, visit belongs in Transcription column even if current_workflow_stage is still vitals. */
+function transcriptionStageOverride(visit: ProviderVisitListItem): VisitKanbanStage | null {
+  const ts = norm(visit.transcription_status)
+  if (['queued', 'uploading', 'processing', 'stale_processing'].includes(ts)) return 'transcription'
+  if (ts === 'failed') return 'transcription'
+  return null
+}
+
 export function getVisitFlowType(visit: ProviderVisitListItem): VisitFlowType {
   const rawType = norm(visit.visit_type)
   if (isWalkInVisitType(rawType)) return 'walk-in'
@@ -185,6 +212,9 @@ export function getVisitFlowType(visit: ProviderVisitListItem): VisitFlowType {
 }
 
 export function getVisitCurrentStep(visit: ProviderVisitListItem): string {
+  const ts = norm(visit.transcription_status)
+  if (['queued', 'uploading', 'processing', 'stale_processing', 'failed'].includes(ts)) return `transcription_${ts}`
+
   const tokens = collectCandidateTokens(visit)
   for (const token of tokens) {
     if (stageForToken(token)) return token
@@ -195,6 +225,12 @@ export function getVisitCurrentStep(visit: ProviderVisitListItem): string {
 }
 
 export function getVisitKanbanStage(visit: ProviderVisitListItem): VisitKanbanStage {
+  const fromTranscription = transcriptionStageOverride(visit)
+  if (fromTranscription) return fromTranscription
+
+  const statusEarly = norm(visit.status)
+  if (['completed', 'complete', 'closed', 'ended'].includes(statusEarly)) return 'completed'
+
   const explicit = collectCandidateTokens(visit)
   for (const token of explicit) {
     const mapped = stageForToken(token)
@@ -220,7 +256,6 @@ export function getVisitPrimaryAction(visit: ProviderVisitListItem): VisitPrimar
   const stage = getVisitKanbanStage(visit)
   const flow = getVisitFlowType(visit)
 
-  if (stage === 'registered') return { label: 'Create Visit', tab: flow === 'walk-in' ? 'vitals' : 'pre-visit' }
   if (stage === 'appointment-created') {
     return { label: flow === 'walk-in' ? 'Start Vitals' : 'Start Intake', tab: flow === 'walk-in' ? 'vitals' : 'pre-visit' }
   }
@@ -230,6 +265,7 @@ export function getVisitPrimaryAction(visit: ProviderVisitListItem): VisitPrimar
   if (stage === 'transcription') return { label: 'Start / Open Transcription', tab: 'transcription' }
   if (stage === 'clinical-note') return { label: 'Generate / View Clinical Note', tab: 'clinical-note' }
   if (stage === 'post-visit-summary') return { label: 'Generate / View Summary', tab: 'post-visit' }
+  if (stage === 'completed') return { label: 'View Visit', tab: 'post-visit' }
   return { label: 'View Visit', tab: 'post-visit' }
 }
 
@@ -238,6 +274,10 @@ export function getVisitTags(visit: ProviderVisitListItem): string[] {
   const step = getVisitCurrentStep(visit)
   const status = norm(visit.status)
   const stage = getVisitKanbanStage(visit)
+  const tx = norm(visit.transcription_status)
+
+  if (['queued', 'uploading', 'processing', 'stale_processing'].includes(tx)) tags.add('Transcription')
+  if (tx === 'failed') tags.add('Transcription')
 
   if (step.includes('intake') || stage === 'intake') tags.add('Intake')
   if (step.includes('pre_visit') || stage === 'pre-visit') tags.add('Pre-Visit')
@@ -245,7 +285,7 @@ export function getVisitTags(visit: ProviderVisitListItem): string[] {
   if (step.includes('transcription') || stage === 'transcription') tags.add('Transcription')
   if (step.includes('clinical_note') || step.includes('soap') || stage === 'clinical-note') tags.add('Clinical Note')
   if (step.includes('post_visit') || step.includes('summary') || stage === 'post-visit-summary') tags.add('Summary')
-  if (step.includes('recap') || stage === 'recap-completed') tags.add('Recap')
+  if (step.includes('recap') || stage === 'completed') tags.add('Recap')
   if (status === 'queued' || status === 'in_queue') tags.add('Queue')
 
   if (tags.size === 0) tags.add(stageLabel(stage))
@@ -281,11 +321,88 @@ export function toVisitKanbanCardModel(visit: ProviderVisitListItem): VisitKanba
   }
 }
 
-export function groupVisitsByKanbanStage(
-  visits: ProviderVisitListItem[],
-): Record<VisitKanbanStage, VisitKanbanCardModel[]> {
-  const grouped: Record<VisitKanbanStage, VisitKanbanCardModel[]> = {
-    registered: [],
+function parseSortTime(value: string | null | undefined): number {
+  const raw = String(value || '').trim()
+  if (!raw) return NaN
+  const t = Date.parse(raw)
+  return Number.isFinite(t) ? t : NaN
+}
+
+/** Client-side ordering so Kanban columns respect the same sort intent as the visits API. */
+export function compareVisitsForSort(a: ProviderVisitListItem, b: ProviderVisitListItem, sortBy: VisitKanbanSortKey): number {
+  const nameA = (a.patient_name || '').toLowerCase()
+  const nameB = (b.patient_name || '').toLowerCase()
+  const idA = (a.visit_id || a.id || '').toLowerCase()
+  const idB = (b.visit_id || b.id || '').toLowerCase()
+
+  switch (sortBy) {
+    case 'name_az':
+      return nameA.localeCompare(nameB)
+    case 'name_za':
+      return nameB.localeCompare(nameA)
+    case 'visit_id':
+      return idA.localeCompare(idB)
+    case 'patient_newest': {
+      const ta = parseSortTime(a.patient_created_at)
+      const tb = parseSortTime(b.patient_created_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return tb - ta
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idB.localeCompare(idA)
+    }
+    case 'patient_oldest': {
+      const ta = parseSortTime(a.patient_created_at)
+      const tb = parseSortTime(b.patient_created_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return ta - tb
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idA.localeCompare(idB)
+    }
+    case 'visit_latest': {
+      const ta = parseSortTime(a.patient_last_visit_at)
+      const tb = parseSortTime(b.patient_last_visit_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return tb - ta
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idB.localeCompare(idA)
+    }
+    case 'visit_oldest': {
+      const ta = parseSortTime(a.patient_last_visit_at)
+      const tb = parseSortTime(b.patient_last_visit_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return ta - tb
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idA.localeCompare(idB)
+    }
+    case 'time_newest': {
+      const ta = parseSortTime(a.scheduled_start || undefined) || parseSortTime(a.created_at)
+      const tb = parseSortTime(b.scheduled_start || undefined) || parseSortTime(b.created_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return tb - ta
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idB.localeCompare(idA)
+    }
+    case 'time_oldest': {
+      const ta = parseSortTime(a.scheduled_start || undefined) || parseSortTime(a.created_at)
+      const tb = parseSortTime(b.scheduled_start || undefined) || parseSortTime(b.created_at)
+      const aOk = Number.isFinite(ta)
+      const bOk = Number.isFinite(tb)
+      if (aOk && bOk && ta !== tb) return ta - tb
+      if (aOk !== bOk) return aOk ? -1 : 1
+      return idA.localeCompare(idB)
+    }
+    default:
+      return 0
+  }
+}
+
+function emptyGroupedVisits(): Record<VisitKanbanStage, ProviderVisitListItem[]> {
+  return {
     'appointment-created': [],
     intake: [],
     'pre-visit': [],
@@ -293,12 +410,55 @@ export function groupVisitsByKanbanStage(
     transcription: [],
     'clinical-note': [],
     'post-visit-summary': [],
-    'recap-completed': [],
+    completed: [],
+  }
+}
+
+export function groupVisitRowsByKanbanStage(visits: ProviderVisitListItem[]): Record<VisitKanbanStage, ProviderVisitListItem[]> {
+  const grouped = emptyGroupedVisits()
+  for (const visit of visits) {
+    const stage = getVisitKanbanStage(visit)
+    grouped[stage].push(visit)
+  }
+  return grouped
+}
+
+export function applyKanbanColumnSort(
+  grouped: Record<VisitKanbanStage, ProviderVisitListItem[]>,
+  sortBy: VisitKanbanSortKey,
+  sortScope: VisitKanbanSortScope,
+): Record<VisitKanbanStage, ProviderVisitListItem[]> {
+  const out = emptyGroupedVisits()
+  ;(Object.keys(grouped) as VisitKanbanStage[]).forEach((stage) => {
+    const bucket = [...(grouped[stage] || [])]
+    if (sortScope === 'all' || sortScope === stage) {
+      bucket.sort((a, b) => compareVisitsForSort(a, b, sortBy))
+    }
+    out[stage] = bucket
+  })
+  return out
+}
+
+export function groupVisitsByKanbanStage(
+  visits: ProviderVisitListItem[],
+  sortBy: VisitKanbanSortKey = 'patient_newest',
+  sortScope: VisitKanbanSortScope = 'all',
+): Record<VisitKanbanStage, VisitKanbanCardModel[]> {
+  const rawGrouped = groupVisitRowsByKanbanStage(visits)
+  const sortedGrouped = applyKanbanColumnSort(rawGrouped, sortBy, sortScope)
+  const grouped: Record<VisitKanbanStage, VisitKanbanCardModel[]> = {
+    'appointment-created': [],
+    intake: [],
+    'pre-visit': [],
+    vitals: [],
+    transcription: [],
+    'clinical-note': [],
+    'post-visit-summary': [],
+    completed: [],
   }
 
-  for (const visit of visits) {
-    const card = toVisitKanbanCardModel(visit)
-    grouped[card.stage].push(card)
+  for (const stage of Object.keys(grouped) as VisitKanbanStage[]) {
+    grouped[stage] = sortedGrouped[stage].map((v) => toVisitKanbanCardModel(v))
   }
   return grouped
 }
@@ -316,6 +476,7 @@ export function filterVisitsBySearch(visits: ProviderVisitListItem[], searchTerm
       visit.id,
       visit.mobile_number,
       visit.status,
+      visit.transcription_status,
       visit.visit_type,
       visit.chief_complaint,
       step,

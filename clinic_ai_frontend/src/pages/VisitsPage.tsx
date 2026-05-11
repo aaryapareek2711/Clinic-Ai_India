@@ -8,25 +8,16 @@ import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderVisitsPaged,
-  type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
-import { fetchPatients, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import VisitKanbanBoard from './visit/VisitKanbanBoard'
 import type { VisitKanbanCardModel } from './visit/visit-kanban-utils'
+import { KANBAN_STAGES, type VisitKanbanSortKey, type VisitKanbanSortScope } from './visit/visit-kanban-utils'
 
-type VisitSort =
-  | 'patient_newest'
-  | 'patient_oldest'
-  | 'visit_latest'
-  | 'visit_oldest'
-  | 'time_newest'
-  | 'time_oldest'
-  | 'name_az'
-  | 'name_za'
-  | 'visit_id'
+type VisitSort = VisitKanbanSortKey
 const PAGE_SIZE = 10
-const AUTO_REFRESH_MS = 30_000
+/** Shorter interval so Kanban picks up transcription_session updates soon after upload. */
+const AUTO_REFRESH_MS = 5_000
 const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function VisitsPage() {
@@ -35,6 +26,7 @@ function VisitsPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
+  const [sortScope, setSortScope] = useState<VisitKanbanSortScope>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
@@ -57,13 +49,7 @@ function VisitsPage() {
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,
   })
-  const { data: patientsData } = useQuery({
-    queryKey: ['patients', 'all-for-visits-board'],
-    queryFn: fetchPatients,
-    staleTime: 60_000,
-  })
   const visits = data?.items ?? []
-  const patients = patientsData ?? []
   const totalVisits = data?.total ?? 0
   const loading = isFetching && !data
   const listError = error ? getApiErrorMessage(error) : null
@@ -92,43 +78,9 @@ function VisitsPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalVisits / PAGE_SIZE))
 
-  const visitsWithRegisteredPatients = useMemo(() => {
-    const patientIdsWithVisit = new Set(
-      visits.map((v) => String(v.patient_id || '').trim()).filter(Boolean),
-    )
-    const syntheticRegisteredVisits: ProviderVisitListItem[] = patients
-      .filter((p: PatientSummary) => !String(p.latest_visit_id || '').trim())
-      .filter((p: PatientSummary) => !patientIdsWithVisit.has(String(p.id || p.patient_id || '').trim()))
-      .map((p: PatientSummary) => ({
-        id: '',
-        visit_id: '',
-        patient_id: String(p.id || p.patient_id || '').trim(),
-        patient_name: String(p.full_name || `${p.first_name || ''} ${p.last_name || ''}` || '').trim() || 'Patient',
-        mobile_number: p.phone_number || '',
-        visit_type: '',
-        status: 'patient_registered',
-        previous_workflow_stage: null,
-        current_workflow_stage: 'patient_registered',
-        next_workflow_stage: 'appointment_created',
-        scheduled_start: null,
-        actual_start: null,
-        actual_end: null,
-        duration_minutes: null,
-        chief_complaint: null,
-        intake_status: null,
-        intake_question_count: null,
-        intake_last_updated_at: null,
-        created_at: '',
-        updated_at: '',
-        patient_created_at: null,
-        patient_last_visit_at: null,
-      }))
-    return [...syntheticRegisteredVisits, ...visits]
-  }, [patients, visits])
-
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, sortBy])
+  }, [searchQuery, sortBy, sortScope])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -140,22 +92,12 @@ function VisitsPage() {
   }
 
   const handleOpenVisit = (card: VisitKanbanCardModel) => {
-    if (!card.visitId) {
-      if (card.patientId) navigate(`/patients/detail?patientId=${encodeURIComponent(card.patientId)}`)
-      return
-    }
+    if (!card.visitId) return
     openVisitWithTab(card.visitId, 'pre-visit')
   }
 
   const handlePrimaryAction = (card: VisitKanbanCardModel) => {
-    if (!card.visitId) {
-      if (card.patientId) {
-        navigate(`/start-visit?patientId=${encodeURIComponent(card.patientId)}`)
-      } else {
-        navigate('/start-visit')
-      }
-      return
-    }
+    if (!card.visitId) return
     openVisitWithTab(card.visitId, card.primaryAction.tab)
   }
 
@@ -212,8 +154,8 @@ function VisitsPage() {
               New Visit
             </button>
           </div>
-          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative flex-1">
+          <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <div className="relative min-w-0 flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
               <input
                 className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
@@ -223,28 +165,52 @@ function VisitsPage() {
                 value={searchQuery}
               />
             </div>
-            <div className="relative min-w-[220px]">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
-                sort
-              </span>
-              <select
-                aria-label="Sort visits"
-                className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as VisitSort)}
-              >
-                <option value="patient_newest">New patient: newest first</option>
-                <option value="patient_oldest">New patient: oldest first</option>
-                <option value="visit_latest">Latest visit: newest first</option>
-                <option value="visit_oldest">Latest visit: oldest first</option>
-                <option value="time_newest">Time: newest first</option>
-                <option value="time_oldest">Time: oldest first</option>
-                <option value="name_az">Name: A → Z</option>
-                <option value="name_za">Name: Z → A</option>
-              </select>
-              <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
-                expand_more
-              </span>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+              <div className="relative min-w-[200px] flex-1 sm:max-w-[260px]">
+                <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
+                  sort
+                </span>
+                <select
+                  aria-label="Sort visits"
+                  className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as VisitSort)}
+                >
+                  <option value="patient_newest">New patient: newest first</option>
+                  <option value="patient_oldest">New patient: oldest first</option>
+                  <option value="visit_latest">Latest visit: newest first</option>
+                  <option value="visit_oldest">Latest visit: oldest first</option>
+                  <option value="time_newest">Time: newest first</option>
+                  <option value="time_oldest">Time: oldest first</option>
+                  <option value="name_az">Name: A → Z</option>
+                  <option value="name_za">Name: Z → A</option>
+                  <option value="visit_id">Visit ID: A → Z</option>
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+                  expand_more
+                </span>
+              </div>
+              <div className="relative min-w-[200px] flex-1 sm:max-w-[280px]">
+                <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
+                  view_column
+                </span>
+                <select
+                  aria-label="Apply sort to Kanban column"
+                  className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  value={sortScope}
+                  onChange={(e) => setSortScope(e.target.value as VisitKanbanSortScope)}
+                >
+                  <option value="all">Sort: all columns</option>
+                  {KANBAN_STAGES.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      Sort: {col.title} only
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+                  expand_more
+                </span>
+              </div>
             </div>
           </div>
 
@@ -264,8 +230,10 @@ function VisitsPage() {
             )}
             {!loading && !listError && totalVisits > 0 && (
               <VisitKanbanBoard
-                visits={visitsWithRegisteredPatients}
+                visits={visits}
                 searchQuery={searchQuery}
+                sortBy={sortBy}
+                sortScope={sortScope}
                 onOpenVisit={handleOpenVisit}
                 onPrimaryAction={handlePrimaryAction}
               />
