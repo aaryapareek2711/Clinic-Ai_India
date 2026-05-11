@@ -466,6 +466,7 @@ def list_provider_visits(
                 "intake_session.status": 1,
                 "intake_session.question_answers": 1,
                 "intake_session.updated_at": 1,
+                "transcription_session.transcription_status": 1,
                 "created_at": 1,
                 "updated_at": 1,
             },
@@ -507,6 +508,10 @@ def list_provider_visits(
         except Exception:
             duration_minutes = None
 
+        transcription_status = str(
+            ((visit.get("transcription_session") or {}).get("transcription_status")) or ""
+        ).strip().lower() or None
+
         out.append(
             {
                 **{
@@ -533,6 +538,7 @@ def list_provider_visits(
                     "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
                     "created_at": visit.get("created_at") or "",
                     "updated_at": visit.get("updated_at") or "",
+                    "transcription_status": transcription_status,
                 },
                 **{
                     "previous_workflow_stage": visit.get(
@@ -631,6 +637,7 @@ def list_provider_visits_paged(
                 "intake_session.status": 1,
                 "intake_session.question_answers": 1,
                 "intake_session.updated_at": 1,
+                "transcription_session.transcription_status": 1,
                 "created_at": 1,
                 "updated_at": 1,
             },
@@ -707,6 +714,11 @@ def list_provider_visits_paged(
                 duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
         except Exception:
             duration_minutes = None
+
+        transcription_status = str(
+            ((visit.get("transcription_session") or {}).get("transcription_status")) or ""
+        ).strip().lower() or None
+
         items.append(
             {
                 "id": resolved_visit_id,
@@ -731,6 +743,7 @@ def list_provider_visits_paged(
                 "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
                 "created_at": visit.get("created_at") or "",
                 "updated_at": visit.get("updated_at") or "",
+                "transcription_status": transcription_status,
                 "previous_workflow_stage": visit.get(
                     "previous_workflow_stage",
                     _workflow_stage_triplet_for_status(visit.get("status") or "open")["previous_workflow_stage"],
