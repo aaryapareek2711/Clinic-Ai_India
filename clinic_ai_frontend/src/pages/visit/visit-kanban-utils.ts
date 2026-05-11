@@ -26,7 +26,7 @@ export type VisitKanbanSortKey =
   | 'visit_id'
 
 /** `all` = apply selected sort inside every column; otherwise only that column is re-ordered. */
-export type VisitKanbanSortScope = 'all' | VisitKanbanStage
+export type VisitKanbanSortScope = 'all' | VisitKanbanStage | VisitKanbanStage[]
 
 export type VisitPrimaryAction = {
   label: string
@@ -467,10 +467,16 @@ export function applyKanbanColumnSort(
   sortBy: VisitKanbanSortKey,
   sortScope: VisitKanbanSortScope,
 ): Record<VisitKanbanStage, ProviderVisitListItem[]> {
+  const scopes =
+    sortScope === 'all'
+      ? 'all'
+      : Array.isArray(sortScope)
+        ? new Set(sortScope)
+        : new Set([sortScope])
   const out = emptyGroupedVisits()
   ;(Object.keys(grouped) as VisitKanbanStage[]).forEach((stage) => {
     const bucket = [...(grouped[stage] || [])]
-    if (sortScope === 'all' || sortScope === stage) {
+    if (scopes === 'all' || scopes.has(stage)) {
       bucket.sort((a, b) => compareVisitsForSort(a, b, sortBy))
     }
     out[stage] = bucket

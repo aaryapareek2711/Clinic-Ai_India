@@ -27,6 +27,7 @@ function VisitsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
   const [sortScope, setSortScope] = useState<VisitKanbanSortScope>('all')
+  const [sortScopeMenuOpen, setSortScopeMenuOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
@@ -35,6 +36,20 @@ function VisitsPage() {
     (): VisitKanbanSortKey => (sortScope === 'all' ? sortBy : 'patient_newest'),
     [sortScope, sortBy],
   )
+
+  const selectedSortStages = useMemo(() => {
+    if (sortScope === 'all') return null
+    return Array.isArray(sortScope) ? sortScope : [sortScope]
+  }, [sortScope])
+
+  const sortScopeLabel = useMemo(() => {
+    if (sortScope === 'all') return 'Sort: all columns'
+    const list = selectedSortStages ?? []
+    if (list.length === 0) return 'Sort: all columns'
+    const byId = new Map(KANBAN_STAGES.map((s) => [s.id, s.title] as const))
+    if (list.length === 1) return `Sort: ${byId.get(list[0]) ?? list[0]} only`
+    return `Sort: ${list.length} columns`
+  }, [sortScope, selectedSortStages])
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: [
       'visits',
@@ -137,7 +152,7 @@ function VisitsPage() {
 
         <div className="pt-24 px-8 pb-12">
           <div className="mb-8 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
-            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
+            <BackButton to="/dashboard" className="-ml-2 row-start-1 self-center" />
             <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">All Visits</h2>
             <p className="col-start-2 row-start-2 text-[#3e4a3d]">Manage patient visits and documentation</p>
           </div>
@@ -170,8 +185,13 @@ function VisitsPage() {
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
               <div className="relative min-w-[200px] flex-1 sm:max-w-[260px]">
-                <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
-                  sort
+                <span className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-slate-500">
+                  {/* Filter icon (bold, matches design in screenshots) */}
+                  <svg aria-hidden height="18" viewBox="0 0 24 24" width="18">
+                    <path d="M4 7h16v3H4V7Z" fill="currentColor" />
+                    <path d="M7 11h10v3H7v-3Z" fill="currentColor" />
+                    <path d="M10 15h4v3h-4v-3Z" fill="currentColor" />
+                  </svg>
                 </span>
                 <select
                   aria-label="Sort visits"
@@ -197,22 +217,85 @@ function VisitsPage() {
                 <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-[18px] text-slate-500">
                   view_column
                 </span>
-                <select
-                  aria-label="Apply sort to Kanban column"
-                  className="w-full appearance-none cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-                  value={sortScope}
-                  onChange={(e) => setSortScope(e.target.value as VisitKanbanSortScope)}
+                <button
+                  aria-label="Apply sort to Kanban columns"
+                  className="w-full cursor-pointer rounded-lg border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-left text-sm font-medium text-[#171d16] shadow-sm hover:bg-slate-50 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  onClick={() => setSortScopeMenuOpen((v) => !v)}
+                  type="button"
                 >
-                  <option value="all">Sort: all columns</option>
-                  {KANBAN_STAGES.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      Sort: {col.title} only
-                    </option>
-                  ))}
-                </select>
+                  {sortScopeLabel}
+                </button>
                 <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
                   expand_more
                 </span>
+                {sortScopeMenuOpen && (
+                  <>
+                    <button
+                      aria-label="Close sort scope menu"
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={() => setSortScopeMenuOpen(false)}
+                      type="button"
+                    />
+                    <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[min(22rem,90vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <p className="text-sm font-semibold text-[#171d16]">Apply sort to</p>
+                        <p className="mt-0.5 text-xs text-slate-500">Pick one or more columns.</p>
+                      </div>
+                      <div className="max-h-72 overflow-auto px-2 py-2">
+                        <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
+                          <input
+                            checked={sortScope === 'all'}
+                            className="h-4 w-4"
+                              onChange={() => setSortScope('all')}
+                            type="checkbox"
+                          />
+                          <span className="text-sm font-medium text-[#171d16]">All columns</span>
+                        </label>
+                        <div className="my-2 h-px bg-slate-100" />
+                        {KANBAN_STAGES.map((col) => {
+                          const selected = (selectedSortStages ?? []).includes(col.id)
+                          return (
+                            <label
+                              className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50"
+                              key={col.id}
+                            >
+                              <input
+                                checked={sortScope === 'all' ? false : selected}
+                                className="h-4 w-4"
+                                onChange={() => {
+                                  setSortScope((prev) => {
+                                    if (prev === 'all') return [col.id]
+                                    const arr = Array.isArray(prev) ? prev : [prev]
+                                    const next = arr.includes(col.id) ? arr.filter((x) => x !== col.id) : [...arr, col.id]
+                                    return next.length === 0 ? 'all' : next
+                                  })
+                                }}
+                                type="checkbox"
+                              />
+                              <span className="text-sm text-[#171d16]">{col.title}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">
+                        <button
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-[#171d16] hover:bg-slate-50"
+                          onClick={() => setSortScope('all')}
+                          type="button"
+                        >
+                          Reset
+                        </button>
+                        <button
+                          className="rounded-lg bg-[#2563eb] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+                          onClick={() => setSortScopeMenuOpen(false)}
+                          type="button"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
