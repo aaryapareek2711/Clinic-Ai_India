@@ -4,6 +4,7 @@ from __future__ import annotations
 from src.application.utils.transcript_dialogue import (
     align_segments_with_structured_dialogue,
     dedupe_chunk_overlap_segments,
+    infer_alternating_two_speaker_dialogue,
     segment_gap_audit,
     structured_dialogue_segment_coverage_ratio,
 )
@@ -113,3 +114,24 @@ def test_structured_dialogue_coverage_ratio_flags_sparse_dialogue() -> None:
     ]
     assert structured_dialogue_segment_coverage_ratio(segments, sparse) < 0.75
     assert structured_dialogue_segment_coverage_ratio(segments, rich) >= 0.75
+
+
+def test_infer_alternating_two_speaker_dialogue_from_unknown_segments() -> None:
+    segs = [
+        {"text": "Namaskara doctor, jvara ide."},
+        {"text": "Yavaga inda symptoms ide?"},
+        {"text": "Mooru dina inda."},
+        {"text": "Sari, throat nodona."},
+    ]
+    out = infer_alternating_two_speaker_dialogue(segs)
+    assert out == [
+        {"Doctor": "Namaskara doctor, jvara ide."},
+        {"Patient": "Yavaga inda symptoms ide?"},
+        {"Doctor": "Mooru dina inda."},
+        {"Patient": "Sari, throat nodona."},
+    ]
+
+
+def test_infer_alternating_two_speaker_dialogue_skips_single_segment() -> None:
+    segs = [{"text": "Single utterance only"}]
+    assert infer_alternating_two_speaker_dialogue(segs) == []

@@ -34,6 +34,30 @@ def segments_to_structured_dialogue(segments: list[dict[str, Any]]) -> list[dict
     return out
 
 
+def infer_alternating_two_speaker_dialogue(segments: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """
+    Fallback dialogue shaping when STT has no usable diarization labels.
+
+    Produces deterministic Doctor/Patient alternating turns from chronological segment text.
+    Single-segment transcripts remain unlabeled to avoid fabricating a role.
+    """
+    non_empty = [str(seg.get("text") or "").strip() for seg in segments if str(seg.get("text") or "").strip()]
+    if len(non_empty) <= 1:
+        return []
+
+    out: list[dict[str, str]] = []
+    role_cycle = ("Doctor", "Patient")
+    role_idx = 0
+    for text in non_empty:
+        role = role_cycle[role_idx % 2]
+        if out and role in out[-1]:
+            out[-1][role] = f"{out[-1][role]} {text}".strip()
+        else:
+            out.append({role: text})
+        role_idx += 1
+    return out
+
+
 def _token_set(text: str) -> set[str]:
     return set(_TOKEN_RE.findall(text.lower()))
 

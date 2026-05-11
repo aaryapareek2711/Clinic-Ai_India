@@ -26,6 +26,7 @@ from src.application.utils.transcript_dialogue import (
     align_segments_with_structured_dialogue,
     audio_duration_from_segments_ms,
     dedupe_chunk_overlap_segments,
+    infer_alternating_two_speaker_dialogue,
     segment_gap_audit,
     segments_to_structured_dialogue,
     structured_dialogue_segment_coverage_ratio,
@@ -357,6 +358,23 @@ class TranscriptionWorker:
         baseline = segments_to_structured_dialogue(normalized)
         cleaned = scrub_dialogue_turns(baseline)
         coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
+        has_clinical_roles = any(
+            isinstance(turn, dict)
+            and any(role in turn for role in ("Doctor", "Patient", "Family Member"))
+            for turn in cleaned
+        )
+        if not has_clinical_roles:
+            fallback = infer_alternating_two_speaker_dialogue(normalized)
+            if fallback:
+                cleaned = scrub_dialogue_turns(fallback)
+                coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
+                logger.info(
+                    "structured_dialogue_fallback_alternating job_id=%s turns=%s segments=%s coverage=%.3f",
+                    job.get("job_id"),
+                    len(cleaned),
+                    len(normalized),
+                    coverage,
+                )
         logger.info(
             "structured_dialogue_local job_id=%s turns=%s segments=%s coverage=%.3f",
             job.get("job_id"),

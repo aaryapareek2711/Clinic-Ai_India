@@ -168,11 +168,22 @@ class GenerateIndiaClinicalNoteUseCase:
         if "plan" in selected and not str(out.get("plan") or "").strip():
             if _first_text(tpl.get("plan")):
                 out["plan"] = _first_text(tpl.get("plan"))
-        if "doctor_notes" in selected and not str(out.get("doctor_notes") or "").strip():
-            out["doctor_notes"] = _first_text(tpl.get("doctor_notes")) if _first_text(tpl.get("doctor_notes")) else None
+        if "doctor_notes" in selected:
+            # If template includes doctor notes, treat it as authoritative starter text.
+            # Fallback to generated note text only when template doctor_notes is empty.
+            template_note = _first_text(tpl.get("doctor_notes"))
+            if template_note:
+                out["doctor_notes"] = template_note
+            elif not str(out.get("doctor_notes") or "").strip():
+                out["doctor_notes"] = None
 
-        if "rx" in selected and (not isinstance(out.get("rx"), list) or len(out.get("rx") or []) == 0):
-            out["rx"] = list(tpl.get("rx") or [])
+        if "rx" in selected:
+            # Prefer explicit template medications when provided.
+            template_rx = list(tpl.get("rx") or [])
+            if len(template_rx) > 0:
+                out["rx"] = template_rx
+            elif not isinstance(out.get("rx"), list):
+                out["rx"] = []
         if "investigations" in selected and (not isinstance(out.get("investigations"), list) or len(out.get("investigations") or []) == 0):
             out["investigations"] = list(tpl.get("investigations") or [])
         if "red_flags" in selected and (not isinstance(out.get("red_flags"), list) or len(out.get("red_flags") or []) == 0):
@@ -211,13 +222,22 @@ class GenerateIndiaClinicalNoteUseCase:
                     return s
             return None
 
-        for key in ("assessment", "plan", "doctor_notes", "chief_complaint"):
+        for key in ("assessment", "plan", "chief_complaint"):
             if not str(out.get(key) or "").strip():
                 if _first_text(tpl.get(key)):
                     out[key] = _first_text(tpl.get(key))
 
-        if not isinstance(out.get("rx"), list) or len(out.get("rx") or []) == 0:
-            out["rx"] = list(tpl.get("rx") or [])
+        template_note = _first_text(tpl.get("doctor_notes"))
+        if template_note:
+            out["doctor_notes"] = template_note
+        elif not str(out.get("doctor_notes") or "").strip():
+            out["doctor_notes"] = None
+
+        template_rx = list(tpl.get("rx") or [])
+        if len(template_rx) > 0:
+            out["rx"] = template_rx
+        elif not isinstance(out.get("rx"), list):
+            out["rx"] = []
         if not isinstance(out.get("investigations"), list) or len(out.get("investigations") or []) == 0:
             out["investigations"] = list(tpl.get("investigations") or [])
         if not isinstance(out.get("red_flags"), list) or len(out.get("red_flags") or []) == 0:
