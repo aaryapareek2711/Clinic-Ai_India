@@ -87,6 +87,25 @@ Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants d
 - **Docker**: `deployments/docker/Dockerfile.api` and `Dockerfile.worker` install `ffmpeg`; rebuild and redeploy the image.
 - **Native Python on a host (e.g. Render without Docker)**: install `ffmpeg` in the environment (for example add a build step that installs it, or use a base image that includes it). If `ffmpeg` is missing, the worker falls back to the original bytes and MP3 failures are more likely.
 
+## Transcription language + diarization behavior
+- Supported explicit language hints map to Azure locales:
+  - `english`/`en` -> `en-IN` (or pass `en-US` explicitly)
+  - `hindi`/`hi` -> `hi-IN`
+  - `kannada`/`kn` -> `kn-IN`
+  - `bengali`/`bn` -> `bn-IN`
+  - `tamil`/`ta` -> `ta-IN`
+  - `telugu`/`te` -> `te-IN`
+  - `marathi`/`mr` -> `mr-IN`
+  - `gujarati`/`gu` -> `gu-IN`
+  - `malayalam`/`ml` -> `ml-IN`
+- Hinglish (`hinglish`, `hi-en`, `en-hi`) uses a two-locale candidate set (`hi-IN`, `en-IN`) and preserves recognized mixed-script output.
+- If language is empty/auto, the worker tries multilingual candidates (`en-IN`, `hi-IN`, `kn-IN`, `bn-IN`, `ta-IN`, `te-IN`, `mr-IN`, `gu-IN`, `ml-IN`) and keeps provider text in original recognized script.
+- The backend does not call translation APIs in transcription flow; transcript text is stored as recognized.
+- Azure short-audio REST often returns no reliable speaker IDs. In that case:
+  - transcript still succeeds (`partial_success`)
+  - speakers remain `Unknown` / `Speaker 1` / `Speaker 2` (no forced Doctor/Patient labeling)
+  - metadata includes `diarization_status=not_supported_or_failed` with warnings.
+
 ## Endpoint Module Map
 - Health: `src/api/routers/health.py`
 - Patients: `src/api/routers/patients.py`

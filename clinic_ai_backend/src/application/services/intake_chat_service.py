@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-import unicodedata
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
@@ -51,7 +50,7 @@ OPT_OUT_CONFIRM_MESSAGES = {
     "te": "మీరు ఇప్పుడు intake ఆపాలనుకుంటున్నారా? ఆపడానికి Yes, కొనసాగడానికి No పంపండి.",
     "bn": "আপনি কি এখন intake বন্ধ করতে চান? বন্ধ করতে Yes, চালাতে No লিখুন।",
     "mr": "तुम्हाला आता intake थांबवायचा आहे का? थांबवण्यासाठी Yes आणि सुरू ठेवण्यासाठी No लिहा.",
-    "kn": "ನೀವು ಈಗ intake ನಿಲ್ಲಿಸಬೇಕೆ? ನಿಲ್ಲಿಸಲು ಹೌದು ಅಥವಾ Yes; ಮುಂದುವರಿಸಲು ಇಲ್ಲ ಅಥವಾ No ಎಂದು ಉತ್ತರಿಸಿ.",
+    "kn": "ನೀವು ಈಗ intake ನಿಲ್ಲಿಸಬೇಕೆ? ನಿಲ್ಲಿಸಲು Yes ಮತ್ತು ಮುಂದುವರಿಸಲು No ಎಂದು ಉತ್ತರಿಸಿ.",
 }
 
 OPT_OUT_CONTINUE_MESSAGES = {
@@ -73,80 +72,8 @@ OPT_OUT_RECONFIRM_MESSAGES = {
     "te": "ఆపడానికి Yes లేదా కొనసాగడానికి No పంపండి.",
     "bn": "বন্ধ করতে Yes অথবা চালাতে No লিখুন।",
     "mr": "थांबवण्यासाठी Yes किंवा सुरू ठेवण्यासाठी No लिहा.",
-    "kn": "ನಿಲ್ಲಿಸಲು ಹೌದು ಅಥವಾ Yes; ಮುಂದುವರಿಸಲು ಇಲ್ಲ ಅಥವಾ No ಎಂದು ಉತ್ತರಿಸಿ.",
+    "kn": "ನಿಲ್ಲಿಸಲು Yes ಅಥವಾ ಮುಂದುವರಿಸಲು No ಎಂದು ಉತ್ತರಿಸಿ.",
 }
-
-# After _normalize_for_similarity (letters, Brahmic combining marks, digits; ASCII case-folded).
-OPT_OUT_CONFIRM_YES_NATIVE_EXACT = frozenset(
-    {
-        # Kannada
-        "ಹೌದು",
-        "ಸರಿ",
-        "ಆಯಿತು",
-        "ಸರಿಆಯಿತು",
-        # Tamil
-        "ஆம்",
-        "சரி",
-        "ஆமாம்",
-        "சரிஆமாம்",
-        # Telugu
-        "అవును",
-        "సరే",
-        # Devanagari (Hi/Mr and shared)
-        "हाँ",
-        "हां",
-        "जी",
-        "ठीक",
-        "ठीकहै",
-        "हो",
-        "होय",
-        "बरं",
-        # Bengali
-        "হ্যাঁ",
-        "হাঁ",
-        "জি",
-        "ঠিক",
-        "ঠিকআছে",
-    }
-)
-
-OPT_OUT_CONFIRM_YES_NATIVE_SUBSTR = (
-    "ಹೌದು",
-    "ಆಯಿತು",
-    "ஆம்",
-    "ஆமாம்",
-    "అవును",
-    "हाँ",
-    "हां",
-    "জি",
-    "হ্যাঁ",
-)
-
-OPT_OUT_CONFIRM_NO_NATIVE_EXACT = frozenset(
-    {
-        "ಇಲ್ಲ",
-        "இல்லை",
-        "కాదు",
-        "వద్దు",
-        "లేదు",
-        "नहीं",
-        "नही",
-        "नाही",
-        "না",
-        "ના",
-    }
-)
-
-OPT_OUT_CONFIRM_NO_NATIVE_SUBSTR = (
-    "ಇಲ್ಲ",
-    "இல்லை",
-    "కాదు",
-    "వద్దు",
-    "नहीं",
-    "नाही",
-    "না",
-)
-
 
 CLOSING_MESSAGES = {
     "en": (
@@ -1462,21 +1389,8 @@ class IntakeChatService:
             "rokdo",
             "rukna",
             "rukjao",
-            "sari",
-            "haanji",
-            "theekhai",
-            "thikhai",
-            "houdu",
-            "houdhu",
-            "avunu",
         }
-        if not normalized:
-            return False
-        if normalized in yes_tokens or normalized.startswith("yes"):
-            return True
-        if normalized in OPT_OUT_CONFIRM_YES_NATIVE_EXACT:
-            return True
-        return any(fragment in normalized for fragment in OPT_OUT_CONFIRM_YES_NATIVE_SUBSTR)
+        return normalized in yes_tokens or normalized.startswith("yes")
 
     @staticmethod
     def _is_negative_confirmation(normalized: str) -> bool:
@@ -1493,18 +1407,8 @@ class IntakeChatService:
             "chalurakho",
             "jaari",
             "carryon",
-            "illa",
-            "illai",
-            "kadu",
-            "vaddu",
         }
-        if not normalized:
-            return False
-        if normalized in no_tokens or normalized.startswith("no"):
-            return True
-        if normalized in OPT_OUT_CONFIRM_NO_NATIVE_EXACT:
-            return True
-        return any(fragment in normalized for fragment in OPT_OUT_CONFIRM_NO_NATIVE_SUBSTR)
+        return normalized in no_tokens or normalized.startswith("no")
 
     @staticmethod
     def _closing_message(language: str, patient_name: str | None) -> str:
@@ -1525,13 +1429,7 @@ class IntakeChatService:
 
     @staticmethod
     def _normalize_for_similarity(text: str) -> str:
-        """Letters, combining marks (required for Brahmic scripts), and numbers only — lowercase/casefold."""
-        parts: list[str] = []
-        for ch in str(text or ""):
-            cat = unicodedata.category(ch)
-            if cat.startswith(("L", "M", "N")):
-                parts.append(ch.casefold())
-        return "".join(parts)
+        return "".join(ch.lower() for ch in str(text or "") if ch.isalnum())
 
     @staticmethod
     def _parse_datetime(value: str | None) -> datetime | None:

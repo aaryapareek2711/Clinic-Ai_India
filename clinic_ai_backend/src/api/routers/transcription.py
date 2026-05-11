@@ -245,6 +245,7 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
         status_info["duration"] = session.get("audio_duration_seconds")
         status_info["audio_duration_seconds"] = session.get("audio_duration_seconds")
         status_info["completed_at"] = _iso_utc(session.get("completed_at"))
+        status_info["metadata"] = session.get("metadata")
         status_info["message"] = "Transcription completed successfully"
     elif transcription_status in ("processing", "stale_processing"):
         status_info["audio_duration_seconds"] = session.get("audio_duration_seconds")
@@ -296,6 +297,7 @@ async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Re
         audio_duration_seconds=session.get("audio_duration_seconds"),
         word_count=session.get("word_count"),
         structured_dialogue=structured,
+        metadata=session.get("metadata"),
     )
 
 

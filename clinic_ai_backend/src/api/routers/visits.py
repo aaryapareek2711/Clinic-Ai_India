@@ -466,7 +466,6 @@ def list_provider_visits(
                 "intake_session.status": 1,
                 "intake_session.question_answers": 1,
                 "intake_session.updated_at": 1,
-                "transcription_session.transcription_status": 1,
                 "created_at": 1,
                 "updated_at": 1,
             },
@@ -508,10 +507,6 @@ def list_provider_visits(
         except Exception:
             duration_minutes = None
 
-        transcription_status = str(
-            ((visit.get("transcription_session") or {}).get("transcription_status")) or ""
-        ).strip().lower() or None
-
         out.append(
             {
                 **{
@@ -538,7 +533,6 @@ def list_provider_visits(
                     "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
                     "created_at": visit.get("created_at") or "",
                     "updated_at": visit.get("updated_at") or "",
-                    "transcription_status": transcription_status,
                 },
                 **{
                     "previous_workflow_stage": visit.get(
@@ -568,12 +562,7 @@ def list_provider_visits_paged(
     page_size: int = Query(default=20, ge=1, le=200),
     status_filter: str | None = Query(default=None, description="Filter by visit status"),
     search: str | None = Query(default=None, description="Search by patient name/mobile/id/visit id"),
-    sort: str = Query(
-        default="patient_newest",
-        description=(
-            "patient_newest|patient_oldest|name_az|name_za|visit_latest|visit_oldest|time_newest|time_oldest|visit_id"
-        ),
-    ),
+    sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|time_newest|time_oldest|name_az|name_za|visit_id"),
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
@@ -617,6 +606,14 @@ def list_provider_visits_paged(
             }
         ]
     total = int(db.visits.count_documents(query))
+    skip = (page - 1) * page_size
+    sort_spec: list[tuple[str, int]]
+    if sort == "time_oldest":
+        sort_spec = [("updated_at", 1), ("created_at", 1)]
+    elif sort == "visit_id":
+        sort_spec = [("visit_id", 1), ("id", 1)]
+    else:
+        sort_spec = [("updated_at", -1), ("created_at", -1)]
     records = list(
         db.visits.find(
             query,
@@ -637,12 +634,13 @@ def list_provider_visits_paged(
                 "intake_session.status": 1,
                 "intake_session.question_answers": 1,
                 "intake_session.updated_at": 1,
-                "transcription_session.transcription_status": 1,
                 "created_at": 1,
                 "updated_at": 1,
             },
         )
-        .sort([("updated_at", -1), ("created_at", -1)])
+        .sort(sort_spec)
+        .skip(skip)
+        .limit(page_size)
     )
     patient_ids = sorted({str(visit.get("patient_id") or "").strip() for visit in records if str(visit.get("patient_id") or "").strip()})
     patient_map: dict[str, dict] = {}
@@ -654,45 +652,6 @@ def list_provider_visits_paged(
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
-    patient_latest_visit_map: dict[str, datetime] = {}
-    if patient_ids:
-        for row in db.visits.aggregate(
-            [
-                {"$match": {"patient_id": {"$in": patient_ids}}},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "patient_id": 1,
-                        "sort_at": {"$ifNull": ["$scheduled_start", "$created_at"]},
-                    }
-                },
-                {"$sort": {"sort_at": -1}},
-                {
-                    "$group": {
-                        "_id": "$patient_id",
-                        "patient_id": {"$first": "$patient_id"},
-                        "latest_sort_at": {"$first": "$sort_at"},
-                    }
-                },
-            ]
-        ):
-            pid = str(row.get("patient_id") or "").strip()
-            latest_sort_at = row.get("latest_sort_at")
-            if not pid or latest_sort_at is None:
-                continue
-            if isinstance(latest_sort_at, datetime):
-                patient_latest_visit_map[pid] = (
-                    latest_sort_at if latest_sort_at.tzinfo else latest_sort_at.replace(tzinfo=timezone.utc)
-                )
-                continue
-            text = str(latest_sort_at).strip()
-            if not text:
-                continue
-            try:
-                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-                patient_latest_visit_map[pid] = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
     items: list[dict] = []
     for visit in records:
         resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
@@ -714,11 +673,6 @@ def list_provider_visits_paged(
                 duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
         except Exception:
             duration_minutes = None
-
-        transcription_status = str(
-            ((visit.get("transcription_session") or {}).get("transcription_status")) or ""
-        ).strip().lower() or None
-
         items.append(
             {
                 "id": resolved_visit_id,
@@ -743,7 +697,6 @@ def list_provider_visits_paged(
                 "intake_last_updated_at": (visit.get("intake_session") or {}).get("updated_at") or None,
                 "created_at": visit.get("created_at") or "",
                 "updated_at": visit.get("updated_at") or "",
-                "transcription_status": transcription_status,
                 "previous_workflow_stage": visit.get(
                     "previous_workflow_stage",
                     _workflow_stage_triplet_for_status(visit.get("status") or "open")["previous_workflow_stage"],
@@ -756,84 +709,17 @@ def list_provider_visits_paged(
                     "next_workflow_stage",
                     _workflow_stage_triplet_for_status(visit.get("status") or "open")["next_workflow_stage"],
                 ),
-                "patient_last_visit_at": _serialize_datetime(patient_latest_visit_map.get(internal_patient_id)) or "",
             }
         )
-    def _safe_dt(value: object) -> datetime | None:
-        if value is None:
-            return None
-        if isinstance(value, datetime):
-            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-        text = str(value).strip()
-        if not text:
-            return None
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-        except ValueError:
-            return None
-
-    def _patient_created_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("patient_created_at"))
-
-    def _patient_last_visit_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("patient_last_visit_at"))
-
-    def _appointment_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("scheduled_start")) or _safe_dt(row.get("created_at"))
-
     if sort == "patient_newest":
-        items.sort(
-            key=lambda row: (
-                _patient_created_dt(row) is not None,
-                _patient_created_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""), reverse=True)
     elif sort == "patient_oldest":
-        items.sort(
-            key=lambda row: (
-                _patient_created_dt(row) is None,
-                _patient_created_dt(row) or datetime.max.replace(tzinfo=timezone.utc),
-            )
-        )
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""))
     elif sort == "name_az":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
     elif sort == "name_za":
         items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
-    elif sort == "visit_oldest":
-        items.sort(
-            key=lambda row: (
-                _patient_last_visit_dt(row) is None,
-                _patient_last_visit_dt(row) or datetime.max.replace(tzinfo=timezone.utc),
-            )
-        )
-    elif sort == "visit_latest":
-        items.sort(
-            key=lambda row: (
-                _patient_last_visit_dt(row) is not None,
-                _patient_last_visit_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
-    elif sort == "time_oldest":
-        items.sort(
-            key=lambda row: (_appointment_dt(row) is None, _appointment_dt(row) or datetime.max.replace(tzinfo=timezone.utc))
-        )
-    elif sort == "time_newest":
-        items.sort(
-            key=lambda row: (
-                _appointment_dt(row) is not None,
-                _appointment_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
-    elif sort == "visit_id":
-        items.sort(key=lambda row: str(row.get("visit_id") or row.get("id") or "").lower())
-
-    skip = (page - 1) * page_size
-    paged_items = items[skip : skip + page_size]
-    return {"items": paged_items, "total": total, "page": page, "page_size": page_size}
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/provider/{provider_id}/careprep")
@@ -843,12 +729,6 @@ def list_provider_careprep(
     page_size: int = Query(default=50, ge=1, le=200),
     filter: str = Query(default="all", description="all|ready|in_progress"),
     search: str | None = Query(default=None),
-    sort: str = Query(
-        default="patient_newest",
-        description=(
-            "patient_newest|patient_oldest|name_az|name_za|visit_latest|visit_oldest|time_newest|time_oldest|visit_id"
-        ),
-    ),
 ) -> dict:
     """
     CarePrep read-model: return only fields needed by CarePrep UI.
@@ -883,6 +763,7 @@ def list_provider_careprep(
                 ]
             }
         ]
+    skip = (page - 1) * page_size
     records = list(
         db.visits.find(
             query,
@@ -901,6 +782,8 @@ def list_provider_careprep(
             },
         )
         .sort([("updated_at", -1), ("created_at", -1)])
+        .skip(skip)
+        .limit(page_size)
     )
     patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
     visit_ids = sorted({str(v.get("visit_id") or v.get("id") or "").strip() for v in records if str(v.get("visit_id") or v.get("id") or "").strip()})
@@ -913,45 +796,6 @@ def list_provider_careprep(
             pid = str(patient.get("patient_id") or "").strip()
             if pid:
                 patient_map[pid] = patient
-    patient_latest_visit_map: dict[str, datetime] = {}
-    if patient_ids:
-        for row in db.visits.aggregate(
-            [
-                {"$match": {"patient_id": {"$in": patient_ids}}},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "patient_id": 1,
-                        "sort_at": {"$ifNull": ["$scheduled_start", "$created_at"]},
-                    }
-                },
-                {"$sort": {"sort_at": -1}},
-                {
-                    "$group": {
-                        "_id": "$patient_id",
-                        "patient_id": {"$first": "$patient_id"},
-                        "latest_sort_at": {"$first": "$sort_at"},
-                    }
-                },
-            ]
-        ):
-            pid = str(row.get("patient_id") or "").strip()
-            latest_sort_at = row.get("latest_sort_at")
-            if not pid or latest_sort_at is None:
-                continue
-            if isinstance(latest_sort_at, datetime):
-                patient_latest_visit_map[pid] = (
-                    latest_sort_at if latest_sort_at.tzinfo else latest_sort_at.replace(tzinfo=timezone.utc)
-                )
-                continue
-            text = str(latest_sort_at).strip()
-            if not text:
-                continue
-            try:
-                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-                patient_latest_visit_map[pid] = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
     intake_by_visit: dict[str, dict] = {}
     if visit_ids:
         for session in db.intake_sessions.find(
@@ -1004,90 +848,14 @@ def list_provider_careprep(
                 "patient_name": str(patient.get("name") or "Patient").strip(),
                 "mobile_number": str(patient.get("phone_number") or "").strip(),
                 "patient_created_at": _serialize_datetime(patient.get("created_at")) or "",
-                "patient_last_visit_at": _serialize_datetime(patient_latest_visit_map.get(pid)) or "",
-                "scheduled_start": v.get("scheduled_start"),
                 "intake_status": intake_status,
                 "intake_question_count": qa_len,
                 "touched_at": touched_at,
                 "status_kind": status_kind,
             }
         )
-    def _safe_dt(value: object) -> datetime | None:
-        if value is None:
-            return None
-        if isinstance(value, datetime):
-            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-        text = str(value).strip()
-        if not text:
-            return None
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-        except ValueError:
-            return None
-
-    def _patient_created_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("patient_created_at"))
-
-    def _patient_last_visit_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("patient_last_visit_at"))
-
-    def _appointment_dt(row: dict) -> datetime | None:
-        return _safe_dt(row.get("scheduled_start")) or _safe_dt(row.get("touched_at"))
-
-    if sort == "patient_newest":
-        items.sort(
-            key=lambda row: (
-                _patient_created_dt(row) is not None,
-                _patient_created_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
-    elif sort == "patient_oldest":
-        items.sort(
-            key=lambda row: (
-                _patient_created_dt(row) is None,
-                _patient_created_dt(row) or datetime.max.replace(tzinfo=timezone.utc),
-            )
-        )
-    elif sort == "name_az":
-        items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
-    elif sort == "name_za":
-        items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
-    elif sort == "visit_oldest":
-        items.sort(
-            key=lambda row: (
-                _patient_last_visit_dt(row) is None,
-                _patient_last_visit_dt(row) or datetime.max.replace(tzinfo=timezone.utc),
-            )
-        )
-    elif sort == "visit_latest":
-        items.sort(
-            key=lambda row: (
-                _patient_last_visit_dt(row) is not None,
-                _patient_last_visit_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
-    elif sort == "time_oldest":
-        items.sort(
-            key=lambda row: (_appointment_dt(row) is None, _appointment_dt(row) or datetime.max.replace(tzinfo=timezone.utc))
-        )
-    elif sort == "time_newest":
-        items.sort(
-            key=lambda row: (
-                _appointment_dt(row) is not None,
-                _appointment_dt(row) or datetime.min.replace(tzinfo=timezone.utc),
-            ),
-            reverse=True,
-        )
-    elif sort == "visit_id":
-        items.sort(key=lambda row: str(row.get("visit_id") or "").lower())
-
     total = len(items) if s or filter != "all" else int(db.visits.count_documents(query))
-    skip = (page - 1) * page_size
-    paged_items = items[skip : skip + page_size]
-    return {"items": paged_items, "total": total, "page": page, "page_size": page_size}
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/patient/{patient_id}")

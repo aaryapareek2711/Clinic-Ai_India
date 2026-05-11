@@ -90,6 +90,7 @@ class VisitTranscriptionRepository:
         structured_dialogue: list[dict[str, str]],
         word_count: int,
         audio_duration_seconds: float | None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         now = _utc_now()
         self._sync_visit_transcription_projection(
@@ -100,6 +101,7 @@ class VisitTranscriptionRepository:
                 "structured_dialogue": structured_dialogue,
                 "word_count": word_count,
                 "audio_duration_seconds": audio_duration_seconds,
+                "metadata": metadata or {},
                 "completed_at": now,
                 "error_message": None,
             },

@@ -572,18 +572,6 @@ def test_inbound_reply_rebinds_session_to_number() -> None:
     assert fake_db.intake_sessions.record["to_number"] == "919111111111"
 
 
-def test_opt_out_confirmation_accepts_kannada_and_normalized_aliases() -> None:
-    service = _build_service()
-
-    assert IntakeChatService._is_affirmative_confirmation(service._normalize_for_similarity("ಹೌದು"))
-    assert IntakeChatService._is_affirmative_confirmation(service._normalize_for_similarity("houdu"))
-    assert IntakeChatService._is_affirmative_confirmation(service._normalize_for_similarity("ಸರಿ, ಆಯಿತು"))
-
-    assert IntakeChatService._is_negative_confirmation(service._normalize_for_similarity("ಇಲ್ಲ"))
-    assert IntakeChatService._is_negative_confirmation(service._normalize_for_similarity("illa"))
-    assert not IntakeChatService._is_affirmative_confirmation(service._normalize_for_similarity(""))
-
-
 def test_stop_message_uses_rebound_session_destination() -> None:
     service = IntakeChatService.__new__(IntakeChatService)
     fake_db = type("FakeDB", (), {})()

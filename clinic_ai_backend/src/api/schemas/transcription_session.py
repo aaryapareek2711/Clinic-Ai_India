@@ -18,3 +18,4 @@ class TranscriptionSessionResponse(BaseModel):
     audio_duration_seconds: float | None = None
     word_count: int | None = None
     structured_dialogue: list[dict[str, Any]] | None = None
+    metadata: dict[str, Any] | None = None

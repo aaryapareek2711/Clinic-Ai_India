@@ -18,12 +18,12 @@ def segments_to_structured_dialogue(segments: list[dict[str, Any]]) -> list[dict
         "patient": "Patient",
         "attendant": "Family Member",
         "family member": "Family Member",
-        "unknown": "Patient",
+        "unknown": "Unknown",
     }
     out: list[dict[str, str]] = []
     for seg in segments:
         raw_label = str(seg.get("speaker_label") or "unknown").lower()
-        role = label_to_role.get(raw_label, "Patient")
+        role = label_to_role.get(raw_label, "Unknown")
         text = str(seg.get("text") or "").strip()
         if not text:
             continue

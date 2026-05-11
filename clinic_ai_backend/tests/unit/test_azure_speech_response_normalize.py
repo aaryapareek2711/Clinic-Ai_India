@@ -25,12 +25,12 @@ def test_normalize_azure_response_yields_single_unknown_speaker_segment() -> Non
     assert "throat" in segs[0]["text"].lower()
 
 
-def test_segments_to_structured_collapses_unknown_to_patient_turn() -> None:
-    """When all segments are unknown, bundle-style merge is one Patient blob — why we OpenAI-structure visits."""
+def test_segments_to_structured_keeps_unknown_as_unknown_turn() -> None:
+    """Unknown diarization must stay unknown; do not force role labels without evidence."""
     from src.application.utils.transcript_dialogue import segments_to_structured_dialogue
 
     raw = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     out = TranscriptionWorker._normalize_azure_response(raw, "en-IN")
     structured = segments_to_structured_dialogue(out["segments"])
     assert len(structured) == 1
-    assert "Patient" in structured[0]
+    assert "Unknown" in structured[0]

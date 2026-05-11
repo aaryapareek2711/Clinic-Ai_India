@@ -38,6 +38,48 @@ logger = logging.getLogger(__name__)
 
 _BACKGROUND_TASKS: list[asyncio.Task] = []
 _STOP_EVENT: asyncio.Event | None = None
+_AUTO_DETECT_LOCALES = [
+    "en-IN",
+    "hi-IN",
+    "kn-IN",
+    "bn-IN",
+    "ta-IN",
+    "te-IN",
+    "mr-IN",
+    "gu-IN",
+    "ml-IN",
+]
+_LANGUAGE_NAME_TO_LOCALE = {
+    "en": "en-IN",
+    "english": "en-IN",
+    "en-in": "en-IN",
+    "en-us": "en-US",
+    "hi": "hi-IN",
+    "hindi": "hi-IN",
+    "hi-in": "hi-IN",
+    "kn": "kn-IN",
+    "kannada": "kn-IN",
+    "kn-in": "kn-IN",
+    "bn": "bn-IN",
+    "bengali": "bn-IN",
+    "bangla": "bn-IN",
+    "bn-in": "bn-IN",
+    "ta": "ta-IN",
+    "tamil": "ta-IN",
+    "ta-in": "ta-IN",
+    "te": "te-IN",
+    "telugu": "te-IN",
+    "te-in": "te-IN",
+    "mr": "mr-IN",
+    "marathi": "mr-IN",
+    "mr-in": "mr-IN",
+    "gu": "gu-IN",
+    "gujarati": "gu-IN",
+    "gu-in": "gu-IN",
+    "ml": "ml-IN",
+    "malayalam": "ml-IN",
+    "ml-in": "ml-IN",
+}
 
 
 def _is_walk_in_visit_type(value: object) -> bool:
@@ -131,15 +173,47 @@ class TranscriptionWorker:
 
             structured = self._visit_structured_dialogue(job, full_text=full_text, normalized=normalized)
             segments_to_store = align_segments_with_structured_dialogue(normalized, structured)
+            diarized = sum(1 for seg in segments_to_store if str(seg.get("speaker_label")) not in {"Unknown", ""})
+            diarization_status = "success" if diarized > 0 else "not_supported_or_failed"
+            transcription_status = "success" if diarization_status == "success" else "partial_success"
+            warnings: list[str] = []
+            if diarization_status != "success":
+                warnings.append("Diarization not available or failed; speaker labels defaulted.")
+            language_requested = self._normalize_language_request(str(job.get("language_mix", "") or ""))
+            language_detected = str(
+                speech_response.get("language_detected") or (segments_to_store[0].get("language") if segments_to_store else "unknown")
+            )
+            enriched_segments = [
+                {
+                    "speaker": str(seg.get("speaker_label") or "Unknown"),
+                    "role": (
+                        str(seg.get("speaker_label"))
+                        if str(seg.get("speaker_label")) in {"Doctor", "Patient", "Family Member"}
+                        else None
+                    ),
+                    "start_time": int(seg.get("start_ms", 0)),
+                    "end_time": int(seg.get("end_ms", 0)),
+                    "language": str(seg.get("language") or language_detected or "unknown"),
+                    "text": str(seg.get("text") or ""),
+                }
+                for seg in segments_to_store
+            ]
             self.repo.save_result(
                 {
                     "job_id": job["job_id"],
                     "patient_id": job["patient_id"],
                     "visit_id": job.get("visit_id"),
-                    "language_detected": speech_response.get("language_detected", "unknown"),
+                    "transcription_status": transcription_status,
+                    "language_requested": language_requested or "auto",
+                    "language_detected": language_detected,
+                    "transcript_script": "native",
+                    "diarization_status": diarization_status,
                     "overall_confidence": round(avg_confidence, 4),
                     "requires_manual_review": requires_manual_review,
                     "full_transcript_text": full_text,
+                    "raw_provider": "azure_speech",
+                    "warnings": warnings,
+                    "segments_dialogue": enriched_segments,
                     "segments": segments_to_store,
                 }
             )
@@ -148,6 +222,16 @@ class TranscriptionWorker:
                 full_text=full_text,
                 normalized=segments_to_store,
                 structured_dialogue=structured,
+                metadata={
+                    "transcription_status": transcription_status,
+                    "language_requested": language_requested or "auto",
+                    "language_detected": language_detected,
+                    "transcript_script": "native",
+                    "diarization_status": diarization_status,
+                    "raw_provider": "azure_speech",
+                    "warnings": warnings,
+                    "segments": enriched_segments,
+                },
             )
             self.repo.mark_completed(job_id)
             # Clinical note is generated only when the provider clicks
@@ -277,6 +361,7 @@ class TranscriptionWorker:
         full_text: str,
         normalized: list[dict[str, Any]],
         structured_dialogue: list[dict[str, str]],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         visit_id = self._visit_id(job)
         if not visit_id:
@@ -290,6 +375,7 @@ class TranscriptionWorker:
             structured_dialogue=structured_dialogue,
             word_count=word_count,
             audio_duration_seconds=duration,
+            metadata=metadata or {},
         )
 
     def _sync_visit_failed(self, job: dict, message: str) -> None:
@@ -432,7 +518,12 @@ class TranscriptionWorker:
             return (chunks if chunks else [wav_bytes]), step_sec
 
     def _short_audio_recognize_one_payload(
-        self, *, audio_payload: bytes, content_type: str, primary_locale: str
+        self,
+        *,
+        audio_payload: bytes,
+        content_type: str,
+        primary_locale: str,
+        locale_candidates: list[str] | None = None,
     ) -> tuple[dict | None, HTTPError | None, dict | None, int | None, str | None]:
         """
         One full pass over locales/endpoints for Azure short-audio REST.
@@ -446,7 +537,7 @@ class TranscriptionWorker:
         best_status: int | None = None
         best_words = -1
         http_timeout = max(30, int(self.settings.transcription_timeout_sec))
-        for locale in self._candidate_locales(primary_locale):
+        for locale in self._candidate_locales(primary_locale, locale_candidates):
             for endpoint in self._candidate_azure_speech_endpoints(locale):
                 try:
                     req = Request(endpoint, data=audio_payload, method="POST")
@@ -487,6 +578,16 @@ class TranscriptionWorker:
                         f"Azure Speech HTTP {exc.code} for short-audio STT: {err_body[:300]}"
                     ) from exc
         if best_normalized and (best_normalized.get("segments") or []):
+            segs = best_normalized.get("segments") or []
+            diarized = sum(
+                1 for s in segs if str(s.get("speaker_label") or "").strip().lower() not in {"", "unknown"}
+            )
+            logger.info(
+                "azure_short_audio_selected locale=%s segments=%s diarized_segments=%s",
+                best_normalized.get("language_detected"),
+                len(segs),
+                diarized,
+            )
             return best_normalized, last_404, last_raw, best_status, None
         return None, last_404, last_raw, None, "exhausted_no_segments"
 
@@ -496,6 +597,7 @@ class TranscriptionWorker:
         audio_payload: bytes,
         content_type: str,
         primary_locale: str,
+        locale_candidates: list[str] | None = None,
         job_id: str,
         chunk_idx: int,
         chunk_total: int,
@@ -511,6 +613,7 @@ class TranscriptionWorker:
                 audio_payload=audio_payload,
                 content_type=content_type,
                 primary_locale=primary_locale,
+                locale_candidates=locale_candidates,
             )
             last_detail = detail or last_detail
             last_status = status
@@ -728,7 +831,18 @@ class TranscriptionWorker:
     def _call_azure_speech(self, *, job: dict, audio_doc: dict) -> dict:
         if not self.settings.azure_speech_key:
             raise RuntimeError("AZURE_SPEECH_KEY is not configured")
-        primary_locale = self._language_hint_to_locale(str(job.get("language_mix", "") or "en"))
+        language_request = self._normalize_language_request(str(job.get("language_mix", "") or ""))
+        locale_plan = self._build_locale_plan(language_request)
+        primary_locale = locale_plan["primary_locale"]
+        logger.info(
+            "transcription_job_received job_id=%s audio_id=%s requested_language=%s locale_mode=%s primary_locale=%s diarization_requested=%s",
+            job.get("job_id"),
+            audio_doc.get("audio_id"),
+            language_request or "auto",
+            locale_plan["mode"],
+            primary_locale,
+            True,
+        )
         storage_ref = self._storage_ref_from_audio_doc(audio_doc)
         if not storage_ref:
             raise RuntimeError("Audio storage reference not found")
@@ -794,6 +908,7 @@ class TranscriptionWorker:
                     audio_payload=chunk_bytes,
                     content_type="audio/wav",
                     primary_locale=primary_locale,
+                    locale_candidates=locale_plan["candidates"],
                     job_id=str(job.get("job_id", "")),
                     chunk_idx=idx,
                     chunk_total=n_chunks,
@@ -856,6 +971,7 @@ class TranscriptionWorker:
                 audio_payload=audio_payload,
                 content_type=content_type,
                 primary_locale=primary_locale,
+                locale_candidates=locale_plan["candidates"],
             )
             if l404:
                 last_404 = l404
@@ -989,18 +1105,27 @@ class TranscriptionWorker:
         return hosts
 
     @staticmethod
-    def _language_hint_to_locale(language_mix: str) -> str:
-        mapping = {
-            "en": "en-IN",
-            "hi": "hi-IN",
-            "ta": "ta-IN",
-            "te": "te-IN",
-            "bn": "bn-IN",
-            "mr": "mr-IN",
-            "kn": "kn-IN",
-        }
-        token = str(language_mix or "").strip().lower().split("-")[0]
-        return mapping.get(token, "en-IN")
+    def _normalize_language_request(language_mix: str) -> str:
+        token = str(language_mix or "").strip().lower().replace("_", "-")
+        if token in {"", "default", "string", "auto", "unknown"}:
+            return ""
+        return token
+
+    @staticmethod
+    def _build_locale_plan(language_request: str) -> dict[str, Any]:
+        request = (language_request or "").strip().lower()
+        if not request:
+            return {"mode": "auto_detect", "primary_locale": "en-IN", "candidates": list(_AUTO_DETECT_LOCALES)}
+        if request in {"hinglish", "hi-en", "en-hi", "hindi-english", "english-hindi"}:
+            return {"mode": "hinglish_auto", "primary_locale": "hi-IN", "candidates": ["hi-IN", "en-IN"]}
+        if request in _LANGUAGE_NAME_TO_LOCALE:
+            locale = _LANGUAGE_NAME_TO_LOCALE[request]
+            return {"mode": "explicit", "primary_locale": locale, "candidates": [locale]}
+        # Locale-looking values: "kn-IN" / "en-US"
+        if "-" in request and len(request) == 5:
+            locale = request[:2].lower() + "-" + request[3:].upper()
+            return {"mode": "explicit", "primary_locale": locale, "candidates": [locale]}
+        return {"mode": "auto_detect", "primary_locale": "en-IN", "candidates": list(_AUTO_DETECT_LOCALES)}
 
     def _candidate_azure_speech_endpoints(self, locale: str) -> list[str]:
         """
@@ -1039,7 +1164,8 @@ class TranscriptionWorker:
                 {
                     "start_ms": start_ms,
                     "end_ms": end_ms,
-                    "speaker_label": "Unknown",
+                    "speaker_label": TranscriptionWorker._extract_speaker_label(raw),
+                    "language": locale,
                     "text": display_text,
                     "confidence": confidence,
                     "needs_manual_review": False,
@@ -1062,7 +1188,8 @@ class TranscriptionWorker:
                 {
                     "start_ms": start_ms,
                     "end_ms": end_ms,
-                    "speaker_label": "Unknown",
+                    "speaker_label": TranscriptionWorker._extract_speaker_label(phrase),
+                    "language": locale,
                     "text": phrase_text,
                     "confidence": confidence,
                     "needs_manual_review": False,
@@ -1079,7 +1206,8 @@ class TranscriptionWorker:
                     {
                         "start_ms": 0,
                         "end_ms": 0,
-                        "speaker_label": "Unknown",
+                        "speaker_label": TranscriptionWorker._extract_speaker_label(phrase),
+                        "language": locale,
                         "text": text,
                         "confidence": 0.85,
                         "needs_manual_review": False,
@@ -1096,6 +1224,7 @@ class TranscriptionWorker:
                             "start_ms": 0,
                             "end_ms": 0,
                             "speaker_label": "Unknown",
+                            "language": locale,
                             "text": combined,
                             "confidence": 0.85,
                             "needs_manual_review": False,
@@ -1135,12 +1264,16 @@ class TranscriptionWorker:
         return mapping.get(mime, mime or "audio/wav")
 
     @staticmethod
-    def _candidate_locales(primary_locale: str) -> list[str]:
-        candidates = [primary_locale]
-        for locale in ("en-IN", "en-US", "hi-IN"):
-            if locale not in candidates:
-                candidates.append(locale)
-        return candidates
+    def _candidate_locales(primary_locale: str, locale_candidates: list[str] | None = None) -> list[str]:
+        candidates: list[str] = []
+        preferred = list(locale_candidates or [])
+        if primary_locale and primary_locale not in preferred:
+            preferred.insert(0, primary_locale)
+        for locale in preferred:
+            value = str(locale or "").strip()
+            if value and value not in candidates:
+                candidates.append(value)
+        return candidates or [primary_locale or "en-IN"]
 
     def _normalize_segments(self, segments: list[dict[str, Any]]) -> list[dict]:
         normalized: list[dict] = []
@@ -1156,6 +1289,7 @@ class TranscriptionWorker:
                     "start_ms": int(raw.get("start_ms", 0)),
                     "end_ms": int(raw.get("end_ms", 0)),
                     "speaker_label": speaker,
+                    "language": str(raw.get("language", "") or "unknown"),
                     "text": str(raw.get("text", "")).strip(),
                     "confidence": round(confidence, 4),
                     "needs_manual_review": needs_manual_review,
@@ -1171,12 +1305,33 @@ class TranscriptionWorker:
         speaker = str(value).strip().lower()
         if speaker in {"doctor", "physician", "clinician"}:
             return "Doctor"
-        if speaker in {"patient", "speaker_1"}:
+        if speaker in {"patient"}:
             return "Patient"
-        if speaker in {"attendant", "caregiver", "speaker_2", "family member"}:
+        if speaker in {"attendant", "caregiver", "family member"}:
             return "Family Member"
+        if speaker in {"speaker_1", "speaker1", "speaker 1", "guest-1"}:
+            return "Speaker 1"
+        if speaker in {"speaker_2", "speaker2", "speaker 2", "guest-2"}:
+            return "Speaker 2"
         if speaker in {"unknown"}:
             return "Unknown"
+        return "Unknown"
+
+    @staticmethod
+    def _extract_speaker_label(node: dict[str, Any]) -> str:
+        for key in ("Speaker", "SpeakerId", "SpeakerID", "speaker", "speakerId", "speaker_id"):
+            value = node.get(key)
+            if value is None:
+                continue
+            raw = str(value).strip()
+            if not raw:
+                continue
+            lowered = raw.lower().replace("-", "_")
+            if lowered.isdigit():
+                return f"Speaker {lowered}"
+            if lowered.startswith("speaker_"):
+                return f"Speaker {lowered.split('_', 1)[1]}"
+            return raw
         return "Unknown"
 
 
