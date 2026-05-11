@@ -118,6 +118,7 @@ const emptyContent = (): TemplateContentPayload => ({
   investigations: [],
   red_flags: [],
   data_gaps: [],
+  optional_preferences: '',
   included_sections: [...CLINICAL_CONTENT_SECTIONS],
   section_detail_level: defaultNarrativeDepth(),
   section_order: [...CLINICAL_CONTENT_SECTIONS],
@@ -175,6 +176,7 @@ function buildTemplateControlledContent(
   content: TemplateContentPayload,
   redFlagsText: string,
   dataGapsText: string,
+  optionalPreferences: string,
   sectionOrder: ClinicalContentSection[],
   narrativeDepth: Record<NarrativeSection, 'brief' | 'detail'>,
 ): TemplateContentPayload {
@@ -185,6 +187,7 @@ function buildTemplateControlledContent(
     .map((section) => [section, narrativeDepth[section]] as const)
   return {
     ...base,
+    optional_preferences: optionalPreferences.trim(),
     included_sections: included,
     section_order: included,
     section_detail_level: Object.fromEntries(detailEntries),
@@ -290,7 +293,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setTagsInput('')
     setAppointmentTypes([])
     setContent(emptyContent())
-    setOptionalPreferences('')
+    setOptionalPreferences(String(contentFromTemplate.optional_preferences || ''))
     setRedFlagsText('')
     setDataGapsText('')
     setError(null)
@@ -365,7 +368,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setContent(contentFromTemplate)
     syncRedFlagsFromContent(contentFromTemplate)
     syncDataGapsFromContent(contentFromTemplate)
-    setOptionalPreferences('')
+    setOptionalPreferences(String(contentFromTemplate.optional_preferences || ''))
     setError(null)
     setSaveLoading(false)
     setContentSectionOrder(deriveSectionOrderFromTemplateContent(contentFromTemplate))
@@ -381,7 +384,14 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       description,
       tags: parseTagsInput(tagsInput),
       appointmentTypes,
-      content: buildTemplateControlledContent(content, redFlagsText, dataGapsText, contentSectionOrder, narrativeDepth),
+      content: buildTemplateControlledContent(
+        content,
+        redFlagsText,
+        dataGapsText,
+        optionalPreferences,
+        contentSectionOrder,
+        narrativeDepth,
+      ),
     })
 
     const baselineContent = templateToEdit.content
@@ -405,6 +415,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
         baselineContent,
         (baselineContent.red_flags || []).filter(Boolean).join('\n'),
         (baselineContent.data_gaps || []).filter(Boolean).join('\n'),
+        String(baselineContent.optional_preferences || ''),
         deriveSectionOrderFromTemplateContent(baselineContent),
         deriveNarrativeDepthFromTemplateContent(baselineContent),
       ),
@@ -420,6 +431,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     content,
     redFlagsText,
     dataGapsText,
+    optionalPreferences,
     contentSectionOrder,
     narrativeDepth,
   ])
@@ -448,6 +460,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
       content,
       redFlagsText,
       dataGapsText,
+      optionalPreferences,
       contentSectionOrder,
       narrativeDepth,
     )

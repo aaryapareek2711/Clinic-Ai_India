@@ -29,6 +29,7 @@ export type TemplateContentPayload = {
   doctor_notes: string
   chief_complaint: string
   data_gaps: string[]
+  optional_preferences?: string
   included_sections?: string[]
   section_detail_level?: Record<string, 'brief' | 'detail'>
   section_order?: string[]

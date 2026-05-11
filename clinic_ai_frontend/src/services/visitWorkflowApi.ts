@@ -554,12 +554,13 @@ export async function uploadTranscriptionAudio(
   patientId: string,
   visitId: string,
   file: File,
+  languageMix: string = 'auto',
 ): Promise<TranscriptionUploadAccepted> {
   const formData = new FormData()
   formData.set('patient_id', patientId)
   formData.set('visit_id', visitId)
   formData.set('audio_file', file)
-  formData.set('language_mix', 'en')
+  formData.set('language_mix', languageMix || 'auto')
   formData.set('speaker_mode', 'two_speakers')
   const { data } = await apiClient.post<TranscriptionUploadAccepted>('/api/notes/transcribe', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

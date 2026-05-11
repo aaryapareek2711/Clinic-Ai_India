@@ -134,6 +134,25 @@ function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLangu
   return 'en'
 }
 
+function toTranscriptionLanguageMix(languageCode: string): string {
+  const c = (languageCode || '').trim().toLowerCase().replace(/_/g, '-')
+  if (!c || c === 'auto') return 'auto'
+  if (c === 'hi-eng' || c === 'en-hi' || c === 'hi-en') return 'hinglish'
+  if (c.startsWith('kn')) return 'kannada'
+  if (c.startsWith('hi')) return 'hindi'
+  if (c.startsWith('ta')) return 'tamil'
+  if (c.startsWith('te')) return 'telugu'
+  if (c.startsWith('bn')) return 'bengali'
+  if (c.startsWith('mr')) return 'marathi'
+  if (c.startsWith('gu')) return 'gujarati'
+  if (c.startsWith('ml')) return 'malayalam'
+  if (c.startsWith('or')) return 'odia'
+  if (c.startsWith('pa')) return 'punjabi'
+  if (c.startsWith('ur')) return 'urdu'
+  if (c.startsWith('en')) return 'english'
+  return 'auto'
+}
+
 function pickRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
@@ -548,6 +567,7 @@ export default function VisitDetailPage() {
   const postVisitLanguage = toPostVisitPatientLanguage(
     effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
+  const transcriptionLanguageMix = toTranscriptionLanguageMix(preferredLanguageCode)
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
   const visitStatus = visitStatusChip(visit?.status)
 
@@ -915,7 +935,12 @@ export default function VisitDetailPage() {
       setRecordingError(null)
       setTranscriptionUploading(true)
       try {
-        const accepted = await uploadTranscriptionAudio(patientId, visitId, file)
+        const accepted = await uploadTranscriptionAudio(
+          patientId,
+          visitId,
+          file,
+          transcriptionLanguageMix,
+        )
         setHasTranscriptionUploadAttempt(true)
         setLastSubmittedAudioFilename(file.name || 'recording')
         setTranscriptionMessage(accepted.message || `Queued: ${accepted.job_id}`)
@@ -931,7 +956,7 @@ export default function VisitDetailPage() {
         setTranscriptionUploading(false)
       }
     },
-    [patientId, visitId],
+    [patientId, transcriptionLanguageMix, visitId],
   )
 
   const clearPendingTranscriptionFile = useCallback(() => {
