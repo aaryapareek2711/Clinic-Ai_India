@@ -30,20 +30,25 @@ function VisitsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
+  /** When sorting one column only, keep a fixed server order so changing sort does not reorder every bucket via the API response. */
+  const serverSort = useMemo(
+    (): VisitKanbanSortKey => (sortScope === 'all' ? sortBy : 'patient_newest'),
+    [sortScope, sortBy],
+  )
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: [
       'visits',
       'provider',
       DEFAULT_PROVIDER_ID,
       'paged',
-      { page: currentPage, pageSize: PAGE_SIZE, search, sort: sortBy },
+      { page: currentPage, pageSize: PAGE_SIZE, search, sort: serverSort },
     ],
     queryFn: () =>
       fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
         page: currentPage,
         pageSize: PAGE_SIZE,
         search,
-        sort: sortBy,
+        sort: serverSort,
       }),
     placeholderData: keepPreviousData,
     refetchInterval: AUTO_REFRESH_MS,
@@ -80,7 +85,7 @@ function VisitsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, sortBy, sortScope])
+  }, [searchQuery, serverSort, sortScope])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)

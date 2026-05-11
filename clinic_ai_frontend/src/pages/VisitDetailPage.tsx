@@ -151,6 +151,37 @@ function formatRecordingElapsed(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+type RecapFollowUpTimeParts = { hour: string; minute: string; period: string }
+
+const HOUR_OPTIONS_12H = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
+function compose12HourTime(parts: RecapFollowUpTimeParts): string {
+  const h = parts.hour.trim()
+  const m = parts.minute.trim()
+  const p = parts.period.trim().toUpperCase()
+  if (!h || !m || !p || (p !== 'AM' && p !== 'PM')) return ''
+  return `${h}:${m} ${p}`
+}
+
+/** Convert "9:05 AM" to 24h "09:05" for API; returns "" if invalid or empty. */
+function to24HourTimeForApi(twelveHour: string): string {
+  const s = twelveHour.trim()
+  if (!s) return ''
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!match) return ''
+  let hh = Number.parseInt(match[1], 10)
+  const mm = match[2]
+  const ap = match[3].toUpperCase()
+  if (!Number.isFinite(hh) || hh < 1 || hh > 12) return ''
+  if (ap === 'AM') {
+    if (hh === 12) hh = 0
+  } else if (hh !== 12) {
+    hh += 12
+  }
+  return `${String(hh).padStart(2, '0')}:${mm}`
+}
+
 function visitStatusChip(statusRaw: string | undefined | null): {
   label: string
   className: string
@@ -323,6 +354,11 @@ export default function VisitDetailPage() {
   const [recapContactMode, setRecapContactMode] = useState<'patient' | 'different' | 'family'>('patient')
   const [recapPhoneDraft, setRecapPhoneDraft] = useState('')
   const [recapFollowUpDateDraft, setRecapFollowUpDateDraft] = useState('')
+  const [recapFollowUpTimeParts, setRecapFollowUpTimeParts] = useState<RecapFollowUpTimeParts>({
+    hour: '',
+    minute: '',
+    period: '',
+  })
   const [recapAction, setRecapAction] = useState<'generate' | 'send' | null>(null)
   const [postVisitSendInfo, setPostVisitSendInfo] = useState<{
     phoneDisplay: string
@@ -431,6 +467,7 @@ export default function VisitDetailPage() {
     setRecapContactMode('patient')
     setRecapPhoneDraft('')
     setRecapFollowUpDateDraft('')
+    setRecapFollowUpTimeParts({ hour: '', minute: '', period: '' })
     setLabModalOpen(false)
     setLabReportName('')
     setLabCategory('')
@@ -604,6 +641,14 @@ export default function VisitDetailPage() {
   const displayClinicalNote = translatedDisplayBundle?.clinicalNote ?? clinicalNote
   const displayPostVisitSummary = translatedDisplayBundle?.postVisitSummary ?? postVisitSummary
   const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
+
+  const clinicalFollowUpIn = useMemo(() => {
+    const p = displayClinicalNote?.payload
+    if (!p || typeof p !== 'object') return ''
+    const o = p as Record<string, unknown>
+    const v = o.follow_up_in
+    return v != null ? String(v).trim() : ''
+  }, [displayClinicalNote])
 
   visitIdRef.current = visitId
   patientIdRef.current = patientId
@@ -1865,7 +1910,7 @@ export default function VisitDetailPage() {
                               minute: recapFollowUpTimeParts.minute,
                               period: recapFollowUpTimeParts.period,
                             }
-                            setRecapFollowUpTimePartsDraft(nextParts)
+                            setRecapFollowUpTimeParts(nextParts)
                           }}
                           value={recapFollowUpTimeParts.hour}
                         >
@@ -1886,7 +1931,7 @@ export default function VisitDetailPage() {
                               minute: e.target.value,
                               period: recapFollowUpTimeParts.period,
                             }
-                            setRecapFollowUpTimePartsDraft(nextParts)
+                            setRecapFollowUpTimeParts(nextParts)
                           }}
                           value={recapFollowUpTimeParts.minute}
                         >
@@ -1907,7 +1952,7 @@ export default function VisitDetailPage() {
                               minute: recapFollowUpTimeParts.minute,
                               period: e.target.value,
                             }
-                            setRecapFollowUpTimePartsDraft(nextParts)
+                            setRecapFollowUpTimeParts(nextParts)
                           }}
                           value={recapFollowUpTimeParts.period}
                         >
