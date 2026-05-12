@@ -20,7 +20,7 @@ make dev
 | OPENAI_MODEL | No | OpenAI model for chat/note generation | gpt-4o-mini |
 | MONGODB_URL | Yes | MongoDB connection URI | mongodb://localhost:27017/clinic_ai |
 | MONGODB_DB_NAME | Yes | MongoDB database name | clinic_ai |
-| CORS_ORIGINS | Yes (for browser clients) | Comma-separated allowed frontend origins | http://localhost:5173,https://your-app.vercel.app |
+| CORS_ORIGINS | Yes (for browser clients) | Comma-separated allowed frontend origins (no spaces). Set on Render for production. | `https://clinic-ai-india.vercel.app,http://localhost:5173,http://127.0.0.1:5173` |
 | CORS_ORIGIN_REGEX | No | Optional regex for dynamic preview domains (e.g., Vercel previews) | https://your-app-.*\\.vercel\\.app |
 | AZURE_SPEECH_KEY | Yes | Azure Speech Service API key | your-azure-speech-key |
 | AZURE_SPEECH_REGION | Yes* | Azure Speech region (required if endpoint not fully set) | centralindia |
@@ -43,6 +43,14 @@ make dev
 | INTAKE_USE_LLM_MESSAGE | No | Intake flag for LLM-based message generation (default false) | false |
 | INTAKE_REQUIRE_ALL_AGENTS | No | Intake flag requiring all intake agents to be present (default true) | true |
 | INTAKE_STRICT_VALIDATION | No | Intake flag for strict intake validation checks (default true) | true |
+
+### CORS on Render (and other hosts)
+
+The API reads **`CORS_ORIGINS`** (comma-separated, **no spaces**). On [Render](https://render.com), open your web service → **Environment** → add or edit:
+
+`CORS_ORIGINS=https://clinic-ai-india.vercel.app,http://localhost:5173,http://127.0.0.1:5173`
+
+Save and **restart** (or redeploy) so the new value loads. For short-lived Vercel **preview** URLs, set **`CORS_ORIGIN_REGEX`** (see table above) instead of listing every preview origin.
 
 ## Intake Rollout Guidance (Safe Defaults)
 - Keep existing deployments safe by explicitly setting:

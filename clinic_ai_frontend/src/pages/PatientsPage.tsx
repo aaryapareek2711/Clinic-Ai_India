@@ -9,7 +9,7 @@ import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
-type PatientSort = 'created_newest' | 'created_oldest' | 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
+type PatientSort = 'created_newest' | 'created_oldest' | 'name_az' | 'name_za' | 'id_az'
 const PAGE_SIZE = 10
 
 function labelForGender(gender: string | null | undefined): string {
@@ -125,8 +125,6 @@ function PatientsPage() {
             >
               <option value="created_newest">New patient: newest first</option>
               <option value="created_oldest">New patient: oldest first</option>
-              <option value="visit_latest">Latest visit: newest first</option>
-              <option value="visit_oldest">Latest visit: oldest first</option>
               <option value="name_az">Name: A → Z</option>
               <option value="name_za">Name: Z → A</option>
             </select>

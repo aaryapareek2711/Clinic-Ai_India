@@ -41,7 +41,7 @@ export async function fetchPatientsPaged(opts: {
   page: number
   pageSize: number
   search?: string
-  sort?: 'created_newest' | 'created_oldest' | 'visit_latest' | 'visit_oldest' | 'name_az' | 'name_za' | 'id_az'
+  sort?: 'created_newest' | 'created_oldest' | 'name_az' | 'name_za' | 'id_az'
 }): Promise<PagedResponse<PatientSummary>> {
   const { data } = await apiClient.get<PagedResponse<PatientSummary>>('/api/patients/paged', {
     params: {

@@ -4,6 +4,7 @@ import {
   getDoctorScheduleSettings,
   OPD_DAY_KEYS,
   saveDoctorScheduleSettings,
+  syncDoctorScheduleFromServer,
   type DoctorScheduleSettings,
   type OpdDayKey,
   type OpdDayScheduleRow,
@@ -21,6 +22,7 @@ import {
   patchMyProfile,
   type OpdWeeklyDayPayload,
   type ProviderProfile,
+  type ProviderProfilePatch,
 } from '../services/profileApi'
 
 function hasAuthToken(): boolean {
@@ -119,6 +121,33 @@ function weeklyUiToStoredRows(rows: WeeklyDayUi[]): OpdDayScheduleRow[] {
   }))
 }
 
+/** Canonical global OPD fields for API — derived from the weekly grid (first open day / any evening). */
+function globalsFromWeeklyUi(rows: WeeklyDayUi[]): {
+  opdStart: string
+  opdEnd: string
+  addEveningShift: boolean
+  eveningStart: string
+  eveningEnd: string
+} {
+  const open = rows.filter((r) => !r.closed)
+  const base = open[0] ?? rows[0]
+  const morningStart = to24h(base.morningStart.h12, base.morningStart.mm, base.morningStart.mer)
+  const morningEnd = to24h(base.morningEnd.h12, base.morningEnd.mm, base.morningEnd.mer)
+  const anyEvening = open.some((r) => r.eveningEnabled)
+  const withEvening = open.find((r) => r.eveningEnabled)
+  return {
+    opdStart: morningStart,
+    opdEnd: morningEnd,
+    addEveningShift: anyEvening,
+    eveningStart: withEvening
+      ? to24h(withEvening.eveningStart.h12, withEvening.eveningStart.mm, withEvening.eveningStart.mer)
+      : DEFAULT_DOCTOR_SCHEDULE.eveningStart,
+    eveningEnd: withEvening
+      ? to24h(withEvening.eveningEnd.h12, withEvening.eveningEnd.mm, withEvening.eveningEnd.mer)
+      : DEFAULT_DOCTOR_SCHEDULE.eveningEnd,
+  }
+}
+
 function TimeTripleSelect({
   disabled,
   idPrefix,
@@ -195,6 +224,13 @@ function SettingsEditProfilePage() {
   const [weeklyUi, setWeeklyUi] = useState<WeeklyDayUi[]>(() => scheduleToWeeklyUi(getDoctorScheduleSettings()))
   const initialWeeklyJsonRef = useRef<string | null>(null)
   const [defaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
+  const [initialProfile, setInitialProfile] = useState<{
+    fullName: string
+    jobTitle: string
+    phone: string
+    license: string
+    avatarUrl: string
+  } | null>(null)
 
   const readPhone = (profile: ProviderProfile) => {
     const phoneNumber =
@@ -241,14 +277,14 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
+      setInitialProfile({
+        fullName: me.full_name ?? '',
+        jobTitle: me.job_title ?? '',
+        phone: readPhone(me),
+        license: me.medical_license_number ?? '',
+        avatarUrl: me.avatar_url ?? '',
+      })
       syncDoctorScheduleFromServer(me)
-      const applied = getDoctorScheduleSettings()
-      setOpdStart(applied.opdStart)
-      setOpdEnd(applied.opdEnd)
-      setAddEveningShift(applied.addEveningShift)
-      setEveningStart(applied.eveningStart)
-      setEveningEnd(applied.eveningEnd)
-      setDefaultSlotMinutes(applied.defaultSlotMinutes)
       const schedule = getDoctorScheduleSettings()
       const w = scheduleToWeeklyUi(schedule)
       setWeeklyUi(w)
@@ -287,25 +323,18 @@ function SettingsEditProfilePage() {
       ...stored,
       weeklySchedule: weeklyUiToStoredRows(weeklyUi),
       defaultSlotMinutes,
-    }
-    saveDoctorScheduleSettings(schedulePayload)
-    try {
-      localStorage.setItem(DAY_AVAILABILITY_LOCAL_KEY, JSON.stringify(dayAvailability))
-    } catch {
-      /* ignore */
-    }
+    })
     if (!fullName.trim()) {
       setBanner({ type: 'err', text: 'Full name is required.' })
       return
     }
     const scheduleChanged = initialWeeklyJsonRef.current !== scheduleSnap
     if (!hasAuthToken()) {
+      initialWeeklyJsonRef.current = scheduleSnap
       setBanner({
         type: 'ok',
-        text: 'Saved on this device. Sign in to sync your profile and OPD hours to the server.',
+        text: 'Availability saved on this device. Sign in to sync your profile with the server.',
       })
-      initialWeeklyJsonRef.current = scheduleSnap
-      setBanner({ type: 'ok', text: 'Availability saved on this device. Sign in to sync your profile and server.' })
       return
     }
     const profileChanged =
@@ -321,29 +350,18 @@ function SettingsEditProfilePage() {
     }
     setSaving(true)
     try {
-      const patch: {
-        full_name: string
-        phone: string
-        job_title: string
-        medical_license_number: string
-        avatar_url: string
-        opd_weekly_schedule?: OpdWeeklyDayPayload[]
-      } = {
+      const g = globalsFromWeeklyUi(weeklyUi)
+      const patch: ProviderProfilePatch = {
         full_name: fullName.trim(),
         phone: phone.trim() || undefined,
         job_title: jobTitle.trim() || undefined,
         medical_license_number: license.trim() || undefined,
         avatar_url: avatarUrl.trim() || undefined,
-        opd_morning_start: opdStart,
-        opd_morning_end: opdEnd,
-        opd_evening_enabled: addEveningShift,
-        opd_evening_start: addEveningShift ? eveningStart : null,
-        opd_evening_end: addEveningShift ? eveningEnd : null,
-      })
-        phone: phone.trim(),
-        job_title: jobTitle.trim(),
-        medical_license_number: license.trim(),
-        avatar_url: avatarUrl.trim(),
+        opd_morning_start: g.opdStart,
+        opd_morning_end: g.opdEnd,
+        opd_evening_enabled: g.addEveningShift,
+        opd_evening_start: g.addEveningShift ? g.eveningStart : null,
+        opd_evening_end: g.addEveningShift ? g.eveningEnd : null,
       }
       if (scheduleChanged) {
         patch.opd_weekly_schedule = payloadSchedule
@@ -370,7 +388,6 @@ function SettingsEditProfilePage() {
     } catch (err) {
       setBanner({
         type: 'err',
-        text: `Local OPD settings were saved, but the server update failed (${getApiErrorMessage(err)}).`,
         text: `Availability is saved on this device. Profile could not be updated (${getApiErrorMessage(err)}).`,
       })
     } finally {
