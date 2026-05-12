@@ -20,6 +20,7 @@ import {
   fetchVisitTranscriptionDialogue,
   translateDisplayPayload,
   structureVisitDialogue,
+  deleteVisitStructuredDialogue,
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
@@ -380,6 +381,9 @@ export default function VisitDetailPage() {
     Record<string, unknown>
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
+  const [deleteDialogueOpen, setDeleteDialogueOpen] = useState(false)
+  const [deleteDialogueLoading, setDeleteDialogueLoading] = useState(false)
+  const [deleteDialogueError, setDeleteDialogueError] = useState<string | null>(null)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
   const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
@@ -1241,6 +1245,25 @@ export default function VisitDetailPage() {
     }
   }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
 
+  const handleDeleteStructuredDialogue = useCallback(async () => {
+    if (!patientId || !visitId || deleteDialogueLoading) return
+    setDeleteDialogueLoading(true)
+    setDeleteDialogueError(null)
+    try {
+      await deleteVisitStructuredDialogue(patientId, visitId)
+      setTranscriptionStructuredDialogue(null)
+      setTranslatedDisplayBundle((prev) =>
+        prev ? { ...prev, transcriptionStructuredDialogue: null } : null,
+      )
+      setTranscriptionMessage('Speaker dialogue deleted.')
+      setDeleteDialogueOpen(false)
+    } catch (e) {
+      setDeleteDialogueError(getApiErrorMessage(e))
+    } finally {
+      setDeleteDialogueLoading(false)
+    }
+  }, [deleteDialogueLoading, patientId, visitId])
+
   const dialogueTurns = useMemo(
     () => flattenStructuredDialogue(displayStructuredDialogue),
     [displayStructuredDialogue],
@@ -1963,7 +1986,21 @@ export default function VisitDetailPage() {
                       <div>
                         <h4 className="text-sm font-semibold text-[#171d16]">Speaker dialogue</h4>
                       </div>
-                      {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {dialogueTurns.length > 0 && (
+                          <button
+                            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setDeleteDialogueError(null)
+                              setDeleteDialogueOpen(true)
+                            }}
+                            type="button"
+                          >
+                            Delete dialogue
+                          </button>
+                        )}
+                        {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
+                      </div>
                     </div>
                     {dialogueTurns.length > 0 ? (
                       <div className="max-h-[min(28rem,55vh)] space-y-3 overflow-y-auto pr-1">
@@ -2523,6 +2560,62 @@ export default function VisitDetailPage() {
                 type="button"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteDialogueOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">
+          <button
+            aria-label="Close delete dialogue confirmation"
+            className="absolute inset-0"
+            onClick={() => {
+              if (!deleteDialogueLoading) {
+                setDeleteDialogueOpen(false)
+                setDeleteDialogueError(null)
+              }
+            }}
+            type="button"
+          />
+          <div
+            aria-labelledby="delete-dialogue-title"
+            aria-modal="true"
+            className="relative z-[101] w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl"
+            role="dialog"
+          >
+            <h3 className="text-lg font-semibold text-[#171d16]" id="delete-dialogue-title">
+              Delete speaker dialogue?
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-[#575e70]">
+              This removes the Doctor/Patient turn list from this visit. The raw transcript stays on file; you can generate
+              dialogue again later.
+            </p>
+            {deleteDialogueError ? (
+              <p className="mt-3 text-sm text-red-700" role="alert">
+                {deleteDialogueError}
+              </p>
+            ) : null}
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+              <button
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-slate-50 disabled:opacity-50"
+                disabled={deleteDialogueLoading}
+                onClick={() => {
+                  setDeleteDialogueOpen(false)
+                  setDeleteDialogueError(null)
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={deleteDialogueLoading}
+                onClick={() => void handleDeleteStructuredDialogue()}
+                type="button"
+              >
+                {deleteDialogueLoading ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>

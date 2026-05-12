@@ -1,11 +1,12 @@
 """Patient routes module."""
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
-from src.application.services.intake_chat_service import IntakeChatService
+from src.application.services.intake_chat_service import ACTIVE_SESSION_STATUSES, IntakeChatService
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.domain.value_objects.patient_id import PatientId
 from src.domain.value_objects.visit_id import VisitId
@@ -21,6 +22,7 @@ from src.api.schemas.patient import (
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
 _INDEXES_READY = False
+logger = logging.getLogger(__name__)
 
 # Collections that store internal `patient_id` (deterministic key) and must move with identity edits.
 _PATIENT_ID_COLLECTIONS = (
@@ -36,6 +38,36 @@ _PATIENT_ID_COLLECTIONS = (
     "follow_through_lab_records",
     "transcription_results",
 )
+
+
+def _resend_intake_after_phone_patch(db, internal_patient_id: str) -> None:
+    """Re-open WhatsApp intake on the updated number when sessions were still active on an old/wrong destination."""
+    patient = db.patients.find_one({"patient_id": internal_patient_id}) or {}
+    phone = str(patient.get("phone_number") or "").strip()
+    if not phone:
+        return
+    lang = str(patient.get("preferred_language") or "en")
+    service = IntakeChatService()
+    seen_visit_ids: set[str] = set()
+    try:
+        cursor = db.intake_sessions.find(
+            {"patient_id": internal_patient_id, "status": {"$in": list(ACTIVE_SESSION_STATUSES)}},
+        )
+        for sess in cursor:
+            vid = str(sess.get("visit_id") or "").strip()
+            if not vid or vid in seen_visit_ids:
+                continue
+            seen_visit_ids.add(vid)
+            try:
+                service.start_intake(internal_patient_id, vid, phone, lang)
+            except Exception:
+                logger.exception(
+                    "intake_resend_after_phone_patch visit_id=%s patient_id=%s",
+                    vid,
+                    internal_patient_id,
+                )
+    except Exception:
+        logger.exception("intake_resend_after_phone_patch query failed patient_id=%s", internal_patient_id)
 
 
 def _rewire_internal_patient_id(db, old_id: str, new_id: str) -> None:
@@ -449,6 +481,8 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
         set_doc["updated_at"] = now
         db.patients.update_one({"patient_id": internal_old}, {"$set": set_doc})
         updated = db.patients.find_one({"patient_id": internal_old})
+        if "phone_number" in raw_updates:
+            _resend_intake_after_phone_patch(db, internal_old)
         return _summarize_patient_record(db, updated or existing)
 
     if db.patients.find_one({"patient_id": internal_new}):
@@ -466,6 +500,8 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
     _rewire_internal_patient_id(db, internal_old, internal_new)
     db.patients.delete_one({"patient_id": internal_old})
     fresh = db.patients.find_one({"patient_id": internal_new})
+    if "phone_number" in raw_updates:
+        _resend_intake_after_phone_patch(db, internal_new)
     return _summarize_patient_record(db, fresh or new_doc)
 
 

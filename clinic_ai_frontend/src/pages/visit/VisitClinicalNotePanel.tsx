@@ -551,67 +551,69 @@ export default function VisitClinicalNotePanel({
                 </section>
               )}
 
-              <section className="flex flex-wrap items-center gap-3 rounded-lg border border-[#bdcaba] bg-[#f8faf6] px-4 py-3 text-sm">
-                <span className="material-symbols-outlined text-[#006b2c]">event_upcoming</span>
-                <div>
-                  <div className="mb-1 flex items-center gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Follow-up</p>
-                    {!editingFollowUp && (
-                      <button
-                        className="rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
-                        onClick={startFollowUpEdit}
-                        type="button"
-                      >
-                        Edit
-                      </button>
+              <section className="rounded-lg border border-[#bdcaba] bg-[#f8faf6] px-4 py-3 text-sm">
+                <div className="flex gap-3">
+                  <span className="material-symbols-outlined shrink-0 text-[#006b2c] pt-0.5">event_upcoming</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Follow-up</p>
+                      {!editingFollowUp && (
+                        <button
+                          className="shrink-0 rounded-md border border-[#bdcaba] bg-white px-2 py-1 text-[11px] font-semibold text-[#171d16] hover:bg-gray-50"
+                          onClick={startFollowUpEdit}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                    {editingFollowUp ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                          onChange={(e) => setFollowUpCountDraft(e.target.value)}
+                          value={followUpCountDraft}
+                        >
+                          {Array.from({ length: 30 }, (_, i) => String(i + 1)).map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="w-28 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
+                          onChange={(e) => setFollowUpUnitDraft(e.target.value as FollowUpUnit)}
+                          value={followUpUnitDraft}
+                        >
+                          <option value="days">Days</option>
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                        </select>
+                        <button
+                          className="rounded-md bg-[#2563eb] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1d4ed8]"
+                          onClick={saveFollowUpEdit}
+                          type="button"
+                        >
+                          Save
+                        </button>
+                        <button
+                          className="rounded-md border border-[#bdcaba] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
+                          onClick={cancelFollowUpEdit}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="font-medium text-[#171d16]">
+                        {displayPayload.follow_up_in?.trim()
+                          ? displayPayload.follow_up_in.trim()
+                          : displayPayload.follow_up_date?.trim()
+                            ? `${displayPayload.follow_up_date.trim()}${displayPayload.follow_up_time?.trim() ? ` · ${displayPayload.follow_up_time.trim()}` : ''}`
+                            : '—'}
+                      </p>
                     )}
                   </div>
-                  {editingFollowUp ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        className="w-20 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                        onChange={(e) => setFollowUpCountDraft(e.target.value)}
-                        value={followUpCountDraft}
-                      >
-                        {Array.from({ length: 30 }, (_, i) => String(i + 1)).map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        className="w-28 rounded-lg border border-[#bdcaba] px-2 py-1.5 text-sm text-[#171d16]"
-                        onChange={(e) => setFollowUpUnitDraft(e.target.value as FollowUpUnit)}
-                        value={followUpUnitDraft}
-                      >
-                        <option value="days">Days</option>
-                        <option value="weeks">Weeks</option>
-                        <option value="months">Months</option>
-                      </select>
-                      <button
-                        className="rounded-md bg-[#2563eb] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#1d4ed8]"
-                        onClick={saveFollowUpEdit}
-                        type="button"
-                      >
-                        Save
-                      </button>
-                      <button
-                        className="rounded-md border border-[#bdcaba] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#171d16] hover:bg-gray-50"
-                        onClick={cancelFollowUpEdit}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="font-medium text-[#171d16]">
-                      {displayPayload.follow_up_in?.trim()
-                        ? displayPayload.follow_up_in.trim()
-                        : displayPayload.follow_up_date?.trim()
-                          ? `${displayPayload.follow_up_date.trim()}${displayPayload.follow_up_time?.trim() ? ` · ${displayPayload.follow_up_time.trim()}` : ''}`
-                          : '—'}
-                    </p>
-                  )}
                 </div>
               </section>
             </>

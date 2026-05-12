@@ -9,7 +9,7 @@ import {
   type OpdDayKey,
   type OpdDayScheduleRow,
 } from '../lib/doctorScheduleSettings'
-import { clockPartsFrom24h, effectiveDayRow, pad2, to24h } from '../lib/opdWeeklySchedule'
+import { clockPartsFrom24h, effectiveDayRow, minutesFromHHmm, pad2, to24h } from '../lib/opdWeeklySchedule'
 import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
 import BackButton from '../components/BackButton'
@@ -64,8 +64,41 @@ type WeeklyDayUi = {
   eveningEnd: ClockParts
 }
 
-const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const
-const MINUTES_OPTS = Array.from({ length: 60 }, (_, i) => pad2(i))
+/** 15-minute grid for single time dropdowns (matches typical slot granularity). */
+const TIME_SLOT_STEP_MIN = 15
+const TIME_SLOT_HHMM: string[] = (() => {
+  const out: string[] = []
+  for (let m = 0; m < 24 * 60; m += TIME_SLOT_STEP_MIN) {
+    const h = Math.floor(m / 60)
+    const mm = m % 60
+    out.push(`${pad2(h)}:${pad2(mm)}`)
+  }
+  return out
+})()
+
+function nearestTimeSlot(hhmm: string): string {
+  if (TIME_SLOT_HHMM.includes(hhmm)) return hhmm
+  const target = minutesFromHHmm(hhmm)
+  let best = TIME_SLOT_HHMM[0]!
+  let bestDiff = Infinity
+  for (const s of TIME_SLOT_HHMM) {
+    const d = Math.abs(minutesFromHHmm(s) - target)
+    if (d < bestDiff) {
+      bestDiff = d
+      best = s
+    }
+  }
+  return best
+}
+
+function formatTime12Label(hhmm: string): string {
+  const { h12, mm, mer } = clockPartsFrom24h(hhmm)
+  return `${h12}:${mm} ${mer}`
+}
+
+function snapClockParts(cp: ClockParts): ClockParts {
+  return clockPartsFrom24h(nearestTimeSlot(to24h(cp.h12, cp.mm, cp.mer)))
+}
 
 const DAY_OPTIONS = [
   { key: 'monday', label: 'Monday' },
@@ -83,11 +116,11 @@ function scheduleToWeeklyUi(schedule: DoctorScheduleSettings): WeeklyDayUi[] {
     return {
       key: dayKey,
       closed: eff.closed,
-      morningStart: clockPartsFrom24h(eff.morningStart),
-      morningEnd: clockPartsFrom24h(eff.morningEnd),
+      morningStart: snapClockParts(clockPartsFrom24h(eff.morningStart)),
+      morningEnd: snapClockParts(clockPartsFrom24h(eff.morningEnd)),
       eveningEnabled: eff.eveningEnabled,
-      eveningStart: clockPartsFrom24h(eff.eveningStart),
-      eveningEnd: clockPartsFrom24h(eff.eveningEnd),
+      eveningStart: snapClockParts(clockPartsFrom24h(eff.eveningStart)),
+      eveningEnd: snapClockParts(clockPartsFrom24h(eff.eveningEnd)),
     }
   })
 }
@@ -149,61 +182,38 @@ function globalsFromWeeklyUi(rows: WeeklyDayUi[]): {
   }
 }
 
-function TimeTripleSelect({
+function TimeSingleSelect({
   disabled,
-  idPrefix,
+  id,
+  ariaLabel,
   onChange,
   value,
 }: {
   disabled?: boolean
-  idPrefix: string
+  id: string
+  ariaLabel: string
   onChange: (next: ClockParts) => void
   value: ClockParts
 }) {
   const sel =
-    'rounded-md border border-gray-200 bg-white px-1.5 py-1.5 text-sm text-[#171d16] disabled:cursor-not-allowed disabled:opacity-60'
+    'min-w-[9rem] flex-1 rounded-md border border-gray-200 bg-white px-2 py-2 text-sm text-[#171d16] disabled:cursor-not-allowed disabled:opacity-60'
+  const hhmm = to24h(value.h12, value.mm, value.mer)
+  const selectedKey = nearestTimeSlot(hhmm)
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <select
-        aria-label={`${idPrefix} hour`}
-        className={sel}
-        disabled={disabled}
-        id={`${idPrefix}-h`}
-        onChange={(ev) => onChange({ ...value, h12: Number(ev.target.value) })}
-        value={value.h12}
-      >
-        {HOURS_12.map((h) => (
-          <option key={h} value={h}>
-            {String(h).padStart(2, '0')}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${idPrefix} minute`}
-        className={sel}
-        disabled={disabled}
-        id={`${idPrefix}-m`}
-        onChange={(ev) => onChange({ ...value, mm: ev.target.value })}
-        value={value.mm}
-      >
-        {MINUTES_OPTS.map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${idPrefix} AM or PM`}
-        className={`${sel} min-w-[68px]`}
-        disabled={disabled}
-        id={`${idPrefix}-p`}
-        onChange={(ev) => onChange({ ...value, mer: ev.target.value as 'AM' | 'PM' })}
-        value={value.mer}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
-      </select>
-    </div>
+    <select
+      aria-label={ariaLabel}
+      className={sel}
+      disabled={disabled}
+      id={id}
+      onChange={(ev) => onChange(clockPartsFrom24h(ev.target.value))}
+      value={selectedKey}
+    >
+      {TIME_SLOT_HHMM.map((slot) => (
+        <option key={slot} value={slot}>
+          {formatTime12Label(slot)}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -613,20 +623,22 @@ function SettingsEditProfilePage() {
                             </label>
                           </div>
 
-                          <p className="mt-3 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Morning shift</p>
+                          <p className="mt-3 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Shift 1</p>
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                            <TimeTripleSelect
+                            <TimeSingleSelect
+                              ariaLabel={`${d.label} Shift 1 start`}
                               disabled={row.closed}
-                              idPrefix={`${d.key}-morning-start`}
+                              id={`${d.key}-shift1-start`}
                               onChange={(next) =>
                                 setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningStart: next } : x)))
                               }
                               value={row.morningStart}
                             />
                             <span className="text-sm text-gray-500">to</span>
-                            <TimeTripleSelect
+                            <TimeSingleSelect
+                              ariaLabel={`${d.label} Shift 1 end`}
                               disabled={row.closed}
-                              idPrefix={`${d.key}-morning-end`}
+                              id={`${d.key}-shift1-end`}
                               onChange={(next) =>
                                 setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningEnd: next } : x)))
                               }
@@ -647,24 +659,26 @@ function SettingsEditProfilePage() {
                               type="checkbox"
                             />
                             <span className={`text-sm font-medium ${row.closed ? 'text-gray-400' : 'text-[#171d16]'}`}>
-                              Evening shift available
+                              Shift 2 available
                             </span>
                           </label>
 
                           {row.eveningEnabled && !row.closed ? (
                             <div className="mt-3">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Evening shift</p>
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Shift 2</p>
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <TimeTripleSelect
-                                  idPrefix={`${d.key}-evening-start`}
+                                <TimeSingleSelect
+                                  ariaLabel={`${d.label} Shift 2 start`}
+                                  id={`${d.key}-shift2-start`}
                                   onChange={(next) =>
                                     setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningStart: next } : x)))
                                   }
                                   value={row.eveningStart}
                                 />
                                 <span className="text-sm text-gray-500">to</span>
-                                <TimeTripleSelect
-                                  idPrefix={`${d.key}-evening-end`}
+                                <TimeSingleSelect
+                                  ariaLabel={`${d.label} Shift 2 end`}
+                                  id={`${d.key}-shift2-end`}
                                   onChange={(next) =>
                                     setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningEnd: next } : x)))
                                   }

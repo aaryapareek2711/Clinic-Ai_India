@@ -49,6 +49,7 @@ function PatientDetailPage() {
   const [visits, setVisits] = useState<PatientVisit[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [saveInfo, setSaveInfo] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -104,6 +105,7 @@ function PatientDetailPage() {
     setDraftGender(patient.gender ?? '')
     setEditing(true)
     setError(null)
+    setSaveInfo(null)
   }
 
   const cancelEdit = () => {
@@ -130,21 +132,31 @@ function PatientDetailPage() {
 
     if (Object.keys(payload).length === 0) {
       setEditing(false)
+      setSaveInfo(null)
       return
     }
 
     try {
       setSaving(true)
       setError(null)
+      setSaveInfo(null)
       const updated = await patchPatient(patient.patient_id || patientId, payload)
       setPatient(updated)
       setEditing(false)
+      if (payload.phone_number != null) {
+        setSaveInfo(
+          'Phone number saved. Open WhatsApp intakes are resent to the new number when the clinic has messaging configured.',
+        )
+      } else {
+        setSaveInfo(null)
+      }
       const nextId = updated.patient_id?.trim()
       if (nextId && nextId !== patientId) {
         navigate(`/patients/detail?patientId=${encodeURIComponent(nextId)}`, { replace: true })
       }
     } catch (e) {
       setError(getApiErrorMessage(e))
+      setSaveInfo(null)
     } finally {
       setSaving(false)
     }
@@ -186,6 +198,9 @@ function PatientDetailPage() {
         </div>
 
         {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+        {saveInfo && (
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{saveInfo}</div>
+        )}
 
         <section className="bg-white rounded-xl border border-[#bdcaba] p-8 mb-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-full opacity-[0.03] pointer-events-none">

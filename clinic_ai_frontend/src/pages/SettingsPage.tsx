@@ -359,13 +359,13 @@ function SettingsPage() {
                     </p>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Morning (default)</span>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Shift 1 (default)</span>
                         <span className="text-sm font-medium text-[#171d16]">
                           {formatTimeLabel(opdSchedule.opdStart)} to {formatTimeLabel(opdSchedule.opdEnd)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Evening (default)</span>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Shift 2 (default)</span>
                         {opdSchedule.addEveningShift ? (
                           <span className="text-sm font-medium text-[#171d16]">
                             {formatTimeLabel(opdSchedule.eveningStart)} to {formatTimeLabel(opdSchedule.eveningEnd)}
@@ -389,11 +389,11 @@ function SettingsPage() {
 
                             <div className="min-w-0 flex-1 space-y-1 text-sm sm:text-right">
                               <div>
-                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Morning</span>
+                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Shift 1</span>
                                 <span className={`font-medium ${row.closed ? 'text-[#ba1a1a]' : 'text-[#171d16]'}`}>{row.morningLabel}</span>
                               </div>
                               <div>
-                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Evening</span>
+                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Shift 2</span>
                                 <span
                                   className={`font-medium ${
                                     row.closed
