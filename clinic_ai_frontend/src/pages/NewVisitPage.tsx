@@ -6,7 +6,7 @@ import {
   setAppointmentDuration as persistAppointmentDuration,
 } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
 import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -50,12 +50,6 @@ function dateKeyLocal(iso: string | null | undefined): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
-}
-
-function minutesFromHHmm(v: string): number {
-  const [h, m] = v.split(':').map((n) => Number(n))
-  if (Number.isNaN(h) || Number.isNaN(m)) return 0
-  return h * 60 + m
 }
 
 function hhmmFromMinutes(total: number): string {
@@ -145,19 +139,17 @@ function NewVisitPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [scheduleRev, setScheduleRev] = useState(0)
   useEffect(() => {
-    const onScheduleUpdate = () => setScheduleRev((n) => n + 1)
-    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
-    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+    const bump = () => setScheduleRev((n: number) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+    return () => {
+      window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+      window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+    }
   }, [])
   const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
   const durationMap = useMemo(() => getAppointmentDurationMap(), [])
   const minDate = localDateInputMin()
-
-  useEffect(() => {
-    const bump = () => setScheduleVersion((v) => v + 1)
-    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
-    return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
-  }, [])
 
   useEffect(() => {
     const dateStr = appointmentDate.trim()

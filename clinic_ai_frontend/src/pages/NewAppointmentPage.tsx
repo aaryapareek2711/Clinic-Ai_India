@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getAppointmentDurationMap, setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import ProviderAvatar from '../components/ProviderAvatar'
@@ -45,12 +46,6 @@ function dateKeyLocal(iso: string | null | undefined): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
-}
-
-function minutesFromHHmm(v: string): number {
-  const [h, m] = v.split(':').map((n) => Number(n))
-  if (Number.isNaN(h) || Number.isNaN(m)) return 0
-  return h * 60 + m
 }
 
 function hhmmFromMinutes(total: number): string {

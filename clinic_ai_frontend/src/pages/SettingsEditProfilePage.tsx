@@ -360,8 +360,8 @@ function SettingsEditProfilePage() {
         opd_morning_start: g.opdStart,
         opd_morning_end: g.opdEnd,
         opd_evening_enabled: g.addEveningShift,
-        opd_evening_start: g.addEveningShift ? g.eveningStart : null,
-        opd_evening_end: g.addEveningShift ? g.eveningEnd : null,
+        opd_evening_start: g.addEveningShift ? g.eveningStart : undefined,
+        opd_evening_end: g.addEveningShift ? g.eveningEnd : undefined,
       }
       if (scheduleChanged) {
         patch.opd_weekly_schedule = payloadSchedule

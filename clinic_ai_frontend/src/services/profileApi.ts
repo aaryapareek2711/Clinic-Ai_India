@@ -2,7 +2,6 @@ import { apiClient, getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_DOCTOR_SCHEDULE,
   getDoctorScheduleSettings,
-  OPD_DAY_KEYS,
   saveDoctorScheduleSettings,
   type DoctorScheduleSettings,
   type OpdDayKey,
