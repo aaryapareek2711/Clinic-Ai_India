@@ -3,9 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getAppointmentDurationMap, setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
-import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
-import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
+import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import ProviderAvatar from '../components/ProviderAvatar'
@@ -205,15 +203,14 @@ function NewAppointmentPage() {
     d.setDate(1)
     return d
   })
-  const [scheduleVersion, setScheduleVersion] = useState(0)
-  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleVersion])
-  const [appointmentDuration] = useState<number>(() => getDoctorScheduleSettings().defaultSlotMinutes || 15)
-
+  const [scheduleRev, setScheduleRev] = useState(0)
   useEffect(() => {
-    const bump = () => setScheduleVersion((v) => v + 1)
-    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
-    return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+    const onScheduleUpdate = () => setScheduleRev((n) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
   }, [])
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
+  const appointmentDuration = schedule.defaultSlotMinutes || 15
   const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const minAppointmentDate = localDateInputMin()
   const [listLoading, setListLoading] = useState(true)

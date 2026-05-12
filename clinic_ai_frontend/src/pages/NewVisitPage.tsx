@@ -143,8 +143,13 @@ function NewVisitPage() {
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [scheduleVersion, setScheduleVersion] = useState(0)
-  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleVersion])
+  const [scheduleRev, setScheduleRev] = useState(0)
+  useEffect(() => {
+    const onScheduleUpdate = () => setScheduleRev((n) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+  }, [])
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
   const durationMap = useMemo(() => getAppointmentDurationMap(), [])
   const minDate = localDateInputMin()
 

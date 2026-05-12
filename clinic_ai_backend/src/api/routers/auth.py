@@ -267,6 +267,8 @@ def register(payload: UserRegisterRequest) -> AuthResponse:
         "full_name": payload.full_name,
         "phone": payload.phone,
         "role": payload.role,
+        "job_title": str(payload.job_title).strip() if payload.job_title else None,
+        "medical_license_number": str(payload.medical_license_number).strip() if payload.medical_license_number else None,
         "opd_morning_start": payload.opd_morning_start,
         "opd_morning_end": payload.opd_morning_end,
         "opd_evening_enabled": bool(payload.opd_evening_enabled),
@@ -358,6 +360,9 @@ def update_my_profile(
 
     if payload.opd_weekly_schedule is not None:
         updates["opd_weekly_schedule"] = _weekly_schedule_to_mongo(payload.opd_weekly_schedule)
+
+    if payload.opd_evening_enabled is not None:
+        updates["opd_evening_enabled"] = bool(payload.opd_evening_enabled)
 
     if not updates:
         return _as_user_response(current_user)

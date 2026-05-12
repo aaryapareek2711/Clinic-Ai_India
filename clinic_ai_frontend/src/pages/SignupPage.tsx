@@ -9,6 +9,15 @@ import { persistAuthSession, registerAccount } from '../services/authApi'
 const HOUR_OPTIONS_12H = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
+/** Maps signup specialty dropdown → persisted `job_title` / settings “Specialization”. */
+const SPECIALTY_TO_JOB_TITLE: Record<string, string> = {
+  general: 'General Physician',
+  cardio: 'Cardiologist',
+  pediatric: 'Pediatrician',
+  ortho: 'Orthopedic Surgeon',
+  derm: 'Dermatologist',
+}
+
 function composeTime12(hour: string, minute: string, period: string): string {
   if (!hour || !minute || !period) return ''
   return `${Number(hour)}:${minute} ${period}`
@@ -22,6 +31,7 @@ function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [specialty, setSpecialty] = useState('general')
+  const [medicalLicense, setMedicalLicense] = useState('')
   const [morningStartHour, setMorningStartHour] = useState('')
   const [morningStartMinute, setMorningStartMinute] = useState('')
   const [morningStartPeriod, setMorningStartPeriod] = useState('')
@@ -108,6 +118,8 @@ function SignupPage() {
                     full_name: fullName.trim(),
                     phone,
                     role,
+                    job_title: SPECIALTY_TO_JOB_TITLE[specialty] || undefined,
+                    medical_license_number: medicalLicense.trim() || null,
                     opd_morning_start: morningStart,
                     opd_morning_end: morningEnd,
                     opd_evening_enabled: eveningEnabled,
@@ -184,8 +196,10 @@ function SignupPage() {
                   <input
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
                     id="mci"
+                    onChange={(e) => setMedicalLicense(e.target.value)}
                     placeholder="MCI/12345"
                     type="text"
+                    value={medicalLicense}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">badge</span>
                 </div>

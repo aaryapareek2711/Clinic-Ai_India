@@ -110,34 +110,6 @@ export function coerceProviderProfile(raw: unknown): ProviderProfile {
     is_active: Boolean(r.is_active ?? true),
     is_verified: Boolean(r.is_verified ?? true),
     tenant_id: r.tenant_id != null ? str(r.tenant_id) : null,
-    opd_morning_start: r.opd_morning_start != null ? str(r.opd_morning_start) : null,
-    opd_morning_end: r.opd_morning_end != null ? str(r.opd_morning_end) : null,
-    opd_evening_enabled: Boolean(r.opd_evening_enabled ?? false),
-    opd_evening_start: r.opd_evening_start != null ? str(r.opd_evening_start) : null,
-    opd_evening_end: r.opd_evening_end != null ? str(r.opd_evening_end) : null,
-    opd_weekly_schedule: (() => {
-      const w = r.opd_weekly_schedule
-      if (!Array.isArray(w) || w.length !== 7) return null
-      const out: OpdWeeklyDayPayload[] = []
-      for (const item of w) {
-        if (!item || typeof item !== 'object') return null
-        const o = item as Record<string, unknown>
-        const day = str(o.day).toLowerCase() as OpdDayKey
-        if (!OPD_DAY_KEYS.includes(day)) return null
-        out.push({
-          day,
-          closed: Boolean(o.closed),
-          morning_start: o.morning_start != null && str(o.morning_start) ? str(o.morning_start) : null,
-          morning_end: o.morning_end != null && str(o.morning_end) ? str(o.morning_end) : null,
-          evening_enabled: Boolean(o.evening_enabled),
-          evening_start: o.evening_start != null && str(o.evening_start) ? str(o.evening_start) : null,
-          evening_end: o.evening_end != null && str(o.evening_end) ? str(o.evening_end) : null,
-        })
-      }
-      const keys = new Set(out.map((x) => x.day))
-      if (keys.size !== 7) return null
-      return out
-    })(),
   }
 }
 

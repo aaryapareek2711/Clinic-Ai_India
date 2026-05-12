@@ -190,13 +190,6 @@ function SettingsEditProfilePage() {
   const [phone, setPhone] = useState('')
   const [license, setLicense] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
-  const [initialProfile, setInitialProfile] = useState<{
-    fullName: string
-    jobTitle: string
-    phone: string
-    license: string
-    avatarUrl: string
-  } | null>(null)
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [weeklyUi, setWeeklyUi] = useState<WeeklyDayUi[]>(() => scheduleToWeeklyUi(getDoctorScheduleSettings()))
@@ -248,13 +241,14 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
-      setInitialProfile({
-        fullName: me.full_name ?? '',
-        jobTitle: me.job_title ?? '',
-        phone: readPhone(me),
-        license: me.medical_license_number ?? '',
-        avatarUrl: me.avatar_url ?? '',
-      })
+      syncDoctorScheduleFromServer(me)
+      const applied = getDoctorScheduleSettings()
+      setOpdStart(applied.opdStart)
+      setOpdEnd(applied.opdEnd)
+      setAddEveningShift(applied.addEveningShift)
+      setEveningStart(applied.eveningStart)
+      setEveningEnd(applied.eveningEnd)
+      setDefaultSlotMinutes(applied.defaultSlotMinutes)
       const schedule = getDoctorScheduleSettings()
       const w = scheduleToWeeklyUi(schedule)
       setWeeklyUi(w)
@@ -293,13 +287,23 @@ function SettingsEditProfilePage() {
       ...stored,
       weeklySchedule: weeklyUiToStoredRows(weeklyUi),
       defaultSlotMinutes,
-    })
+    }
+    saveDoctorScheduleSettings(schedulePayload)
+    try {
+      localStorage.setItem(DAY_AVAILABILITY_LOCAL_KEY, JSON.stringify(dayAvailability))
+    } catch {
+      /* ignore */
+    }
     if (!fullName.trim()) {
       setBanner({ type: 'err', text: 'Full name is required.' })
       return
     }
     const scheduleChanged = initialWeeklyJsonRef.current !== scheduleSnap
     if (!hasAuthToken()) {
+      setBanner({
+        type: 'ok',
+        text: 'Saved on this device. Sign in to sync your profile and OPD hours to the server.',
+      })
       initialWeeklyJsonRef.current = scheduleSnap
       setBanner({ type: 'ok', text: 'Availability saved on this device. Sign in to sync your profile and server.' })
       return
@@ -326,6 +330,16 @@ function SettingsEditProfilePage() {
         opd_weekly_schedule?: OpdWeeklyDayPayload[]
       } = {
         full_name: fullName.trim(),
+        phone: phone.trim() || undefined,
+        job_title: jobTitle.trim() || undefined,
+        medical_license_number: license.trim() || undefined,
+        avatar_url: avatarUrl.trim() || undefined,
+        opd_morning_start: opdStart,
+        opd_morning_end: opdEnd,
+        opd_evening_enabled: addEveningShift,
+        opd_evening_start: addEveningShift ? eveningStart : null,
+        opd_evening_end: addEveningShift ? eveningEnd : null,
+      })
         phone: phone.trim(),
         job_title: jobTitle.trim(),
         medical_license_number: license.trim(),
@@ -351,11 +365,12 @@ function SettingsEditProfilePage() {
       initialWeeklyJsonRef.current = scheduleSnap
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
-      setBanner({ type: 'ok', text: 'Profile updated successfully.' })
+      setBanner({ type: 'ok', text: 'Profile and availability saved.' })
       navigate('/settings')
     } catch (err) {
       setBanner({
         type: 'err',
+        text: `Local OPD settings were saved, but the server update failed (${getApiErrorMessage(err)}).`,
         text: `Availability is saved on this device. Profile could not be updated (${getApiErrorMessage(err)}).`,
       })
     } finally {
