@@ -53,6 +53,8 @@ class InMemoryCollection:
                     return False
                 if "$in" in value and doc_value not in value["$in"]:
                     return False
+                if "$nin" in value and doc_value in value["$nin"]:
+                    return False
                 if "$ne" in value and doc_value == value["$ne"]:
                     return False
             elif doc_value != value:

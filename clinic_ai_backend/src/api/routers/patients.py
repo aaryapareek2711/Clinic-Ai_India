@@ -1,11 +1,12 @@
 """Patient routes module."""
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
-from src.application.services.intake_chat_service import IntakeChatService
+from src.application.services.intake_chat_service import ACTIVE_SESSION_STATUSES, IntakeChatService
 from src.application.utils.india_phone import normalize_india_mobile_storage
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.domain.value_objects.patient_id import PatientId
@@ -20,6 +21,7 @@ from src.api.schemas.patient import (
 )
 
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
+logger = logging.getLogger(__name__)
 TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
 _INDEXES_READY = False
 
@@ -39,12 +41,48 @@ _PATIENT_ID_COLLECTIONS = (
 )
 
 
-def _sync_intake_sessions_to_number(db, patient_id: str, to_number: str, now: datetime) -> None:
-    """Keep WhatsApp intake destination aligned after staff edits the stored mobile."""
+def _sync_intake_sessions_to_number_excluding_active(db, patient_id: str, to_number: str, now: datetime) -> None:
+    """Update stored WhatsApp destination for non-active intake rows (history / analytics)."""
     coll = getattr(db, "intake_sessions", None)
     if coll is None or not patient_id or not to_number:
         return
-    coll.update_many({"patient_id": patient_id}, {"$set": {"to_number": to_number, "updated_at": now}})
+    coll.update_many(
+        {"patient_id": patient_id, "status": {"$nin": list(ACTIVE_SESSION_STATUSES)}},
+        {"$set": {"to_number": to_number, "updated_at": now}},
+    )
+
+
+def _resend_active_intake_after_phone_correction(db, patient_id: str, to_number: str) -> None:
+    """Re-open WhatsApp intake on the corrected number while intake is still active.
+
+    Must not pre-update ``to_number`` on active sessions: :meth:`IntakeChatService.start_intake`
+    detects staff corrections by comparing the session's previous destination with the new number.
+    """
+    patient = db.patients.find_one({"patient_id": patient_id}) or {}
+    language = str(patient.get("preferred_language") or "en")
+    coll = getattr(db, "intake_sessions", None)
+    if coll is None or not patient_id or not to_number:
+        return
+    seen_visits: set[str] = set()
+    for sess in coll.find({"patient_id": patient_id, "status": {"$in": list(ACTIVE_SESSION_STATUSES)}}):
+        visit_id = str(sess.get("visit_id") or "").strip()
+        if not visit_id or visit_id in seen_visits:
+            continue
+        seen_visits.add(visit_id)
+        try:
+            IntakeChatService().start_intake(patient_id, visit_id, to_number, language)
+        except Exception:
+            logger.exception(
+                "intake_resend_after_phone_edit_failed patient_id=%s visit_id=%s",
+                patient_id,
+                visit_id,
+            )
+
+
+def _align_intake_after_patient_phone_edit(db, patient_id: str, to_number: str, now: datetime) -> None:
+    """Keep inactive intake rows in sync, then re-trigger Meta opening for active intakes."""
+    _sync_intake_sessions_to_number_excluding_active(db, patient_id, to_number, now)
+    _resend_active_intake_after_phone_correction(db, patient_id, to_number)
 
 
 def _rewire_internal_patient_id(db, old_id: str, new_id: str) -> None:
@@ -462,7 +500,7 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
         set_doc["updated_at"] = now
         db.patients.update_one({"patient_id": internal_old}, {"$set": set_doc})
         if "phone_number" in raw_updates and merged_phone:
-            _sync_intake_sessions_to_number(db, internal_new, merged_phone, now)
+            _align_intake_after_patient_phone_edit(db, internal_new, merged_phone, now)
         updated = db.patients.find_one({"patient_id": internal_old})
         return _summarize_patient_record(db, updated or existing)
 
@@ -481,7 +519,7 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
     _rewire_internal_patient_id(db, internal_old, internal_new)
     db.patients.delete_one({"patient_id": internal_old})
     if "phone_number" in raw_updates and merged_phone:
-        _sync_intake_sessions_to_number(db, internal_new, merged_phone, now)
+        _align_intake_after_patient_phone_edit(db, internal_new, merged_phone, now)
     fresh = db.patients.find_one({"patient_id": internal_new})
     return _summarize_patient_record(db, fresh or new_doc)
 

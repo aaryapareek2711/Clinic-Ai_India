@@ -9,7 +9,7 @@ from src.application.utils.patient_id_crypto import decode_patient_id
 def test_register_returns_opaque_patient_id_and_consult_visit_id(app_client) -> None:
     payload = {
         "name": "John",
-        "phone_number": "+1 (555) 123-4567",
+        "phone_number": "+91 98765 43210",
         "age": 30,
         "gender": "male",
         "preferred_language": "en",
@@ -22,7 +22,7 @@ def test_register_returns_opaque_patient_id_and_consult_visit_id(app_client) -> 
 
     opaque_patient_id = data["patient_id"]
     internal = decode_patient_id(opaque_patient_id)
-    assert internal == "john_15551234567"
+    assert internal == "john_919876543210"
     assert data.get("pending_schedule_for_intake") is True
     assert data.get("visit_id") is None
     assert data.get("whatsapp_triggered") is False
