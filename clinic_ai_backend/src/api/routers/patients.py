@@ -177,26 +177,90 @@ def list_patients_paged(
 
     total = int(db.patients.count_documents(query))
     skip = (page - 1) * page_size
-    records = list(
-        db.patients.find(
-            query,
-            {
-                "_id": 0,
-                "patient_id": 1,
-                "name": 1,
-                "date_of_birth": 1,
-                "mrn": 1,
-                "age": 1,
-                "gender": 1,
-                "phone_number": 1,
-                "created_at": 1,
-                "updated_at": 1,
-            },
-        )
-        .sort("updated_at", -1)
-        .skip(skip)
-        .limit(page_size)
+
+    allowed_sorts = frozenset(
+        {
+            "created_newest",
+            "created_oldest",
+            "visit_latest",
+            "visit_oldest",
+            "name_az",
+            "name_za",
+            "id_az",
+        }
     )
+    sort_key = str(sort or "").strip()
+    if sort_key not in allowed_sorts:
+        sort_key = "created_newest"
+
+    projection = {
+        "_id": 0,
+        "patient_id": 1,
+        "name": 1,
+        "date_of_birth": 1,
+        "mrn": 1,
+        "age": 1,
+        "gender": 1,
+        "phone_number": 1,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+
+    # Sort the full matching set in the database, then paginate — do not sort only the current page.
+    if sort_key in ("visit_latest", "visit_oldest"):
+        visit_dir = -1 if sort_key == "visit_latest" else 1
+        pipeline = [
+            {"$match": query},
+            {
+                "$lookup": {
+                    "from": "visits",
+                    "let": {"pid": "$patient_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}}},
+                        {"$sort": {"created_at": -1}},
+                        {"$limit": 1},
+                        {"$project": {"_id": 0, "scheduled_start": 1}},
+                    ],
+                    "as": "_lv_wrap",
+                }
+            },
+            {
+                "$addFields": {
+                    "_visit_sort_key": {
+                        "$let": {
+                            "vars": {"first": {"$arrayElemAt": ["$_lv_wrap", 0]}},
+                            "in": {
+                                "$cond": {
+                                    "if": {"$eq": ["$$first", None]},
+                                    "then": "",
+                                    "else": {
+                                        "$toString": {"$ifNull": ["$$first.scheduled_start", ""]},
+                                    },
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+            {"$sort": {"_visit_sort_key": visit_dir, "patient_id": 1}},
+            {"$skip": skip},
+            {"$limit": page_size},
+        ]
+        records = list(db.patients.aggregate(pipeline))
+        for rec in records:
+            rec.pop("_lv_wrap", None)
+            rec.pop("_visit_sort_key", None)
+    else:
+        sort_spec: list[tuple[str, int]] = [("created_at", -1), ("patient_id", 1)]
+        if sort_key == "created_oldest":
+            sort_spec = [("created_at", 1), ("patient_id", 1)]
+        elif sort_key == "name_az":
+            sort_spec = [("name", 1), ("patient_id", 1)]
+        elif sort_key == "name_za":
+            sort_spec = [("name", -1), ("patient_id", 1)]
+        elif sort_key == "id_az":
+            sort_spec = [("patient_id", 1)]
+        records = list(db.patients.find(query, projection).sort(sort_spec).skip(skip).limit(page_size))
     patient_ids = [str(record.get("patient_id") or "").strip() for record in records if str(record.get("patient_id") or "").strip()]
     latest_visit_by_patient: dict[str, dict] = {}
     if patient_ids:
@@ -253,20 +317,6 @@ def list_patients_paged(
                 "latest_visit_scheduled_start": latest_visit_scheduled_start,
             }
         )
-    if sort == "created_newest":
-        items.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-    elif sort == "created_oldest":
-        items.sort(key=lambda row: str(row.get("created_at") or ""))
-    elif sort == "name_az":
-        items.sort(key=lambda row: str(row.get("full_name") or "").lower())
-    elif sort == "name_za":
-        items.sort(key=lambda row: str(row.get("full_name") or "").lower(), reverse=True)
-    elif sort == "id_az":
-        items.sort(key=lambda row: str(row.get("id") or "").lower())
-    elif sort == "visit_oldest":
-        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""))
-    else:
-        items.sort(key=lambda row: str(row.get("latest_visit_scheduled_start") or ""), reverse=True)
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
