@@ -45,6 +45,10 @@ export type IntakeSessionResponse = {
   language?: string | null
   question_answers: IntakeQaItem[]
   updated_at?: string | null
+  /** Pre-computed at pre-visit generation for fast Care Prep (English + native keys). */
+  display_recap_by_language?: Record<string, IntakeQaItem[]> | null
+  /** English chief line from pre-visit summary (Care Prep header in English mode). */
+  display_chief_en?: string | null
 }
 
 export type PreVisitSections = {
@@ -73,6 +77,8 @@ export type PreVisitSummaryResponse = {
   visit_id?: string | null
   intake_session_id: string
   language: string
+  /** When `"en"`, `sections` were stored in English — skip client translation on pre-visit. */
+  summary_display_language?: string | null
   status: string
   sections: PreVisitSections
 }
@@ -445,6 +451,8 @@ export type PostVisitSummaryPayload = {
   next_visit_date?: string | null
 }
 
+export type PostVisitSummaryPayloadByLanguage = Record<string, PostVisitSummaryPayload>
+
 export type PostVisitSummaryResponse = {
   note_id: string
   patient_id: string
@@ -452,6 +460,10 @@ export type PostVisitSummaryResponse = {
   note_type: string
   payload: PostVisitSummaryPayload
   whatsapp_payload?: string | null
+  payload_by_language?: PostVisitSummaryPayloadByLanguage | null
+  whatsapp_payload_by_language?: Record<string, string> | null
+  default_language?: string | null
+  preferred_language?: string | null
 }
 
 export type PostVisitWhatsAppSendResponse = {
@@ -624,7 +636,7 @@ export async function generatePostVisitSummary(
   patientId: string,
   visitId: string,
   options?: {
-    preferred_language?: PostVisitPatientLanguage
+    preferred_language?: PostVisitPatientLanguage | string
     follow_up_in?: string
     follow_up_date?: string
     follow_up_time?: string
@@ -634,7 +646,9 @@ export async function generatePostVisitSummary(
     patient_id: patientId,
     visit_id: visitId,
   }
-  if (options?.preferred_language) body.preferred_language = options.preferred_language
+  if (options?.preferred_language != null && String(options.preferred_language).trim()) {
+    body.preferred_language = String(options.preferred_language).trim()
+  }
   if (options?.follow_up_in?.trim()) body.follow_up_in = options.follow_up_in.trim()
   if (options?.follow_up_date?.trim()) body.follow_up_date = options.follow_up_date.trim()
   if (options?.follow_up_time?.trim()) body.follow_up_time = options.follow_up_time.trim()
@@ -665,7 +679,7 @@ export async function fetchLatestPostVisitSummary(
 export async function sendPostVisitSummaryWhatsApp(
   patientId: string,
   visitId: string,
-  options?: { phone_number?: string; preferred_language?: PostVisitPatientLanguage },
+  options?: { phone_number?: string; preferred_language?: PostVisitPatientLanguage | string },
 ): Promise<PostVisitWhatsAppSendResponse> {
   const body: Record<string, string> = {
     patient_id: patientId,

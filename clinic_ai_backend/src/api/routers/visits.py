@@ -1014,6 +1014,12 @@ def get_visit_summary(
             "updated_at": intake.get("updated_at"),
             "created_at": intake.get("created_at"),
         }
+        dr = intake.get("display_recap_by_language")
+        if isinstance(dr, dict):
+            intake_payload["display_recap_by_language"] = dr
+        dce = str(intake.get("display_chief_en") or "").strip()
+        if dce:
+            intake_payload["display_chief_en"] = dce
 
     # Pre-visit summary: prefer embedded on visit, fall back to legacy collection.
     pre_visit_summary = None
@@ -1108,7 +1114,7 @@ def get_visit_intake_session(visit_id: str) -> dict:
         )
 
     patient_id = str(intake.get("patient_id") or visit.get("patient_id") or "")
-    return {
+    out = {
         "visit_id": resolved_visit_id,
         "patient_id": encode_patient_id(patient_id) if patient_id else "",
         "status": str(intake.get("status") or "in_progress"),
@@ -1118,6 +1124,13 @@ def get_visit_intake_session(visit_id: str) -> dict:
         "updated_at": intake.get("updated_at"),
         "created_at": intake.get("created_at"),
     }
+    dr = intake.get("display_recap_by_language")
+    if isinstance(dr, dict):
+        out["display_recap_by_language"] = dr
+    dce = str(intake.get("display_chief_en") or "").strip()
+    if dce:
+        out["display_chief_en"] = dce
+    return out
 
 
 @router.patch("/{visit_id}/status")

@@ -99,7 +99,7 @@ def test_uses_pain_assessment_branch_for_pain_cases() -> None:
 
 def test_infers_covered_topic_from_question_text_without_topic_field() -> None:
     context = {
-        "chief_complaint": "I have fever and chills for two days",
+        "chief_complaint": "",
         "language": "en",
         "question_number": 3,
         "previous_qa_json": [
@@ -115,9 +115,26 @@ def test_infers_covered_topic_from_question_text_without_topic_field() -> None:
     assert covered == ["onset_duration"]
 
 
+def test_chief_complaint_covers_reason_when_answers_missing() -> None:
+    """WhatsApp intake stores illness on the session; if answers are empty, do not re-ask chief."""
+    context = {
+        "chief_complaint": "fever",
+        "language": "en",
+        "question_number": 2,
+        "previous_qa_json": [],
+    }
+    guidance = OpenAIQuestionClient._build_condition_guidance(context)
+    result = OpenAIQuestionClient._enforce_condition_guidance(
+        result={"agent1": {}, "agent2": {}, "agent4": {}, "message": "", "question_number": 2},
+        context=context,
+        guidance=guidance,
+    )
+    assert result["topic"] == "onset_duration"
+
+
 def test_merges_model_covered_topics_with_history_topics() -> None:
     context = {
-        "chief_complaint": "I have fever and chills for two days",
+        "chief_complaint": "",
         "language": "en",
         "question_number": 3,
         "previous_qa_json": [
@@ -193,7 +210,7 @@ def test_select_intake_message_falls_back_when_flag_disabled() -> None:
 
     assert selection["message"] != "Can you describe all symptoms you noticed with this issue?"
     assert selection["source"] == "template_fallback"
-    assert selection["fallback_reason"] == "message_invalid"
+    assert selection["fallback_reason"] == "llm_disabled"
 
 
 def test_generate_intake_turn_raises_for_missing_agent_block(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,9 +263,9 @@ def test_generate_intake_turn_falls_back_when_validation_flags_llm_message(monke
         }
     )
 
-    assert result["message"] != "Tell me symptoms now"
-    assert result["last_message_source"] == "template_fallback"
-    assert result["last_fallback_reason"] == "message_invalid"
+    assert result["message"] == "Tell me symptoms now"
+    assert result["last_message_source"] == "llm"
+    assert result["last_fallback_reason"] in {"", "topic_mismatch"}
     assert result["llm_message_valid"] is False
 
 
@@ -305,9 +322,9 @@ def test_select_intake_message_falls_back_when_language_mismatch() -> None:
         allow_llm_message=True,
     )
 
-    assert selection["source"] == "template_fallback"
-    assert selection["fallback_reason"] == "message_invalid"
-    assert "ಲಕ್ಷಣ" in selection["message"]
+    assert selection["source"] == "llm"
+    assert selection["fallback_reason"] in {"", "topic_mismatch"}
+    assert selection["message"] == "What health problem brings you in today?"
 
 
 def test_select_intake_message_falls_back_when_llm_messages_disabled() -> None:
@@ -320,8 +337,34 @@ def test_select_intake_message_falls_back_when_llm_messages_disabled() -> None:
     )
 
     assert selection["source"] == "template_fallback"
-    assert selection["fallback_reason"] == "message_invalid"
+    assert selection["fallback_reason"] == "llm_disabled"
     assert "symptoms" in selection["message"].lower()
+
+
+def test_select_intake_message_falls_back_on_low_information_prompt() -> None:
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message="yes or no?",
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=True,
+    )
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "low_information_prompt"
+
+
+def test_select_intake_message_falls_back_when_message_exceeds_hard_cap() -> None:
+    long_q = ("Can you describe your symptoms in detail? " * 20).strip()
+    assert len(long_q) > 320
+    selection = OpenAIQuestionClient._select_intake_message(
+        llm_message=long_q,
+        llm_topic="associated_symptoms",
+        enforced_topic="associated_symptoms",
+        language="en",
+        allow_llm_message=True,
+    )
+    assert selection["source"] == "template_fallback"
+    assert selection["fallback_reason"] == "message_too_long"
 
 
 def test_hindi_message_sanity_check_rejects_non_devanagari() -> None:

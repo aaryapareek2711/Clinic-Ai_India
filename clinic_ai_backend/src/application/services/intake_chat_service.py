@@ -585,7 +585,7 @@ class IntakeChatService:
                 "language": language,
                 "question_number": int(session.get("question_number", 1) or 1),
                 "max_questions": int(session.get("max_questions", 8) or 8),
-                "previous_qa_json": session.get("answers", []),
+                "previous_qa_json": session.get("answers") or [],
                 "has_travelled_recently": bool(patient.get("travelled_recently", False)),
                 "chief_complaint": session.get("illness", ""),
             }
@@ -949,7 +949,7 @@ class IntakeChatService:
             "chief_complaint": session.get("illness", ""),
             "gender": session.get("gender", ""),
             "patient_age": session.get("patient_age"),
-            "previous_qa_json": session.get("answers", []),
+            "previous_qa_json": session.get("answers") or [],
             "has_travelled_recently": bool(session.get("has_travelled_recently", False)),
         }
         guidance = self.openai._build_condition_guidance(context)
@@ -1136,7 +1136,12 @@ class IntakeChatService:
         return None
 
     def _covered_topics_from_session(self, session: dict) -> list[str]:
-        return self.openai._extract_covered_topics({"previous_qa_json": session.get("answers", [])})
+        return self.openai._extract_covered_topics(
+            {
+                "previous_qa_json": session.get("answers") or [],
+                "chief_complaint": str(session.get("illness", "") or ""),
+            }
+        )
 
     def _build_recovery_question(self, language: str, topic: str, session: dict) -> str:
         topic_key = str(topic or session.get("pending_topic") or "").strip()
@@ -1555,6 +1560,11 @@ class IntakeChatService:
         visit_id = str(session.get("visit_id") or "").strip()
         if not visit_id:
             return
+        existing = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"_id": 0, "intake_session.display_recap_by_language": 1, "intake_session.display_chief_en": 1},
+        ) or {}
+        prev = dict((existing.get("intake_session") or {}))
         snapshot = {
             "patient_id": str(session.get("patient_id") or "").strip(),
             "visit_id": visit_id,
@@ -1571,6 +1581,12 @@ class IntakeChatService:
             "last_outbound_at": session.get("last_outbound_at"),
             "updated_at": session.get("updated_at") or datetime.now(timezone.utc),
         }
+        dr = prev.get("display_recap_by_language")
+        if isinstance(dr, dict) and dr:
+            snapshot["display_recap_by_language"] = dr
+        chief_en = str(prev.get("display_chief_en") or "").strip()
+        if chief_en:
+            snapshot["display_chief_en"] = chief_en
         self.db.visits.update_one(
             {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
             {"$set": {"intake_session": snapshot, "updated_at": snapshot["updated_at"]}},

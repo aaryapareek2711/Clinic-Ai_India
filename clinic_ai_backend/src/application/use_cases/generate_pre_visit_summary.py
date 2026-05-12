@@ -45,10 +45,12 @@ class GeneratePreVisitSummaryUseCase:
 
         language = session.get("language", "en")
         summary = self._fallback_summary(answers)
+        used_ai = False
         try:
             ai_summary = self.openai.generate_pre_visit_summary(language=language, intake_answers=answers)
             if isinstance(ai_summary, dict):
                 summary = ai_summary
+                used_ai = True
         except Exception:
             pass
 
@@ -57,6 +59,32 @@ class GeneratePreVisitSummaryUseCase:
             summary["additional_doctor_note"] = existing_note
 
         now = datetime.now(timezone.utc)
+        recap_rows = GeneratePreVisitSummaryUseCase._recap_rows_from_answers(answers)
+        display_recap_by_language: dict[str, Any] | None = None
+        display_chief_en: str | None = None
+        if used_ai and isinstance(summary, dict):
+            cc = summary.get("chief_complaint") or {}
+            chief_line = str(cc.get("reason_for_visit") or "").strip()
+            if chief_line:
+                display_chief_en = chief_line
+        lang_key = str(language or "en").strip().lower().replace("_", "-")
+        if recap_rows:
+            if lang_key in ("", "en", "en-us"):
+                display_recap_by_language = {"en": recap_rows}
+            else:
+                display_recap_by_language = {lang_key: list(recap_rows)}
+                try:
+                    translated = self.openai.translate_json_payload_for_display(
+                        {"recapRows": recap_rows}, target_language="English"
+                    )
+                    en_rows = translated.get("recapRows") if isinstance(translated, dict) else None
+                    if isinstance(en_rows, list) and en_rows:
+                        display_recap_by_language["en"] = en_rows
+                    else:
+                        display_recap_by_language["en"] = list(recap_rows)
+                except Exception:
+                    display_recap_by_language["en"] = list(recap_rows)
+
         # When doctor generates pre-visit summary, we treat intake as completed for display/workflow.
         intake_status_update = {
             "intake_session.status": "completed",
@@ -64,11 +92,17 @@ class GeneratePreVisitSummaryUseCase:
             "intake_session.pending_topic": "doctor_generated_pre_visit",
             "intake_session.updated_at": now,
         }
+        if display_recap_by_language is not None:
+            intake_status_update["intake_session.display_recap_by_language"] = display_recap_by_language
+        if display_chief_en:
+            intake_status_update["intake_session.display_chief_en"] = display_chief_en
         doc = {
             "patient_id": patient_id,
             "visit_id": visit_id,
             "intake_session_id": str(session.get("visit_id") or visit_id),
             "language": language,
+            # Doctor-facing body is English when the model ran; UI can skip on-load translation.
+            "summary_display_language": ("en" if used_ai else None),
             # Once we generate the pre-visit summary successfully, show it as completed
             # in the UI (VisitIntakeCanvas displays this field as "Intake status").
             "status": "completed",
@@ -107,6 +141,19 @@ class GeneratePreVisitSummaryUseCase:
             # Embedded snapshot is the primary source for the visit page.
             pass
         return doc
+
+    @staticmethod
+    def _recap_rows_from_answers(answers: list[Any]) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for item in answers:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("question") or "").strip()
+            a = str(item.get("answer") or "").strip()
+            if not a:
+                continue
+            rows.append({"question": q, "answer": a})
+        return rows
 
     @staticmethod
     def _fallback_summary(answers: list[dict[str, Any]]) -> dict[str, Any]:

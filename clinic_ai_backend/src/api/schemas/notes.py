@@ -123,6 +123,10 @@ class NoteGenerateResponse(BaseModel):
     created_at: datetime
     payload: IndiaClinicalNotePayload | PostVisitSummaryPayload
     whatsapp_payload: str | None = None
+    payload_by_language: dict[str, PostVisitSummaryPayload] | None = None
+    whatsapp_payload_by_language: dict[str, str] | None = None
+    default_language: str | None = None
+    preferred_language: str | None = None
     legacy: bool = False
 
 

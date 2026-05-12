@@ -21,6 +21,16 @@ LANGUAGE_NAMES = {
     "en_us": "English",
     "hi": "Hindi",
     "hi-eng": "Hindi and English (short, patient-friendly mixed wording for WhatsApp)",
+    "kn": "Kannada",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "mr": "Marathi",
+    "bn": "Bengali",
+    "ml": "Malayalam",
+    "gu": "Gujarati",
+    "or": "Odia",
+    "pa": "Punjabi",
+    "ur": "Urdu",
 }
 
 
@@ -73,16 +83,19 @@ class GeneratePostVisitSummaryUseCase:
             raise ValueError("No India clinical note or completed transcription available")
 
         context = self._build_context(india_note=india_note, transcript=transcript)
-        language_name = LANGUAGE_NAMES.get(resolved_language, resolved_language)
-        payload = self._generate_payload(context=context, language_name=language_name)
-        follow_up_in_text = str(follow_up_in or "").strip()
-        if follow_up_in_text:
-            payload["follow_up"] = follow_up_in_text
-        if follow_up_date is not None:
-            parsed_staff = parse_next_visit_at(follow_up_date)
-            if parsed_staff:
-                payload["next_visit_date"] = parsed_staff.date().isoformat()
-        whatsapp_payload = self._build_whatsapp_payload(payload=payload)
+        payload_by_language = self._build_payloads_by_language(
+            context=context,
+            preferred_language=resolved_language,
+            follow_up_in=follow_up_in,
+            follow_up_date=follow_up_date,
+        )
+        # Keep backward compatibility for callers that still read only payload/whatsapp_payload.
+        payload = dict(payload_by_language.get("en") or {})
+        whatsapp_payload_by_language = {
+            lang: self._build_whatsapp_payload(payload=lang_payload)
+            for lang, lang_payload in payload_by_language.items()
+        }
+        whatsapp_payload = str(whatsapp_payload_by_language.get("en") or "")
 
         version = self._next_version(patient_id=patient_id, visit_id=visit_id, note_type="post_visit_summary")
         note_doc = {
@@ -95,7 +108,11 @@ class GeneratePostVisitSummaryUseCase:
             "version": version,
             "created_at": _utc_now(),
             "payload": payload,
+            "payload_by_language": payload_by_language,
+            "default_language": "en",
+            "preferred_language": resolved_language,
             "whatsapp_payload": whatsapp_payload,
+            "whatsapp_payload_by_language": whatsapp_payload_by_language,
         }
         created = self.note_repo.create_note(note_doc)
         created.pop("_id", None)
@@ -109,6 +126,56 @@ class GeneratePostVisitSummaryUseCase:
             preferred_language=resolved_language,
         )
         return created
+
+    def _build_payloads_by_language(
+        self,
+        *,
+        context: dict,
+        preferred_language: str,
+        follow_up_in: str | None,
+        follow_up_date: date | None,
+    ) -> dict[str, dict]:
+        """Generate English-first payload plus preferred-language variant when needed."""
+        payloads: dict[str, dict] = {}
+
+        english_payload = self._generate_payload(context=context, language_name=LANGUAGE_NAMES["en"])
+        payloads["en"] = self._apply_follow_up_overrides(
+            payload=english_payload,
+            follow_up_in=follow_up_in,
+            follow_up_date=follow_up_date,
+        )
+
+        preferred = str(preferred_language or "").strip().lower()
+        if preferred and preferred != "en":
+            preferred_language_name = LANGUAGE_NAMES.get(
+                preferred,
+                preferred.replace("-", " ").replace("_", " ").strip().title(),
+            )
+            preferred_payload = self._generate_payload(context=context, language_name=preferred_language_name)
+            payloads[preferred] = self._apply_follow_up_overrides(
+                payload=preferred_payload,
+                follow_up_in=follow_up_in,
+                follow_up_date=follow_up_date,
+            )
+
+        return payloads
+
+    @staticmethod
+    def _apply_follow_up_overrides(
+        *,
+        payload: dict,
+        follow_up_in: str | None,
+        follow_up_date: date | None,
+    ) -> dict:
+        updated = dict(payload or {})
+        follow_up_in_text = str(follow_up_in or "").strip()
+        if follow_up_in_text:
+            updated["follow_up"] = follow_up_in_text
+        if follow_up_date is not None:
+            parsed_staff = parse_next_visit_at(follow_up_date)
+            if parsed_staff:
+                updated["next_visit_date"] = parsed_staff.date().isoformat()
+        return updated
 
     def _resolve_transcription_job(
         self,
