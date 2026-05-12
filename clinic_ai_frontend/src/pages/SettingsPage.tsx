@@ -357,23 +357,23 @@ function SettingsPage() {
                       Signup OPD template: these global hours apply when no weekly override is saved. The per-day list uses your saved weekly
                       schedule if present, otherwise this template and default closed days.
                     </p>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="space-y-2 text-sm">
+                      <p className="text-[#171d16]">
                         <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Morning (default)</span>
-                        <span className="text-sm font-medium text-[#171d16]">
+                        <span className="mx-1.5 text-gray-400">-</span>
+                        <span className="font-medium">
                           {formatTimeLabel(opdSchedule.opdStart)} to {formatTimeLabel(opdSchedule.opdEnd)}
                         </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Evening (default)</span>
-                        {opdSchedule.addEveningShift ? (
-                          <span className="text-sm font-medium text-[#171d16]">
+                      </p>
+                      {opdSchedule.addEveningShift ? (
+                        <p className="text-[#171d16]">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Evening (default)</span>
+                          <span className="mx-1.5 text-gray-400">-</span>
+                          <span className="font-medium">
                             {formatTimeLabel(opdSchedule.eveningStart)} to {formatTimeLabel(opdSchedule.eveningEnd)}
                           </span>
-                        ) : (
-                          <span className="text-sm font-semibold text-[#ba1a1a]">Not available</span>
-                        )}
-                      </div>
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-4">
@@ -382,31 +382,33 @@ function SettingsPage() {
                         const row = dayAvailability.find((x) => x.key === d.key)
                         if (!row) return null
                         return (
-                          <div key={d.key} className="flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-b-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-[120px]">
-                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">{d.label}</p>
-                            </div>
-
-                            <div className="min-w-0 flex-1 space-y-1 text-sm sm:text-right">
-                              <div>
-                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Morning</span>
-                                <span className={`font-medium ${row.closed ? 'text-[#ba1a1a]' : 'text-[#171d16]'}`}>{row.morningLabel}</span>
-                              </div>
-                              <div>
-                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Evening</span>
-                                <span
-                                  className={`font-medium ${
-                                    row.closed
-                                      ? 'text-gray-400'
-                                      : row.eveningLabel === 'Not available'
-                                        ? 'text-[#ba1a1a]'
-                                        : 'text-[#171d16]'
-                                  }`}
-                                >
-                                  {row.eveningLabel}
-                                </span>
-                              </div>
-                            </div>
+                          <div
+                            key={d.key}
+                            className="flex flex-col gap-1.5 border-b border-gray-100 pb-3 text-sm last:border-b-0 last:pb-0"
+                          >
+                            <p className="text-base font-semibold text-[#171d16]">{d.label}</p>
+                            {row.closed ? (
+                              <p className="font-medium text-[#ba1a1a]">Closed</p>
+                            ) : (
+                              <>
+                                <p className="text-[#171d16]">
+                                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Morning</span>
+                                  <span className="mx-1.5 text-gray-400">-</span>
+                                  <span className="font-medium text-[#171d16]">{row.morningLabel}</span>
+                                </p>
+                                <p>
+                                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Evening</span>
+                                  <span className="mx-1.5 text-gray-400">-</span>
+                                  <span
+                                    className={`font-medium ${
+                                      row.eveningLabel === 'Not available' ? 'text-[#ba1a1a]' : 'text-[#171d16]'
+                                    }`}
+                                  >
+                                    {row.eveningLabel}
+                                  </span>
+                                </p>
+                              </>
+                            )}
                           </div>
                         )
                       })}
