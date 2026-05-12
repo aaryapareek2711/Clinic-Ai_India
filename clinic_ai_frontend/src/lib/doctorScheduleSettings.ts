@@ -1,3 +1,28 @@
+export const OPD_DAY_KEYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const
+
+export type OpdDayKey = (typeof OPD_DAY_KEYS)[number]
+
+export type OpdDayScheduleRow = {
+  day: OpdDayKey
+  closed: boolean
+  morningStart: string
+  morningEnd: string
+  eveningEnabled: boolean
+  eveningStart: string
+  eveningEnd: string
+}
+
+/** Matches Settings UI defaults for days marked closed until customized. */
+export const DEFAULT_CLOSED_DAYS: ReadonlySet<OpdDayKey> = new Set(['wednesday', 'sunday'])
+
 export type DoctorScheduleSettings = {
   opdStart: string
   opdEnd: string
@@ -5,6 +30,8 @@ export type DoctorScheduleSettings = {
   eveningStart: string
   eveningEnd: string
   defaultSlotMinutes: number
+  /** When null, each weekday falls back to signup globals + default closed days. */
+  weeklySchedule: OpdDayScheduleRow[] | null
 }
 
 const KEY = 'doctor_schedule_settings'
@@ -16,6 +43,7 @@ export const DEFAULT_DOCTOR_SCHEDULE: DoctorScheduleSettings = {
   eveningStart: '17:00',
   eveningEnd: '21:00',
   defaultSlotMinutes: 15,
+  weeklySchedule: null,
 }
 
 function validTime(value: string): boolean {
@@ -27,6 +55,26 @@ export function getDoctorScheduleSettings(): DoctorScheduleSettings {
     const raw = localStorage.getItem(KEY)
     if (!raw) return DEFAULT_DOCTOR_SCHEDULE
     const parsed = JSON.parse(raw) as Partial<DoctorScheduleSettings>
+    const ws =
+      Array.isArray(parsed.weeklySchedule) && parsed.weeklySchedule.length === 7
+        ? (parsed.weeklySchedule as Partial<OpdDayScheduleRow>[])
+        : null
+    const weeklySchedule: OpdDayScheduleRow[] | null =
+      ws &&
+      ws.every(
+        (r) =>
+          r &&
+          typeof r.day === 'string' &&
+          typeof r.closed === 'boolean' &&
+          typeof r.morningStart === 'string' &&
+          typeof r.morningEnd === 'string' &&
+          typeof r.eveningEnabled === 'boolean' &&
+          typeof r.eveningStart === 'string' &&
+          typeof r.eveningEnd === 'string',
+      )
+        ? (ws as OpdDayScheduleRow[])
+        : null
+
     const candidate: DoctorScheduleSettings = {
       opdStart: typeof parsed.opdStart === 'string' && validTime(parsed.opdStart) ? parsed.opdStart : DEFAULT_DOCTOR_SCHEDULE.opdStart,
       opdEnd: typeof parsed.opdEnd === 'string' && validTime(parsed.opdEnd) ? parsed.opdEnd : DEFAULT_DOCTOR_SCHEDULE.opdEnd,
@@ -43,6 +91,7 @@ export function getDoctorScheduleSettings(): DoctorScheduleSettings {
         typeof parsed.defaultSlotMinutes === 'number' && parsed.defaultSlotMinutes >= 5 && parsed.defaultSlotMinutes <= 120
           ? Math.round(parsed.defaultSlotMinutes)
           : DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes,
+      weeklySchedule,
     }
     return candidate
   } catch {

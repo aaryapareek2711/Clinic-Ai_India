@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getAppointmentDurationMap, setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
+import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import ProviderAvatar from '../components/ProviderAvatar'
@@ -134,15 +136,7 @@ function computeSlotsForDate(params: {
   const { dateStr, appointmentDuration, schedule, upcoming, durationMap } = params
   if (!dateStr) return []
   const selectedDateBooked = upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
-  const windows: Array<{ startMin: number; endMin: number }> = []
-  const opdStartMin = minutesFromHHmm(schedule.opdStart)
-  const opdEndMin = minutesFromHHmm(schedule.opdEnd)
-  if (opdEndMin > opdStartMin) windows.push({ startMin: opdStartMin, endMin: opdEndMin })
-  if (schedule.addEveningShift) {
-    const evStart = minutesFromHHmm(schedule.eveningStart)
-    const evEnd = minutesFromHHmm(schedule.eveningEnd)
-    if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
-  }
+  const windows = getSlotWindowsForDate(schedule, dateStr)
 
   const bookedIntervals = selectedDateBooked
     .map((a) => {
@@ -211,8 +205,15 @@ function NewAppointmentPage() {
     d.setDate(1)
     return d
   })
-  const schedule = useMemo(() => getDoctorScheduleSettings(), [])
-  const [appointmentDuration] = useState<number>(schedule.defaultSlotMinutes || 15)
+  const [scheduleVersion, setScheduleVersion] = useState(0)
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleVersion])
+  const [appointmentDuration] = useState<number>(() => getDoctorScheduleSettings().defaultSlotMinutes || 15)
+
+  useEffect(() => {
+    const bump = () => setScheduleVersion((v) => v + 1)
+    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+    return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+  }, [])
   const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const minAppointmentDate = localDateInputMin()
   const [listLoading, setListLoading] = useState(true)

@@ -205,13 +205,10 @@ function VisitsPage() {
                 >
                   <option value="patient_newest">New patient: newest first</option>
                   <option value="patient_oldest">New patient: oldest first</option>
-                  <option value="visit_latest">Latest visit: newest first</option>
-                  <option value="visit_oldest">Latest visit: oldest first</option>
                   <option value="time_newest">Time: newest first</option>
                   <option value="time_oldest">Time: oldest first</option>
                   <option value="name_az">Name: A → Z</option>
                   <option value="name_za">Name: Z → A</option>
-                  <option value="visit_id">Visit ID: A → Z</option>
                 </select>
                 <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
                   expand_more

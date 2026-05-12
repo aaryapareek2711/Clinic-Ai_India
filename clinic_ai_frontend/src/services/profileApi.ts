@@ -1,4 +1,23 @@
 import { apiClient, getApiErrorMessage } from '../lib/apiClient'
+import {
+  DEFAULT_DOCTOR_SCHEDULE,
+  getDoctorScheduleSettings,
+  OPD_DAY_KEYS,
+  saveDoctorScheduleSettings,
+  type DoctorScheduleSettings,
+  type OpdDayKey,
+  type OpdDayScheduleRow,
+} from '../lib/doctorScheduleSettings'
+
+export type OpdWeeklyDayPayload = {
+  day: OpdDayKey
+  closed: boolean
+  morning_start: string | null
+  morning_end: string | null
+  evening_enabled: boolean
+  evening_start: string | null
+  evening_end: string | null
+}
 
 export type ProviderProfile = {
   id: string
@@ -13,6 +32,12 @@ export type ProviderProfile = {
   is_active: boolean
   is_verified: boolean
   tenant_id?: string | null
+  opd_morning_start?: string | null
+  opd_morning_end?: string | null
+  opd_evening_enabled?: boolean
+  opd_evening_start?: string | null
+  opd_evening_end?: string | null
+  opd_weekly_schedule?: OpdWeeklyDayPayload[] | null
 }
 
 function str(v: unknown): string {
@@ -85,6 +110,34 @@ export function coerceProviderProfile(raw: unknown): ProviderProfile {
     is_active: Boolean(r.is_active ?? true),
     is_verified: Boolean(r.is_verified ?? true),
     tenant_id: r.tenant_id != null ? str(r.tenant_id) : null,
+    opd_morning_start: r.opd_morning_start != null ? str(r.opd_morning_start) : null,
+    opd_morning_end: r.opd_morning_end != null ? str(r.opd_morning_end) : null,
+    opd_evening_enabled: Boolean(r.opd_evening_enabled ?? false),
+    opd_evening_start: r.opd_evening_start != null ? str(r.opd_evening_start) : null,
+    opd_evening_end: r.opd_evening_end != null ? str(r.opd_evening_end) : null,
+    opd_weekly_schedule: (() => {
+      const w = r.opd_weekly_schedule
+      if (!Array.isArray(w) || w.length !== 7) return null
+      const out: OpdWeeklyDayPayload[] = []
+      for (const item of w) {
+        if (!item || typeof item !== 'object') return null
+        const o = item as Record<string, unknown>
+        const day = str(o.day).toLowerCase() as OpdDayKey
+        if (!OPD_DAY_KEYS.includes(day)) return null
+        out.push({
+          day,
+          closed: Boolean(o.closed),
+          morning_start: o.morning_start != null && str(o.morning_start) ? str(o.morning_start) : null,
+          morning_end: o.morning_end != null && str(o.morning_end) ? str(o.morning_end) : null,
+          evening_enabled: Boolean(o.evening_enabled),
+          evening_start: o.evening_start != null && str(o.evening_start) ? str(o.evening_start) : null,
+          evening_end: o.evening_end != null && str(o.evening_end) ? str(o.evening_end) : null,
+        })
+      }
+      const keys = new Set(out.map((x) => x.day))
+      if (keys.size !== 7) return null
+      return out
+    })(),
   }
 }
 
@@ -94,6 +147,12 @@ export type ProviderProfilePatch = Partial<{
   job_title: string
   medical_license_number: string
   avatar_url: string
+  opd_morning_start: string
+  opd_morning_end: string
+  opd_evening_enabled: boolean
+  opd_evening_start: string
+  opd_evening_end: string
+  opd_weekly_schedule: OpdWeeklyDayPayload[]
 }>
 
 const PROFILE_CACHE_TTL_MS = 60_000
@@ -121,6 +180,53 @@ function persistProfileToLocalStorage(data: ProviderProfile): void {
   }
 }
 
+function validTime(v: string | null | undefined): v is string {
+  return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
+}
+
+function weeklyPayloadToRows(data: ProviderProfile): OpdDayScheduleRow[] | null {
+  const w = data.opd_weekly_schedule
+  if (!w || w.length !== 7) return null
+  const rows: OpdDayScheduleRow[] = []
+  for (const d of w) {
+    const ms = d.morning_start && validTime(d.morning_start) ? d.morning_start : DEFAULT_DOCTOR_SCHEDULE.opdStart
+    const me = d.morning_end && validTime(d.morning_end) ? d.morning_end : DEFAULT_DOCTOR_SCHEDULE.opdEnd
+    const es =
+      d.evening_start && validTime(d.evening_start) ? d.evening_start : DEFAULT_DOCTOR_SCHEDULE.eveningStart
+    const ee = d.evening_end && validTime(d.evening_end) ? d.evening_end : DEFAULT_DOCTOR_SCHEDULE.eveningEnd
+    rows.push({
+      day: d.day,
+      closed: d.closed,
+      morningStart: ms,
+      morningEnd: me,
+      eveningEnabled: d.evening_enabled,
+      eveningStart: es,
+      eveningEnd: ee,
+    })
+  }
+  const keys = new Set(rows.map((r) => r.day))
+  if (keys.size !== 7) return null
+  return rows
+}
+
+function profileToSchedule(data: ProviderProfile): DoctorScheduleSettings {
+  const current = getDoctorScheduleSettings()
+  const opdStart = validTime(data.opd_morning_start) ? data.opd_morning_start : DEFAULT_DOCTOR_SCHEDULE.opdStart
+  const opdEnd = validTime(data.opd_morning_end) ? data.opd_morning_end : DEFAULT_DOCTOR_SCHEDULE.opdEnd
+  const addEveningShift = Boolean(data.opd_evening_enabled)
+  const eveningStart = validTime(data.opd_evening_start) ? data.opd_evening_start : DEFAULT_DOCTOR_SCHEDULE.eveningStart
+  const eveningEnd = validTime(data.opd_evening_end) ? data.opd_evening_end : DEFAULT_DOCTOR_SCHEDULE.eveningEnd
+  return {
+    opdStart,
+    opdEnd,
+    addEveningShift,
+    eveningStart,
+    eveningEnd,
+    defaultSlotMinutes: current.defaultSlotMinutes || DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes,
+    weeklySchedule: weeklyPayloadToRows(data),
+  }
+}
+
 function authHeaders(): Record<string, string> {
   const token =
     typeof localStorage !== 'undefined'
@@ -144,6 +250,7 @@ export async function fetchMyProfile(): Promise<ProviderProfile> {
     profileCache = normalized
     profileCacheAt = Date.now()
     persistProfileToLocalStorage(normalized)
+    saveDoctorScheduleSettings(profileToSchedule(normalized))
     return normalized
   })()
   try {
@@ -157,7 +264,9 @@ export async function patchMyProfile(body: ProviderProfilePatch): Promise<Provid
   const { data } = await apiClient.patch<ProviderProfile>('/api/auth/me', body, {
     headers: authHeaders(),
   })
-  persistProfileToLocalStorage(data)
+  const normalized = coerceProviderProfile(data)
+  persistProfileToLocalStorage(normalized)
+  saveDoctorScheduleSettings(profileToSchedule(normalized))
   invalidateMyProfileCache()
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PROVIDER_PROFILE_UPDATED_EVENT))
