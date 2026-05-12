@@ -17,6 +17,7 @@ Return JSON only with exactly these keys:
 Rules:
 - Use exactly one of follow_up_in or follow_up_date.
 - If context JSON includes "staff_confirmed_follow_up_date" (ISO YYYY-MM-DD), you MUST set follow_up_date to that exact string and set follow_up_in to null.
+- If context JSON includes a non-empty string "previsit_additional_doctor_note" (doctor-entered text from the pre-visit screen), you MUST include that text verbatim at the start of doctor_notes, before any other doctor_notes content from the encounter.
 - If context JSON contains "selected_template", it may include:
   - included_sections: array of section keys to include (e.g. chief_complaint, assessment, plan, investigations, red_flags, data_gaps, rx, doctor_notes, follow_up_date)
   - section_detail_level: object mapping section key -> "brief" or "detail"

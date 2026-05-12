@@ -9,9 +9,8 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
 import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -118,7 +117,6 @@ type SlotBlock = {
 
 function NewVisitPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [fullName, setFullName] = useState('')
   const [mobile, setMobile] = useState('')
@@ -260,6 +258,17 @@ function NewVisitPage() {
     })
   }, [visitKind, appointmentDate, minDate])
 
+  // Scheduled bookings must follow OPD weekly schedule: closed days have no slot windows.
+  useEffect(() => {
+    if (visitKind !== 'scheduled') return
+    const dateStr = appointmentDate.trim()
+    if (!dateStr) return
+    if (dateStr < minDate || getSlotWindowsForDate(schedule, dateStr).length === 0) {
+      setAppointmentDate('')
+      setSelectedStartIsos([])
+    }
+  }, [visitKind, schedule, minDate, appointmentDate])
+
   const monthCells = useMemo(() => {
     const year = visibleMonth.getFullYear()
     const month = visibleMonth.getMonth()
@@ -269,8 +278,11 @@ function NewVisitPage() {
     for (let i = 0; i < firstWeekday; i += 1) cells.push({ key: `empty-${i}`, day: null, dateStr: null, disabled: true, selected: false })
     for (let day = 1; day <= daysInMonth; day += 1) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const closedOrPastScheduled =
+        dateStr < minDate || getSlotWindowsForDate(schedule, dateStr).length === 0
       // Walk-in visits are only valid today, so freeze every other date.
-      const disabled = visitKind === 'walk_in' ? dateStr !== minDate : dateStr < minDate
+      const disabled =
+        visitKind === 'walk_in' ? dateStr !== minDate : closedOrPastScheduled
       cells.push({
         key: dateStr,
         day,
@@ -280,7 +292,7 @@ function NewVisitPage() {
       })
     }
     return cells
-  }, [visibleMonth, appointmentDate, minDate, visitKind])
+  }, [visibleMonth, appointmentDate, minDate, visitKind, schedule])
 
   async function handleConfirm(): Promise<void> {
     setFormError(null)
@@ -386,18 +398,7 @@ function NewVisitPage() {
             <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-[#ba1a1a] ring-2 ring-white" />
           </button>
           <div className="h-8 w-px bg-gray-200" />
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
-              <p className="text-xs text-gray-500">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 

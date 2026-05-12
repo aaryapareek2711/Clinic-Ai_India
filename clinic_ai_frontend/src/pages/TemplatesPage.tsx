@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import BackButton from '../components/BackButton'
 import CreateTemplateModal from '../components/CreateTemplateModal'
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   getClinicalTemplate,
@@ -12,7 +11,6 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 
 function TemplatesPage() {
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [templateSavedMessage, setTemplateSavedMessage] = useState<string | null>(null)
@@ -89,17 +87,7 @@ function TemplatesPage() {
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
           </button>
-          <div className="flex items-center gap-3 border-l border-gray-200 pl-6">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-xs text-gray-500">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu className="border-l border-gray-200 pl-6" />
         </div>
       </header>
 

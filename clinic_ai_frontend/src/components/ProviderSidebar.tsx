@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
+import ProviderAvatar from './ProviderAvatar'
 import { clearAuthSession, getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
@@ -22,12 +23,12 @@ function navState(pathname: string) {
 }
 
 export default function ProviderSidebar() {
-  const seed = getStoredAuthProfile()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const n = navState(pathname)
+  const seed = getStoredAuthProfile()
   const provider = useProviderIdentity()
-  const sidebarName = useMemo(() => {
+  const displayName = useMemo(() => {
     const storedDisplay = doctorNameLabel(seed.fullName) || seed.username.trim()
     return storedDisplay || provider.displayName
   }, [seed.fullName, seed.username, provider.displayName])
@@ -80,20 +81,34 @@ export default function ProviderSidebar() {
         </Link>
       </nav>
 
-      <div className="shrink-0 border-t border-gray-700 px-4 pt-4">
-        <div className="rounded-xl bg-gray-800/90 px-3 py-3">
-          <p className="truncate text-[13px] font-semibold leading-snug text-white" title={sidebarName || undefined}>
-            {sidebarName || '—'}
-          </p>
-          <button
-            className="mt-3 flex w-full items-center gap-2 rounded-lg py-1.5 text-left text-[13px] font-medium text-slate-400 transition-colors hover:bg-gray-700/80 hover:text-white"
-            onClick={handleLogout}
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-            Logout
-          </button>
-        </div>
+      <div className="shrink-0 border-t border-gray-700 px-2 pt-3 pb-1">
+        <Link
+          className={`mb-2 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-gray-800 ${
+            pathname === '/settings/edit-profile' ? 'bg-gray-800/90 ring-1 ring-[#16a34a]/35' : ''
+          }`}
+          to="/settings/edit-profile"
+        >
+          <ProviderAvatar
+            className="shrink-0 border border-gray-600"
+            imageUrl={provider.avatarUrl}
+            label={displayName}
+            size="md"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white" title={displayName || undefined}>
+              {displayName || '—'}
+            </p>
+            <p className="truncate text-[11px] text-gray-400">{provider.title || 'Clinical provider'}</p>
+          </div>
+        </Link>
+        <button
+          className={`${IDLE} rounded-lg text-left`}
+          onClick={handleLogout}
+          type="button"
+        >
+          <span className="material-symbols-outlined mr-3 text-[20px]">logout</span>
+          Log out
+        </button>
       </div>
     </aside>
   )

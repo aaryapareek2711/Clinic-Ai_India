@@ -62,6 +62,34 @@ class PatientSummaryResponse(BaseModel):
     phone_number: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    latest_visit_id: str | None = None
+    latest_visit_scheduled_start: str | None = None
+
+
+class PatientUpdateRequest(BaseModel):
+    """Partial update for an existing patient (staff corrections)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    phone_number: str | None = Field(default=None, min_length=8, max_length=20)
+    age: int | None = Field(default=None, ge=0, le=130)
+    gender: str | None = Field(default=None, min_length=1, max_length=20)
+    preferred_language: str | None = None
+    travelled_recently: bool | None = None
+    consent: bool | None = None
+    country: str | None = None
+    emergency_contact: str | None = None
+    address: str | None = None
+
+    @field_validator("preferred_language")
+    @classmethod
+    def validate_preferred_language(cls, value: str | None) -> str | None:
+        """Accept language aliases when provided."""
+        if value is None:
+            return None
+        raw_value = str(value).strip()
+        if raw_value and not is_supported_intake_language(raw_value):
+            raise ValueError(intake_language_validation_message(extra_values=("en_US",)))
+        return normalize_intake_language(raw_value)
 
 
 class CreateVisitFromPatientRequest(BaseModel):

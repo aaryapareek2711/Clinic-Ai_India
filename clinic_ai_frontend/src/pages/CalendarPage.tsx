@@ -2,9 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
+import { getAppointmentDurationMap } from '../lib/appointmentDurations'
+import {
+  computeSlotsForDate,
+  formatChipTime,
+  hhmmFromSlotStartIso,
+  localDateInputMin,
+} from '../lib/appointmentSlots'
 import { getApiErrorMessage } from '../lib/apiClient'
+import {
+  DOCTOR_SCHEDULE_UPDATED_EVENT,
+  getDoctorScheduleSettings,
+  type DoctorScheduleSettings,
+  type OpdDayKey,
+} from '../lib/doctorScheduleSettings'
+import { effectiveDayRow, weekdayKeyFromDateStr } from '../lib/opdWeeklySchedule'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
@@ -66,13 +79,6 @@ function hasRenderablePatientName(value: string | null | undefined): boolean {
   return true
 }
 
-function localDateInputMin(d = new Date()): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function localDayStartMs(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
@@ -96,9 +102,26 @@ function isSidebarActiveVisitStatus(raw: string | undefined): boolean {
   return !['completed', 'cancelled', 'canceled', 'closed', 'ended'].includes(status)
 }
 
+const GRID_WEEKDAY_KEYS: OpdDayKey[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+function dateStrYmd(y: number, m0: number, d: number): string {
+  return `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+function isOpdDayClosed(schedule: DoctorScheduleSettings, y: number, m0: number, dayNum: number): boolean {
+  return effectiveDayRow(schedule, weekdayKeyFromDateStr(dateStrYmd(y, m0, dayNum))).closed
+}
+
+function isOpdDateClosed(schedule: DoctorScheduleSettings, dt: Date): boolean {
+  return effectiveDayRow(schedule, weekdayKeyFromDateStr(dateStrYmd(dt.getFullYear(), dt.getMonth(), dt.getDate()))).closed
+}
+
+function isWeekdayColumnClosed(schedule: DoctorScheduleSettings, columnIndex: number): boolean {
+  return effectiveDayRow(schedule, GRID_WEEKDAY_KEYS[columnIndex % 7]).closed
+}
+
 function CalendarPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [viewMonth, setViewMonth] = useState(() => cloneMonth(new Date()))
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month')
@@ -111,13 +134,24 @@ function CalendarPage() {
   const [rescheduleTime, setRescheduleTime] = useState('')
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false)
   const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleDayUpcoming, setRescheduleDayUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const isMountedRef = useRef(true)
   const loadInFlightRef = useRef(false)
   const lastLoadAtRef = useRef(0)
+  const [scheduleRev, setScheduleRev] = useState(0)
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
+  const durationMap = useMemo(() => getAppointmentDurationMap(), [])
+  const rescheduleAppointmentDuration = schedule.defaultSlotMinutes || 15
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
+
+  useEffect(() => {
+    const bump = () => setScheduleRev((n) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+  }, [])
   const activeRange = useMemo(() => {
     const from = new Date(year, month, 1, 0, 0, 0, 0)
     const to = new Date(year, month + 1, 0, 23, 59, 59, 999)
@@ -199,6 +233,30 @@ function CalendarPage() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [activeRange.cacheKey, loadCalendarData])
+
+  useEffect(() => {
+    if (!rescheduleTarget || !rescheduleDate.trim()) {
+      setRescheduleDayUpcoming([])
+      return
+    }
+    let cancelled = false
+    const dateStr = rescheduleDate.trim()
+    void (async () => {
+      try {
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+          fromDate: `${dateStr}T00:00:00`,
+          toDate: `${dateStr}T23:59:59`,
+        })
+        if (!cancelled) setRescheduleDayUpcoming(data)
+      } catch {
+        if (!cancelled) setRescheduleDayUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [rescheduleTarget, rescheduleDate])
+
   const { blanks, daysInMonth } = useMemo(() => padMonthGrid(year, month), [year, month])
 
   const monthTitle = viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })
@@ -256,6 +314,44 @@ function CalendarPage() {
       .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
       .slice(0, 12)
   }, [focusDate, viewMode, visibleAppointments])
+
+  const rescheduleSlotBlocks = useMemo(
+    () =>
+      computeSlotsForDate({
+        dateStr: rescheduleDate.trim(),
+        appointmentDuration: rescheduleAppointmentDuration,
+        schedule,
+        upcoming: rescheduleDayUpcoming,
+        durationMap,
+        excludeVisitId: rescheduleTarget?.visit_id,
+      }),
+    [
+      rescheduleDate,
+      rescheduleAppointmentDuration,
+      schedule,
+      rescheduleDayUpcoming,
+      durationMap,
+      rescheduleTarget?.visit_id,
+    ],
+  )
+
+  const rescheduleSelectionValid = useMemo(() => {
+    if (!rescheduleDate.trim() || !rescheduleTime.trim()) return false
+    return rescheduleSlotBlocks.some(
+      (s) => !s.booked && hhmmFromSlotStartIso(s.startIso) === rescheduleTime.trim(),
+    )
+  }, [rescheduleDate, rescheduleTime, rescheduleSlotBlocks])
+
+  useEffect(() => {
+    if (!rescheduleTarget || !rescheduleDate.trim()) return
+    if (rescheduleSlotBlocks.length === 0) return
+    const t = rescheduleTime.trim()
+    const stillOk = rescheduleSlotBlocks.some((s) => !s.booked && hhmmFromSlotStartIso(s.startIso) === t)
+    if (!stillOk) {
+      const firstFree = rescheduleSlotBlocks.find((s) => !s.booked)
+      setRescheduleTime(firstFree ? hhmmFromSlotStartIso(firstFree.startIso) : '')
+    }
+  }, [rescheduleTarget, rescheduleDate, rescheduleSlotBlocks, rescheduleTime])
 
   function prevMonth(): void {
     if (viewMode === 'month') {
@@ -315,18 +411,7 @@ function CalendarPage() {
           <button className="text-gray-500 transition-opacity hover:opacity-80" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
           </button>
-          <div className="ml-2 flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu className="ml-2" />
         </div>
       </header>
 
@@ -386,14 +471,20 @@ function CalendarPage() {
             </div>
             {viewMode !== 'day' && (
               <div className="grid grid-cols-7 border-b border-gray-100 bg-white">
-                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => (
-                  <div
-                    key={d}
-                    className="flex items-center justify-start border-r border-gray-100 px-4 py-4 text-left text-[13px] font-medium text-[#3e4a3d] last:border-r-0"
-                  >
-                    {d}
-                  </div>
-                ))}
+                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, colIdx) => {
+                  const colClosed = isWeekdayColumnClosed(schedule, colIdx)
+                  return (
+                    <div
+                      key={d}
+                      className={`flex items-center justify-start border-r border-gray-100 px-4 py-4 text-left text-[13px] font-medium last:border-r-0 ${
+                        colClosed ? 'bg-slate-50 text-slate-400 line-through decoration-slate-300' : 'text-[#3e4a3d]'
+                      }`}
+                      title={colClosed ? 'Marked closed in availability settings' : undefined}
+                    >
+                      {d}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
@@ -405,6 +496,7 @@ function CalendarPage() {
                   const dayAppts = isBlank ? [] : appointmentsOnDay(visibleAppointments, year, month, dayNum)
                   const dayKey = isBlank ? '' : `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
                   const isSelectedDay = !isBlank && selectedDayKey === dayKey && selectedVisitId === null
+                  const closedDay = !isBlank && isOpdDayClosed(schedule, year, month, dayNum)
 
                   const isToday = (() => {
                     if (isBlank) return false
@@ -415,15 +507,18 @@ function CalendarPage() {
                   return (
                     <div
                       key={i}
-                      className={`border-b border-r border-gray-100 px-3 py-2 transition-colors [&:nth-child(7n)]:border-r-0 ${
-                        isSelectedDay ? 'bg-[#eff6ea]' : 'hover:bg-transparent'
-                      } ${!isBlank ? 'cursor-pointer' : ''}`}
+                      className={`relative border-b border-r border-gray-100 px-3 py-2 transition-colors [&:nth-child(7n)]:border-r-0 ${
+                        closedDay ? 'bg-slate-50/95' : ''
+                      } ${isSelectedDay && !closedDay ? 'bg-[#eff6ea]' : !closedDay ? 'hover:bg-transparent' : ''} ${
+                        !isBlank && !closedDay ? 'cursor-pointer' : !isBlank ? 'cursor-default' : ''
+                      }`}
                       onClick={() => {
                         if (isBlank) return
                         setSelectedDayKey(dayKey)
                         setSelectedVisitId(null)
                         openDayAppointments(new Date(year, month, dayNum))
                       }}
+                      title={closedDay ? 'OPD closed this weekday — adjust availability in Settings if needed' : undefined}
                       role={!isBlank ? 'button' : undefined}
                       tabIndex={!isBlank ? 0 : undefined}
                       onKeyDown={(e) => {
@@ -434,11 +529,21 @@ function CalendarPage() {
                         }
                       }}
                     >
+                      {closedDay && (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute inset-0 z-0 bg-[repeating-linear-gradient(-45deg,rgba(148,163,184,0.14)_0,rgba(148,163,184,0.14)_6px,transparent_6px,transparent_11px)]"
+                        />
+                      )}
                       {!isBlank && (
                         <>
                           <button
-                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
-                              isToday ? 'bg-[#16a34a] text-white hover:bg-[#15803d]' : 'text-[#171d16] hover:bg-[#eff6ea]'
+                            className={`relative z-[1] inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
+                              closedDay
+                                ? 'text-slate-400 line-through decoration-slate-400 decoration-2'
+                                : isToday
+                                  ? 'bg-[#16a34a] text-white hover:bg-[#15803d]'
+                                  : 'text-[#171d16] hover:bg-[#eff6ea]'
                             }`}
                             onClick={(e) => {
                               e.stopPropagation()
@@ -450,7 +555,7 @@ function CalendarPage() {
                           >
                             {dayNum}
                           </button>
-                          <div className="mt-1 space-y-1 hover:bg-[#eff6ea]">
+                          <div className="relative z-[1] mt-1 space-y-1 hover:bg-[#eff6ea]">
                             {dayAppts.slice(0, 3).map((a) => (
                               <button
                                 key={a.visit_id}
@@ -491,18 +596,35 @@ function CalendarPage() {
                   const dayAppts = appointmentsOnDay(visibleAppointments, d.getFullYear(), d.getMonth(), d.getDate())
                   const isToday =
                     new Date().getFullYear() === d.getFullYear() && new Date().getMonth() === d.getMonth() && new Date().getDate() === d.getDate()
+                  const closedW = isOpdDateClosed(schedule, d)
                   return (
-                    <div key={d.toISOString()} className="border-b border-r border-gray-100 p-2 transition-colors last:border-r-0">
+                    <div
+                      key={d.toISOString()}
+                      className={`relative border-b border-r border-gray-100 p-2 transition-colors last:border-r-0 ${
+                        closedW ? 'bg-slate-50/95' : ''
+                      }`}
+                      title={closedW ? 'OPD closed this weekday' : undefined}
+                    >
+                      {closedW && (
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute inset-0 z-0 bg-[repeating-linear-gradient(-45deg,rgba(148,163,184,0.14)_0,rgba(148,163,184,0.14)_6px,transparent_6px,transparent_11px)]"
+                        />
+                      )}
                       <button
-                        className={`rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
-                          isToday ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]' : 'text-[#171d16] hover:bg-[#eff6ea]'
+                        className={`relative z-[1] rounded-md px-1.5 py-0.5 text-sm font-medium transition-colors ${
+                          closedW
+                            ? 'text-slate-400 line-through decoration-slate-400 decoration-2'
+                            : isToday
+                              ? 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]'
+                              : 'text-[#171d16] hover:bg-[#eff6ea]'
                         }`}
                         onClick={() => openDayAppointments(new Date(d))}
                         type="button"
                       >
                         {d.getDate()}
                       </button>
-                      <div className="mt-2 space-y-1">
+                      <div className="relative z-[1] mt-2 space-y-1">
                         {dayAppts.length === 0 && <p className="text-[10px] text-[#7a828f]">No appointments</p>}
                         {dayAppts.map((a) => (
                           <button
@@ -524,6 +646,13 @@ function CalendarPage() {
 
             {viewMode === 'day' && (
               <div className="divide-y divide-gray-100">
+                {isOpdDateClosed(schedule, focusDate) && (
+                  <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-950">
+                    <span className="font-semibold">OPD closed.</span>{' '}
+                    This weekday is marked closed in Settings → Profile → Availability. Existing appointments above may be from
+                    before the change.
+                  </div>
+                )}
                 {appointmentsOnDay(visibleAppointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).length === 0 ? (
                   <p className="px-6 py-10 text-sm text-[#575e70]">No appointments for this day.</p>
                 ) : (
@@ -659,26 +788,57 @@ function CalendarPage() {
           <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
             <h3 className="text-lg font-semibold text-[#171d16]">Edit Appointment</h3>
             <p className="mt-1 text-sm text-[#3e4a3d]">{toDisplayName(rescheduleTarget.patient_name)}</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
                 Date
                 <input
-                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16] sm:max-w-xs"
                   min={localDateInputMin()}
                   onChange={(e) => setRescheduleDate(e.target.value)}
                   type="date"
                   value={rescheduleDate}
                 />
               </label>
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                Time
-                <input
-                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                  onChange={(e) => setRescheduleTime(e.target.value)}
-                  type="time"
-                  value={rescheduleTime}
-                />
-              </label>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Time</p>
+                <p className="mt-1 text-[11px] text-[#575e70]">
+                  Slots already booked are crossed out. Choose a free slot.
+                </p>
+                <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                  {rescheduleSlotBlocks.map((slot) => {
+                    const selected =
+                      !slot.booked && hhmmFromSlotStartIso(slot.startIso) === rescheduleTime.trim()
+                    return (
+                      <button
+                        key={slot.startIso}
+                        className={`rounded-xl border px-3 py-2 text-sm font-medium ${
+                          slot.booked
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 line-through'
+                            : selected
+                              ? 'border-[#2563eb] bg-[#2563eb] text-white'
+                              : 'border-gray-200 bg-white text-[#171d16] hover:border-[#2563eb]/40'
+                        }`}
+                        disabled={slot.booked}
+                        onClick={() => {
+                          if (slot.booked) return
+                          setRescheduleTime(hhmmFromSlotStartIso(slot.startIso))
+                        }}
+                        type="button"
+                      >
+                        {formatChipTime(slot.startIso)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {rescheduleDate.trim() && rescheduleSlotBlocks.length === 0 && (
+                  <p className="mt-2 text-xs text-[#575e70]">Loading slots…</p>
+                )}
+                {rescheduleDate.trim() &&
+                  rescheduleSlotBlocks.length > 0 &&
+                  !rescheduleSlotBlocks.some((s) => !s.booked) && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">No free slots this day.</p>
+                  )}
+              </div>
             </div>
             {rescheduleError && <p className="mt-3 text-xs text-red-700">{rescheduleError}</p>}
             <div className="mt-5 flex items-center justify-end gap-2">
@@ -691,7 +851,7 @@ function CalendarPage() {
               </button>
               <button
                 className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime}
+                disabled={rescheduleSubmitting || !rescheduleSelectionValid}
                 onClick={() => {
                   void (async () => {
                     if (!rescheduleTarget) return

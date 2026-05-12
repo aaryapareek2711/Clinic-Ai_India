@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { fetchPatientsPaged, type PatientSummary } from '../services/patientsApi'
@@ -30,7 +29,6 @@ function toDisplayName(value: string | null | undefined): string {
 
 function PatientsPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [patientSort, setPatientSort] = useState<PatientSort>('created_newest')
   const [searchQuery, setSearchQuery] = useState('')
@@ -74,18 +72,7 @@ function PatientsPage() {
             <span className="material-symbols-outlined text-slate-600">notifications</span>
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="sm"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 

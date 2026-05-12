@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function SettingsTeamMembersPage() {
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
@@ -23,18 +21,7 @@ function SettingsTeamMembersPage() {
               <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
             </button>
             <div className="h-8 w-px bg-gray-200" />
-            <div className="flex items-center space-x-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
-                <p className="text-xs text-gray-500">{provider.title}</p>
-              </div>
-              <ProviderAvatar
-                className="border border-gray-200"
-                imageUrl={provider.avatarUrl}
-                label={provider.displayName}
-                size="md"
-              />
-            </div>
+            <ProviderHeaderProfileMenu />
           </div>
         </header>
 

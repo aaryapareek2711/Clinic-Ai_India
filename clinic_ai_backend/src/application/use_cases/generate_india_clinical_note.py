@@ -333,6 +333,32 @@ class GenerateIndiaClinicalNoteUseCase:
             raise ValueError("Transcription job must be completed before note generation")
         return job
 
+    def _resolve_additional_doctor_note(
+        self,
+        *,
+        patient_id: str,
+        visit_id: str | None,
+        previsit: dict,
+    ) -> str:
+        """Free-text doctor note from pre-visit (embedded visit doc, then legacy collection)."""
+        sec = previsit.get("sections") if isinstance(previsit.get("sections"), dict) else {}
+        raw = sec.get("additional_doctor_note")
+        text = self._clean_context_text(raw)
+        if text:
+            return str(raw).strip()
+        if not visit_id:
+            return ""
+        doc = self.db.pre_visit_summaries.find_one(
+            {"patient_id": patient_id, "visit_id": visit_id},
+            sort=[("updated_at", -1)],
+        )
+        if not doc:
+            return ""
+        leg = doc.get("sections") if isinstance(doc.get("sections"), dict) else {}
+        raw = leg.get("additional_doctor_note")
+        text = self._clean_context_text(raw)
+        return str(raw).strip() if text else ""
+
     def _build_context(self, *, patient_id: str, visit_id: str | None, job: dict) -> dict:
         transcript = self.audio_repo.get_result(str(job.get("job_id"))) or {}
         if not transcript and str(job.get("_session_transcript") or "").strip():
@@ -357,6 +383,17 @@ class GenerateIndiaClinicalNoteUseCase:
             vitals = dict(visit.get("vitals") or {})
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
 
+        eff_vid = str(visit_id or job.get("visit_id") or previsit.get("visit_id") or "").strip() or None
+        previsit_sections = previsit.get("sections") if isinstance(previsit.get("sections"), dict) else {}
+        previsit_sections = dict(previsit_sections)
+        additional_dr = self._resolve_additional_doctor_note(
+            patient_id=patient_id,
+            visit_id=eff_vid,
+            previsit=previsit,
+        )
+        if additional_dr and not self._clean_context_text(previsit_sections.get("additional_doctor_note")):
+            previsit_sections["additional_doctor_note"] = additional_dr
+
         medication_images = self._extract_medication_images(intake)
         data_gaps: list[str] = []
         if not transcript:
@@ -374,7 +411,9 @@ class GenerateIndiaClinicalNoteUseCase:
             "transcription_job_id": job.get("job_id"),
             "transcript_text": transcript.get("full_transcript_text", ""),
             "transcript_segments": transcript.get("segments", []),
-            "previsit_sections": previsit.get("sections", {}),
+            # Prominent copy for the LLM + merge logic (must match previsit_sections when resolved from legacy).
+            "previsit_additional_doctor_note": additional_dr or "",
+            "previsit_sections": previsit_sections,
             "intake_answers": intake.get("answers", []),
             "patient_demographics": {
                 "name": patient.get("name"),
@@ -449,6 +488,8 @@ class GenerateIndiaClinicalNoteUseCase:
         past_history = cls._clean_context_text(pmh.get("past_medical_history"))
         allergies = cls._clean_context_text(pmh.get("allergies"))
         additional_doctor_note = cls._clean_context_text(sections.get("additional_doctor_note"))
+        if not additional_doctor_note:
+            additional_doctor_note = cls._clean_context_text(context.get("previsit_additional_doctor_note"))
 
         associated_symptoms_raw = hpi.get("associated_symptoms") if isinstance(hpi.get("associated_symptoms"), list) else []
         associated_symptoms = [cls._clean_context_text(x) for x in associated_symptoms_raw]
@@ -531,6 +572,7 @@ class GenerateIndiaClinicalNoteUseCase:
             note_lines.append(f"Allergies: {hints['allergies']}")
         if hints["impact"]:
             note_lines.append(f"Functional impact: {hints['impact']}")
+
         if note_lines:
             existing = cls._clean_context_text(out.get("doctor_notes"))
             merged_notes = [existing] if existing else []

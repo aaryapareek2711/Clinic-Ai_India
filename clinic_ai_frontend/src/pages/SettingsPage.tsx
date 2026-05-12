@@ -8,7 +8,7 @@ import { effectiveDayRow } from '../lib/opdWeeklySchedule'
 import { fetchMyProfile, getApiErrorMessage, PROVIDER_PROFILE_UPDATED_EVENT, type ProviderProfile } from '../services/profileApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderVisits, type ProviderVisitListItem } from '../services/visitWorkflowApi'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import NotificationsDrawer from './NotificationsDrawer'
 
 type DayAvailability = {
@@ -205,18 +205,7 @@ function SettingsPage() {
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full" />
           </button>
-          <div className="flex items-center gap-3 ml-2">
-            <div className="text-right">
-              <div className="text-sm font-semibold text-[#171d16]">{headerDisplayName}</div>
-              <div className="text-[11px] text-gray-500 uppercase font-bold tracking-tight">{headerTitle}</div>
-            </div>
-            <ProviderAvatar
-              className="border-2 border-[#00873a]"
-              imageUrl={headerAvatarUrl}
-              label={headerDisplayName}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu className="ml-2" />
         </div>
       </header>
 

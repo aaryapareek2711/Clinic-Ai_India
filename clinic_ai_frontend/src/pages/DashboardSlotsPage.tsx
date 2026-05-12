@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import {
@@ -126,7 +125,6 @@ function titleForView(view: DashboardSlotView, day: DashboardSlotDay): string {
 
 function DashboardSlotsPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [searchParams] = useSearchParams()
   const lastFocusRefetchAtRef = useRef(0)
   const view = parseView(searchParams.get('view'))
@@ -280,18 +278,7 @@ function DashboardSlotsPage() {
           </button>
           <h1 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">{titleForView(view, day)}</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm font-semibold">{provider.displayName || 'Dr.'}</p>
-            <p className="text-[11px] text-gray-500">{provider.title || 'Clinical provider'}</p>
-          </div>
-          <ProviderAvatar
-            className="border border-gray-200"
-            imageUrl={provider.avatarUrl}
-            label={provider.displayName}
-            size="md"
-          />
-        </div>
+        <ProviderHeaderProfileMenu />
       </header>
 
       <main className="space-y-6 p-8 pt-24">

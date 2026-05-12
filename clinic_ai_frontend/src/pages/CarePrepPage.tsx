@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { DEFAULT_PROVIDER_ID, fetchProviderCarePrep } from '../services/visitWorkflowApi'
@@ -149,7 +148,6 @@ function StatusCell({ row }: { row: QueueRow }) {
 
 export default function CarePrepPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<CarePrepSort>('patient_newest')
@@ -217,18 +215,7 @@ export default function CarePrepPage() {
           >
             <span className="material-symbols-outlined">notifications</span>
           </button>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="sm"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 

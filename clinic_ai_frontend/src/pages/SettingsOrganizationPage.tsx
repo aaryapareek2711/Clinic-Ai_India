@@ -1,14 +1,12 @@
 import { useState } from 'react'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import BackButton from '../components/BackButton'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const showDigitalIntegrations = false
 
 function SettingsOrganizationPage() {
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
   return (
@@ -27,18 +25,7 @@ function SettingsOrganizationPage() {
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute right-0 top-0 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
           </button>
-          <div className="flex items-center gap-3 border-l border-gray-200 pl-6">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
-              <p className="text-xs text-gray-500">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu className="border-l border-gray-200 pl-6" />
         </div>
       </header>
 

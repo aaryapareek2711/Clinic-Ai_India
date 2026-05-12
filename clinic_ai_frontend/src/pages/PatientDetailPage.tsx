@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
-import { fetchPatientById, fetchPatientVisits, fetchPatients, type PatientSummary, type PatientVisit } from '../services/patientsApi'
+import {
+  fetchPatientById,
+  fetchPatientVisits,
+  fetchPatients,
+  patchPatient,
+  type PatientSummary,
+  type PatientVisit,
+  type UpdatePatientPayload,
+} from '../services/patientsApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function badgeClasses(tone: string) {
@@ -35,7 +42,6 @@ function matchByVisibleSuffix(items: PatientSummary[], opaqueId: string): Patien
 
 function PatientDetailPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [searchParams] = useSearchParams()
   const patientId = searchParams.get('patientId')?.trim() ?? ''
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
@@ -43,6 +49,12 @@ function PatientDetailPage() {
   const [visits, setVisits] = useState<PatientVisit[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [draftPhone, setDraftPhone] = useState('')
+  const [draftAge, setDraftAge] = useState('')
+  const [draftGender, setDraftGender] = useState('')
 
   useEffect(() => {
     if (!patientId) return
@@ -84,6 +96,60 @@ function PatientDetailPage() {
     }
   }, [patientId])
 
+  const beginEdit = () => {
+    if (!patient) return
+    setDraftName(patient.full_name ?? '')
+    setDraftPhone(patient.phone_number ?? '')
+    setDraftAge(patient.age != null && patient.age !== undefined ? String(patient.age) : '')
+    setDraftGender(patient.gender ?? '')
+    setEditing(true)
+    setError(null)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+  }
+
+  const saveEdit = async () => {
+    if (!patient) return
+    const payload: UpdatePatientPayload = {}
+    const nameTrim = draftName.trim()
+    const phoneTrim = draftPhone.trim()
+    if (nameTrim !== (patient.full_name ?? '').trim()) payload.name = nameTrim
+    if (phoneTrim !== (patient.phone_number ?? '').trim()) payload.phone_number = phoneTrim
+    const ageNum = Number.parseInt(String(draftAge).trim(), 10)
+    if (String(draftAge).trim() !== '') {
+      if (!Number.isFinite(ageNum) || ageNum < 0 || ageNum > 130) {
+        setError('Enter a valid age (0–130) or leave blank to keep the current value.')
+        return
+      }
+      if (patient.age !== ageNum) payload.age = ageNum
+    }
+    const genderTrim = draftGender.trim()
+    if (genderTrim !== (patient.gender ?? '').trim()) payload.gender = genderTrim
+
+    if (Object.keys(payload).length === 0) {
+      setEditing(false)
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError(null)
+      const updated = await patchPatient(patient.patient_id || patientId, payload)
+      setPatient(updated)
+      setEditing(false)
+      const nextId = updated.patient_id?.trim()
+      if (nextId && nextId !== patientId) {
+        navigate(`/patients/detail?patientId=${encodeURIComponent(nextId)}`, { replace: true })
+      }
+    } catch (e) {
+      setError(getApiErrorMessage(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const displayName = useMemo(() => patient?.full_name || 'Patient', [patient])
   const humanPatientId = useMemo(
     () => (patient ? formatPatientDisplayId(patient.full_name, patient.phone_number) : ''),
@@ -106,18 +172,7 @@ function PatientDetailPage() {
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
           </button>
           <div className="h-8 w-px bg-slate-200 mx-2" />
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="sm"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 
@@ -136,19 +191,106 @@ function PatientDetailPage() {
           <div className="absolute top-0 right-0 w-64 h-full opacity-[0.03] pointer-events-none">
             <span className="material-symbols-outlined text-[12rem] rotate-12">patient_list</span>
           </div>
+          <div className="relative z-10 flex flex-wrap items-start justify-end gap-4 mb-6">
+            {!editing ? (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#bdcaba] bg-white px-4 py-2 text-sm font-semibold text-[#006b2c] hover:bg-slate-50 transition-colors disabled:opacity-50"
+                disabled={!patient || loading}
+                onClick={() => beginEdit()}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+                Edit details
+              </button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-lg border border-[#bdcaba] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  disabled={saving}
+                  onClick={() => cancelEdit()}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white hover:bg-[#005824] transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+                  disabled={saving}
+                  onClick={() => void saveEdit()}
+                  type="button"
+                >
+                  {saving ? (
+                    <>
+                      <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">save</span>
+                      Save
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
           <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-4">
             <div>
-              <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold mb-1">{displayName}</h2>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 bg-[#d9dff5] text-[#5c6274] text-[11px] font-bold rounded uppercase tracking-wider">
-                  {(patient?.gender || 'Unknown').toString()}
-                </span>
-                <span className="text-sm text-slate-500">Patient profile</span>
-              </div>
+              {!editing ? (
+                <>
+                  <h2 className="text-[28px] leading-tight tracking-[-0.02em] font-bold mb-1">{displayName}</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-[#d9dff5] text-[#5c6274] text-[11px] font-bold rounded uppercase tracking-wider">
+                      {(patient?.gender || 'Unknown').toString()}
+                    </span>
+                    <span className="text-sm text-slate-500">Patient profile</span>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Full name</span>
+                    <input
+                      className="mt-1 w-full max-w-md rounded-lg border border-[#bdcaba] px-3 py-2 text-base text-[#171d16] focus:border-[#006b2c] focus:ring-1 focus:ring-[#006b2c]/30"
+                      onChange={(e) => setDraftName(e.target.value)}
+                      type="text"
+                      value={draftName}
+                    />
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Changing name or phone updates the internal patient key and linked visits stay attached.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Age &amp; Gender</p>
-              <p className="text-base text-[#171d16]">{ageGender}</p>
+              {!editing ? (
+                <p className="text-base text-[#171d16]">{ageGender}</p>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-slate-500">Age</span>
+                    <input
+                      className="w-24 rounded-lg border border-[#bdcaba] px-3 py-2 text-base text-[#171d16] focus:border-[#006b2c] focus:ring-1 focus:ring-[#006b2c]/30"
+                      inputMode="numeric"
+                      onChange={(e) => setDraftAge(e.target.value)}
+                      placeholder="—"
+                      type="text"
+                      value={draftAge}
+                    />
+                  </label>
+                  <label className="flex min-w-[140px] flex-1 flex-col gap-1">
+                    <span className="text-xs text-slate-500">Gender</span>
+                    <input
+                      className="rounded-lg border border-[#bdcaba] px-3 py-2 text-base text-[#171d16] focus:border-[#006b2c] focus:ring-1 focus:ring-[#006b2c]/30"
+                      onChange={(e) => setDraftGender(e.target.value)}
+                      placeholder="e.g. female"
+                      type="text"
+                      value={draftGender}
+                    />
+                  </label>
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Patient ID</p>
@@ -168,7 +310,16 @@ function PatientDetailPage() {
             </div>
             <div className="space-y-1">
               <p className="text-[13px] tracking-[0.05em] font-medium text-slate-400 uppercase">Mobile Number</p>
-              <p className="text-base text-[#171d16]">{patient?.phone_number || '—'}</p>
+              {!editing ? (
+                <p className="text-base text-[#171d16]">{patient?.phone_number || '—'}</p>
+              ) : (
+                <input
+                  className="mt-1 w-full max-w-xs rounded-lg border border-[#bdcaba] px-3 py-2 text-base text-[#171d16] focus:border-[#006b2c] focus:ring-1 focus:ring-[#006b2c]/30"
+                  onChange={(e) => setDraftPhone(e.target.value)}
+                  type="tel"
+                  value={draftPhone}
+                />
+              )}
             </div>
           </div>
         </section>

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import ProviderAvatar from '../components/ProviderAvatar'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   fetchIntakeSession,
@@ -32,7 +31,6 @@ function resolvePreferredLanguageCode(
 }
 
 export default function CarePrepIntakeDetailPage() {
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   /** Route param preserves legacy name `tokenKey` but carries `visit_id` */
   const { tokenKey } = useParams<{ tokenKey: string }>()
@@ -210,18 +208,7 @@ export default function CarePrepIntakeDetailPage() {
               <span className="material-symbols-outlined">notifications</span>
             </button>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold">{provider.displayName}</p>
-              <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
-            </div>
-            <ProviderAvatar
-              className="border border-gray-200"
-              imageUrl={provider.avatarUrl}
-              label={provider.displayName}
-              size="sm"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 

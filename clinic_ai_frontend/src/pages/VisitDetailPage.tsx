@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
+import { getAppointmentDurationMap } from '../lib/appointmentDurations'
+import {
+  computeSlotsForDate,
+  formatChipTime,
+  hhmmFromSlotStartIso,
+  localDateInputMin,
+} from '../lib/appointmentSlots'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import {
   fetchLatestPostVisitSummary,
   fetchLatestVitalsForVisit,
@@ -15,6 +23,8 @@ import {
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
+  DEFAULT_PROVIDER_ID,
+  fetchProviderUpcoming,
   scheduleVisitIntake,
   submitVitals,
   createLabRecordText,
@@ -25,6 +35,7 @@ import {
   type PostVisitSummaryResponse,
   type PreVisitSummaryResponse,
   type TranscriptionStatusResponse,
+  type ProviderUpcomingAppointment,
   type VisitDetailResponse,
   type VitalsFormResponse,
 } from '../services/visitWorkflowApi'
@@ -43,9 +54,6 @@ const LEGACY_TAB_MAP: Record<string, VisitWorkflowTab> = {
   'opd-note': 'clinical-note',
   whatsapp: 'post-visit',
 }
-
-const DR_AVATAR =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuCuSkfvIW3phx7yHbt104mLhs656BoGQpYY09pPg3wUO_G9c3DWXj7ry68ypMznP1rTdyAPSXjX6Xk7cDbvJ1wgmWIlq_McPQW-9KpGS9qeEbJVVjt4YVfbIWGE8WyTOLE1nlg7wDw7fKdH7x-kMASiUT_StwHliRrFojXgKNfKBB79rNiWPg8DfC3FAxKDCDvu0pyNjmXjRMaDTqqlXXqHwQuQtOnhf_uKw2ti2h8FznKYlsSlVV4VYJ3tst3kLqJ3Qx1OO_BNWviI'
 
 const LAB_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 const LAB_UPLOAD_MAX_FILES = 8
@@ -67,11 +75,11 @@ function ageFromDob(dob: string | undefined): string {
   return `${new Date().getFullYear() - y}`
 }
 
-function localDateInputMin(d = new Date()): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+function canEditScheduledAppointment(iso: string | null | undefined): boolean {
+  if (!iso?.trim()) return false
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return false
+  return t >= Date.now()
 }
 
 function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
@@ -341,7 +349,6 @@ function flattenStructuredDialogue(
 
 export default function VisitDetailPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [searchParams, setSearchParams] = useSearchParams()
   const visitId = searchParams.get('visitId')?.trim() ?? ''
   const tabParamRaw = searchParams.get('tab')?.trim() ?? ''
@@ -425,6 +432,11 @@ export default function VisitDetailPage() {
   const [rescheduleTime, setRescheduleTime] = useState('')
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false)
   const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleDayUpcoming, setRescheduleDayUpcoming] = useState<ProviderUpcomingAppointment[]>([])
+  const [doctorScheduleRev, setDoctorScheduleRev] = useState(0)
+  const doctorSchedule = useMemo(() => getDoctorScheduleSettings(), [doctorScheduleRev])
+  const rescheduleDurationMap = useMemo(() => getAppointmentDurationMap(), [])
+  const rescheduleAppointmentDuration = doctorSchedule.defaultSlotMinutes || 15
   const [labModalOpen, setLabModalOpen] = useState(false)
   const [labReportName, setLabReportName] = useState('')
   const [labCategory, setLabCategory] = useState('')
@@ -465,6 +477,74 @@ export default function VisitDetailPage() {
     if (!visitId || loading) return
     if (searchParams.get('tab') !== tab) syncTabToUrl(tab)
   }, [visitId, loading, tab, searchParams, syncTabToUrl])
+
+  useEffect(() => {
+    const bump = () => setDoctorScheduleRev((n) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, bump)
+  }, [])
+
+  useEffect(() => {
+    if (!rescheduleOpen) {
+      setRescheduleDayUpcoming([])
+      return
+    }
+    if (!rescheduleDate.trim()) return
+    let cancelled = false
+    const dateStr = rescheduleDate.trim()
+    void (async () => {
+      try {
+        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+          fromDate: `${dateStr}T00:00:00`,
+          toDate: `${dateStr}T23:59:59`,
+        })
+        if (!cancelled) setRescheduleDayUpcoming(data)
+      } catch {
+        if (!cancelled) setRescheduleDayUpcoming([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [rescheduleOpen, rescheduleDate])
+
+  const rescheduleSlotBlocks = useMemo(
+    () =>
+      computeSlotsForDate({
+        dateStr: rescheduleDate.trim(),
+        appointmentDuration: rescheduleAppointmentDuration,
+        schedule: doctorSchedule,
+        upcoming: rescheduleDayUpcoming,
+        durationMap: rescheduleDurationMap,
+        excludeVisitId: visitId || undefined,
+      }),
+    [
+      rescheduleDate,
+      rescheduleAppointmentDuration,
+      doctorSchedule,
+      rescheduleDayUpcoming,
+      rescheduleDurationMap,
+      visitId,
+    ],
+  )
+
+  const rescheduleSelectionValid = useMemo(() => {
+    if (!rescheduleDate.trim() || !rescheduleTime.trim()) return false
+    return rescheduleSlotBlocks.some(
+      (s) => !s.booked && hhmmFromSlotStartIso(s.startIso) === rescheduleTime.trim(),
+    )
+  }, [rescheduleDate, rescheduleTime, rescheduleSlotBlocks])
+
+  useEffect(() => {
+    if (!rescheduleOpen || !rescheduleDate.trim()) return
+    if (rescheduleSlotBlocks.length === 0) return
+    const t = rescheduleTime.trim()
+    const stillOk = rescheduleSlotBlocks.some((s) => !s.booked && hhmmFromSlotStartIso(s.startIso) === t)
+    if (!stillOk) {
+      const firstFree = rescheduleSlotBlocks.find((s) => !s.booked)
+      setRescheduleTime(firstFree ? hhmmFromSlotStartIso(firstFree.startIso) : '')
+    }
+  }, [rescheduleOpen, rescheduleDate, rescheduleSlotBlocks, rescheduleTime])
 
   const loadWorkspace = useCallback(async () => {
     if (!visitId) {
@@ -1371,13 +1451,7 @@ export default function VisitDetailPage() {
             <span className="material-symbols-outlined">notifications</span>
             <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-[#ba1a1a]" />
           </button>
-          <div className="flex items-center space-x-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-[#171d16]">{provider.displayName}</p>
-              <p className="text-xs text-[#575e70]">{provider.title}</p>
-            </div>
-            <img alt="" className="h-10 w-10 rounded-full border border-[#bdcaba] object-cover" src={DR_AVATAR} />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 
@@ -1445,7 +1519,32 @@ export default function VisitDetailPage() {
                     <p className="text-sm font-normal text-gray-400">
                       {ageFromDob(visit?.patient?.date_of_birth)} Years • {genderLabel} • {headerChief}
                     </p>
-                    <p className="mt-2 text-xs text-white/80">Appointment: {scheduledVisitDisplay}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-white/80">Appointment: {scheduledVisitDisplay}</p>
+                      {!skipPreVisitWorkflow && visit?.scheduled_start && canEditScheduledAppointment(visit.scheduled_start) && (
+                        <button
+                          className="rounded-md border border-white/25 bg-white/10 px-2 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                          onClick={() => {
+                            const raw = visit.scheduled_start
+                            const dt = raw ? new Date(raw) : null
+                            if (dt && !Number.isNaN(dt.getTime())) {
+                              const y = dt.getFullYear()
+                              const mo = String(dt.getMonth() + 1).padStart(2, '0')
+                              const d = String(dt.getDate()).padStart(2, '0')
+                              const hh = String(dt.getHours()).padStart(2, '0')
+                              const mm = String(dt.getMinutes()).padStart(2, '0')
+                              setRescheduleDate(`${y}-${mo}-${d}`)
+                              setRescheduleTime(`${hh}:${mm}`)
+                            }
+                            setRescheduleError(null)
+                            setRescheduleOpen(true)
+                          }}
+                          type="button"
+                        >
+                          Edit appointment time
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
@@ -2196,26 +2295,57 @@ export default function VisitDetailPage() {
           <div className="relative z-[111] w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-[#171d16]">Edit Appointment</h3>
             <p className="mt-1 text-sm text-[#3e4a3d]">{patientName}</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-[#575e70]">
                 Date
                 <input
-                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
+                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16] sm:max-w-xs"
                   min={localDateInputMin()}
                   onChange={(e) => setRescheduleDate(e.target.value)}
                   type="date"
                   value={rescheduleDate}
                 />
               </label>
-              <label className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">
-                Time
-                <input
-                  className="mt-1 w-full rounded-lg border border-[#bdcaba] px-3 py-2 text-sm text-[#171d16]"
-                  onChange={(e) => setRescheduleTime(e.target.value)}
-                  type="time"
-                  value={rescheduleTime}
-                />
-              </label>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#575e70]">Time</p>
+                <p className="mt-1 text-[11px] text-[#575e70]">
+                  Booked slots are crossed out. Pick a free slot for this visit.
+                </p>
+                <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                  {rescheduleSlotBlocks.map((slot) => {
+                    const selected =
+                      !slot.booked && hhmmFromSlotStartIso(slot.startIso) === rescheduleTime.trim()
+                    return (
+                      <button
+                        key={slot.startIso}
+                        className={`rounded-xl border px-3 py-2 text-sm font-medium ${
+                          slot.booked
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 line-through'
+                            : selected
+                              ? 'border-[#2563eb] bg-[#2563eb] text-white'
+                              : 'border-gray-200 bg-white text-[#171d16] hover:border-[#2563eb]/40'
+                        }`}
+                        disabled={slot.booked}
+                        onClick={() => {
+                          if (slot.booked) return
+                          setRescheduleTime(hhmmFromSlotStartIso(slot.startIso))
+                        }}
+                        type="button"
+                      >
+                        {formatChipTime(slot.startIso)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {rescheduleDate.trim() && rescheduleSlotBlocks.length === 0 && (
+                  <p className="mt-2 text-xs text-[#575e70]">Loading slots…</p>
+                )}
+                {rescheduleDate.trim() &&
+                  rescheduleSlotBlocks.length > 0 &&
+                  !rescheduleSlotBlocks.some((s) => !s.booked) && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">No free slots this day.</p>
+                  )}
+              </div>
             </div>
             {rescheduleError && <p className="mt-3 text-xs text-red-700">{rescheduleError}</p>}
             <div className="mt-5 flex items-center justify-end gap-2">
@@ -2228,7 +2358,7 @@ export default function VisitDetailPage() {
               </button>
               <button
                 className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime || !visitId}
+                disabled={rescheduleSubmitting || !rescheduleSelectionValid || !visitId}
                 onClick={() => {
                   void (async () => {
                     try {

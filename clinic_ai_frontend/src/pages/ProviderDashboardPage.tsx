@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
-import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_PROVIDER_ID,
@@ -276,18 +276,7 @@ function ProviderDashboardPage() {
             <button className="text-gray-500 transition-opacity hover:opacity-80" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
             </button>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold">{headerName}</p>
-                <p className="text-[11px] text-gray-500">{provider.title || 'Clinical provider'}</p>
-              </div>
-              <ProviderAvatar
-                className="border border-gray-200"
-                imageUrl={provider.avatarUrl}
-                label={provider.displayName}
-                size="md"
-              />
-            </div>
+            <ProviderHeaderProfileMenu />
           </div>
         </header>
 

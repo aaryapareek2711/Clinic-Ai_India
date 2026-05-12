@@ -59,6 +59,27 @@ export async function fetchPatientById(patientId: string): Promise<PatientSummar
   return data
 }
 
+export type UpdatePatientPayload = {
+  name?: string
+  phone_number?: string
+  age?: number
+  gender?: string
+  preferred_language?: string
+  travelled_recently?: boolean
+  consent?: boolean
+  country?: string | null
+  emergency_contact?: string | null
+  address?: string | null
+}
+
+export async function patchPatient(patientId: string, payload: UpdatePatientPayload): Promise<PatientSummary> {
+  const { data } = await apiClient.patch<PatientSummary>(
+    `/api/patients/${encodeURIComponent(patientId)}`,
+    payload,
+  )
+  return data
+}
+
 export async function fetchPatientVisits(patientId: string): Promise<PatientVisit[]> {
   const { data } = await apiClient.get<PatientVisit[]>(`/api/visits/patient/${encodeURIComponent(patientId)}`)
   return data

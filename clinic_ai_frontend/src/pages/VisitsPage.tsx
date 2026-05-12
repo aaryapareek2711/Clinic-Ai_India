@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import BackButton from '../components/BackButton'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
   fetchProviderVisitsPaged,
@@ -22,7 +22,6 @@ const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function VisitsPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
@@ -146,15 +145,7 @@ function VisitsPage() {
               </button>
             </div>
             <div className="h-8 w-px bg-gray-200" />
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold">{provider.displayName}</p>
-                <p className="text-[10px] text-gray-500">{provider.title}</p>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#bdcaba] bg-[#e9f0e5] text-[#3e4a3d]">
-                <span className="material-symbols-outlined text-[22px]">account_circle</span>
-              </div>
-            </div>
+            <ProviderHeaderProfileMenu />
           </div>
         </header>
 

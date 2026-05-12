@@ -15,11 +15,76 @@ from src.api.schemas.patient import (
     PatientRegisterRequest,
     PatientRegisterResponse,
     PatientSummaryResponse,
+    PatientUpdateRequest,
 )
 
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
 _INDEXES_READY = False
+
+# Collections that store internal `patient_id` (deterministic key) and must move with identity edits.
+_PATIENT_ID_COLLECTIONS = (
+    "visits",
+    "intake_sessions",
+    "intake_logs",
+    "pre_visit_summaries",
+    "transcription_jobs",
+    "clinical_notes",
+    "follow_up_reminders",
+    "audio_files",
+    "ai_jobs",
+    "follow_through_lab_records",
+    "transcription_results",
+)
+
+
+def _rewire_internal_patient_id(db, old_id: str, new_id: str) -> None:
+    """Point all known dependent documents from old internal id to new."""
+    if old_id == new_id:
+        return
+    for coll_name in _PATIENT_ID_COLLECTIONS:
+        coll = getattr(db, coll_name, None)
+        if coll is None:
+            continue
+        coll.update_many({"patient_id": old_id}, {"$set": {"patient_id": new_id}})
+
+
+def _summarize_patient_record(db, record: dict) -> PatientSummaryResponse:
+    """Build API summary from a Mongo patient document (internal `patient_id`)."""
+    full_name = (record.get("name") or "").strip()
+    name_parts = [part for part in full_name.split(" ") if part]
+    first_name = name_parts[0] if name_parts else "Unknown"
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    internal_patient_id = str(record.get("patient_id") or "")
+    age = record.get("age")
+    year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
+    estimated_dob = f"{year:04d}-01-01"
+    opaque_patient_id = encode_patient_id(internal_patient_id) if internal_patient_id else ""
+    visit = (
+        db.visits.find_one({"patient_id": internal_patient_id}, sort=[("created_at", -1)])
+        if internal_patient_id
+        else None
+    )
+    latest_visit_id = (
+        str((visit or {}).get("visit_id") or (visit or {}).get("id") or "").strip() or None
+    )
+    latest_visit_scheduled_start = (visit or {}).get("scheduled_start")
+    return PatientSummaryResponse(
+        id=opaque_patient_id,
+        patient_id=opaque_patient_id,
+        first_name=first_name,
+        last_name=last_name,
+        full_name=full_name or first_name,
+        date_of_birth=str(record.get("date_of_birth") or estimated_dob),
+        mrn=str(record.get("mrn") or internal_patient_id),
+        age=record.get("age"),
+        gender=str(record.get("gender") or "").strip() or None,
+        phone_number=str(record.get("phone_number") or "").strip() or None,
+        created_at=str(record.get("created_at") or "") or None,
+        updated_at=str(record.get("updated_at") or "") or None,
+        latest_visit_id=latest_visit_id,
+        latest_visit_scheduled_start=latest_visit_scheduled_start,
+    )
 
 
 def _ensure_patient_indexes(db) -> None:
@@ -318,6 +383,90 @@ def list_patients_paged(
             }
         )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/{patient_id}", response_model=PatientSummaryResponse)
+def get_patient(patient_id: str) -> PatientSummaryResponse:
+    """Return one patient by opaque or raw internal id."""
+    internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    db = get_database()
+    _ensure_patient_indexes(db)
+    record = db.patients.find_one({"patient_id": internal_patient_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return _summarize_patient_record(db, record)
+
+
+@router.patch("/{patient_id}", response_model=PatientSummaryResponse)
+def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSummaryResponse:
+    """Update demographics and related fields; may migrate internal id if name/phone identity changes."""
+    internal_old = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    db = get_database()
+    _ensure_patient_indexes(db)
+    existing = db.patients.find_one({"patient_id": internal_old})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    raw_updates = payload.model_dump(exclude_unset=True)
+    if not raw_updates:
+        return _summarize_patient_record(db, existing)
+
+    merged_name = str(existing.get("name") or "").strip()
+    merged_phone = str(existing.get("phone_number") or "").strip()
+    if "name" in raw_updates:
+        merged_name = str(raw_updates["name"]).strip()
+    if "phone_number" in raw_updates:
+        merged_phone = str(raw_updates["phone_number"]).strip()
+
+    try:
+        internal_new = PatientId.generate(merged_name, merged_phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    patch_keys = (
+        "name",
+        "phone_number",
+        "age",
+        "gender",
+        "preferred_language",
+        "travelled_recently",
+        "consent",
+        "country",
+        "emergency_contact",
+        "address",
+    )
+    set_doc: dict = {}
+    for key in patch_keys:
+        if key in raw_updates:
+            set_doc[key] = raw_updates[key]
+    if "name" in raw_updates or "phone_number" in raw_updates:
+        set_doc["name"] = merged_name
+        set_doc["phone_number"] = merged_phone
+
+    now = datetime.now(timezone.utc)
+
+    if internal_new == internal_old:
+        set_doc["updated_at"] = now
+        db.patients.update_one({"patient_id": internal_old}, {"$set": set_doc})
+        updated = db.patients.find_one({"patient_id": internal_old})
+        return _summarize_patient_record(db, updated or existing)
+
+    if db.patients.find_one({"patient_id": internal_new}):
+        raise HTTPException(
+            status_code=409,
+            detail="Another patient already exists for this name and phone. Resolve duplicates before changing identity.",
+        )
+
+    new_doc = dict(existing)
+    new_doc.pop("_id", None)
+    new_doc.update(set_doc)
+    new_doc["patient_id"] = internal_new
+    new_doc["updated_at"] = now
+    db.patients.insert_one(new_doc)
+    _rewire_internal_patient_id(db, internal_old, internal_new)
+    db.patients.delete_one({"patient_id": internal_old})
+    fresh = db.patients.find_one({"patient_id": internal_new})
+    return _summarize_patient_record(db, fresh or new_doc)
 
 
 @router.get("/{patient_id}/latest-visit")

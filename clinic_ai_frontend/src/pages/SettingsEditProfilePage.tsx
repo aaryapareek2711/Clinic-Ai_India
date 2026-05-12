@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
 import BackButton from '../components/BackButton'
 import ProviderAvatar from '../components/ProviderAvatar'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 import {
@@ -425,18 +426,7 @@ function SettingsEditProfilePage() {
             <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-[#ba1a1a]" />
           </button>
           <div className="h-8 w-px bg-gray-200" />
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-[#171d16]">{fullName || 'Provider'}</p>
-              <p className="text-xs text-gray-500">{jobTitle || 'Clinical role'}</p>
-            </div>
-            <ProviderAvatar
-              className="border-2 border-[#00873a]"
-              imageUrl={avatarSrc}
-              label={fullName || 'Provider'}
-              size="md"
-            />
-          </div>
+          <ProviderHeaderProfileMenu />
         </div>
       </header>
 
