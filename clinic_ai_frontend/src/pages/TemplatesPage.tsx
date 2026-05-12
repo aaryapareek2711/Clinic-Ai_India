@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import BackButton from '../components/BackButton'
 import CreateTemplateModal from '../components/CreateTemplateModal'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -78,7 +79,11 @@ function TemplatesPage() {
 
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-inter">
-      <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
+      <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-40">
+        <div className="flex items-center gap-2">
+          <BackButton to="/dashboard" className="-ml-2" />
+          <h2 className="min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Clinical Templates</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
@@ -89,10 +94,10 @@ function TemplatesPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
-            <img
-              alt="Dr. Profile"
-              className="w-10 h-10 rounded-full object-cover"
-              src={provider.avatarUrl}
+            <ProviderAvatar
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="md"
             />
           </div>
         </div>
@@ -105,12 +110,8 @@ function TemplatesPage() {
               {templateSavedMessage}
             </div>
           )}
-          <div className="mb-6 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
-            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
-            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Clinical Templates</h2>
-            <p className="col-start-2 row-start-2 text-[#3e4a3d]">
-              Manage and create reusable clinical documentation structures.
-            </p>
+          <div className="mb-6">
+            <p className="text-[#3e4a3d]">Manage and create reusable clinical documentation structures.</p>
           </div>
 
           <div className="flex items-center border-b border-[#bdcaba] mb-8">

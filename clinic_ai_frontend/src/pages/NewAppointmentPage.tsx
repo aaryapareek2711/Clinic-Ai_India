@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -438,10 +439,11 @@ function NewAppointmentPage() {
               <p className="text-sm font-semibold text-[#171d16]">{provider.displayName}</p>
               <p className="text-[11px] font-medium text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img
-              alt="Dr. Profile"
-              className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src={provider.avatarUrl}
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="md"
             />
           </div>
         </div>

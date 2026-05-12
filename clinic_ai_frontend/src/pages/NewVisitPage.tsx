@@ -8,6 +8,8 @@ import {
 import { getApiErrorMessage } from '../lib/apiClient'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -371,7 +373,11 @@ function NewVisitPage() {
 
   return (
     <div className="min-h-screen font-manrope antialiased text-[#171d16]">
-      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
+        <div className="flex items-center gap-2">
+          <BackButton to="/calendar" className="-ml-2" />
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Register New Patient</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button
             className="relative flex items-center text-gray-500 transition-opacity hover:opacity-80"
@@ -387,10 +393,11 @@ function NewVisitPage() {
               <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
               <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
-            <img
-              alt="Dr. Profile"
-              className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src={provider.avatarUrl}
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="md"
             />
           </div>
         </div>
@@ -400,13 +407,7 @@ function NewVisitPage() {
         <div className="mx-auto max-w-7xl p-8">
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <nav className="mb-2 flex items-center gap-2 text-sm text-[#3e4a3d]">
-                <span>Visits</span>
-                <span className="material-symbols-outlined text-sm">chevron_right</span>
-                <span className="font-medium text-[#006b2c]">Register new patient</span>
-              </nav>
-              <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em]">Register New Patient</h2>
-              <p className="mt-1 text-sm text-[#3e4a3d]">
+              <p className="text-sm text-[#3e4a3d]">
                 Already registered? Use New Visit to search and continue with an existing patient.
               </p>
             </div>

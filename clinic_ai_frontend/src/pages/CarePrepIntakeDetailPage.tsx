@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -186,14 +186,7 @@ export default function CarePrepIntakeDetailPage() {
     <div className="min-h-screen bg-[#f4fcf0] font-sans text-[#171d16] antialiased">
       <header className="fixed right-0 top-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-slate-200 bg-white px-8">
         <div className="flex items-center gap-4">
-          <Link className="text-lg font-bold tracking-tight text-slate-900" to="/careprep">
-            MedGenie CarePrep
-          </Link>
-          <div className="mx-2 h-6 w-px bg-slate-200" />
-          <div className="flex items-center gap-2 text-slate-500">
-            <span className="material-symbols-outlined text-sm">chevron_right</span>
-            <span className="text-sm font-medium">Intake Summary</span>
-          </div>
+          <span className="text-lg font-bold tracking-tight text-slate-900">MedGenie CarePrep</span>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
@@ -211,15 +204,17 @@ export default function CarePrepIntakeDetailPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="sm"
+            />
           </div>
         </div>
       </header>
 
-      <main className="relative flex-1 p-8 pt-24">
-        <div className="mb-4 -ml-2">
-          <BackButton fallback="/careprep" />
-        </div>
+      <main className="relative flex-1 px-8 pb-8 pt-20">
         {loading && <p className="text-sm text-slate-600">Loading intake…</p>}
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -244,6 +239,15 @@ export default function CarePrepIntakeDetailPage() {
                 </div>
               </div>
             )}
+            <nav aria-label="Breadcrumb" className="mb-6 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <Link className="transition-colors hover:text-[#006b2c]" to="/careprep">
+                careprep
+              </Link>
+              <span aria-hidden className="material-symbols-outlined text-[14px] text-slate-400">
+                chevron_right
+              </span>
+              <span className="font-semibold text-[#171d16]">intake</span>
+            </nav>
             <div className="mb-8 flex flex-col items-start justify-between gap-6 rounded-xl border border-slate-200 bg-white p-6 md:flex-row md:items-center">
               <div className="flex items-center gap-5">
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-[#d9dff5] shadow-sm">

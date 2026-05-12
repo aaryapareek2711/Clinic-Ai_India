@@ -128,7 +128,11 @@ function VisitsPage() {
   return (
     <div className="text-[#171d16] min-h-screen">
       <main className="min-h-screen">
-        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-10">
+        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
+          <div className="flex items-center gap-2">
+            <BackButton to="/dashboard" className="-ml-2 self-center" />
+            <h2 className="min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">All Visits</h2>
+          </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <button
@@ -155,19 +159,8 @@ function VisitsPage() {
         </header>
 
         <div className="pt-24 px-8 pb-12">
-          <div className="mb-8 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
-            <BackButton to="/dashboard" className="-ml-2 row-start-1 self-center" />
-            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">All Visits</h2>
-            <p className="col-start-2 row-start-2 text-[#3e4a3d]">Manage patient visits and documentation</p>
-          </div>
-
-          {listError && (
-            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
-              {listError}
-            </div>
-          )}
-
-          <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 mb-8">
+          <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-[#3e4a3d]">Manage patient visits and documentation</p>
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
               onClick={() => navigate('/start-visit')}
@@ -176,6 +169,13 @@ function VisitsPage() {
               New Visit
             </button>
           </div>
+
+          {listError && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {listError}
+            </div>
+          )}
+
           <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
             <div className="relative min-w-0 flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>

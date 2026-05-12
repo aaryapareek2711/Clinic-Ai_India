@@ -13,30 +13,34 @@ type Props = {
   variant?: 'wide' | 'narrow'
   /** Pill tabs (Profile / Organization / Team). Hide on `/settings` until user opens Edit Profile. */
   showTabs?: boolean
+  /** Render heading/subtitle block above tabs. */
+  showHeading?: boolean
   /** Render an inline back button to the left of the "Settings" heading. */
   backTo?: string
 }
 
-export default function SettingsHeadingNav({ variant = 'narrow', showTabs = true, backTo }: Props) {
+export default function SettingsHeadingNav({ variant = 'narrow', showTabs = true, showHeading = true, backTo }: Props) {
   const width = variant === 'wide' ? 'max-w-7xl' : 'max-w-6xl'
   const headingGrid = backTo ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-1'
   const textCol = backTo ? 'col-start-2' : 'col-start-1'
 
   return (
     <div className={`${width} mx-auto`}>
-      <div className={showTabs ? 'mb-6' : ''}>
-        <div className={`grid ${headingGrid} items-center gap-x-2 gap-y-2`}>
-          {backTo ? <BackButton className="-ml-2 row-start-1" to={backTo} /> : null}
-          <h2
-            className={`row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-tight text-[#171d16] ${textCol}`}
-          >
-            Settings
-          </h2>
-          <p className={`row-start-2 text-gray-500 ${textCol}`}>
-            Manage your clinical profile, organization data, and medical team.
-          </p>
+      {showHeading ? (
+        <div className={showTabs ? 'mb-6' : ''}>
+          <div className={`grid ${headingGrid} items-center gap-x-2 gap-y-2`}>
+            {backTo ? <BackButton className="-ml-2 row-start-1" to={backTo} /> : null}
+            <h2
+              className={`row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-tight text-[#171d16] ${textCol}`}
+            >
+              Settings
+            </h2>
+            <p className={`row-start-2 text-gray-500 ${textCol}`}>
+              Manage your clinical profile, organization data, and medical team.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {showTabs ? (
         <nav aria-label="Settings sections" className="mb-8 flex w-fit gap-2 rounded-full bg-[#e9f0e5] p-1">

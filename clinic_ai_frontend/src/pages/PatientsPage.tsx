@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
@@ -62,7 +63,11 @@ function PatientsPage() {
 
   return (
     <div className="text-[#171d16] min-h-screen font-manrope">
-      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-end px-8">
+      <header className="h-16 sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md flex items-center justify-between px-8">
+        <div className="flex items-center gap-4">
+          <BackButton to="/dashboard" className="-ml-2" />
+          <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em] text-[#171d16]">Patient Directory</h2>
+        </div>
         <div className="flex items-center gap-4">
           <div className="h-6 w-px bg-gray-200 mx-2" />
           <button className="hover:bg-slate-100 rounded-full p-2 transition-all relative" onClick={() => setIsNotificationsOpen(true)} type="button">
@@ -74,20 +79,19 @@ function PatientsPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="sm"
+            />
           </div>
         </div>
       </header>
 
-      <main className="p-8 min-h-[calc(100vh-4rem)]">
+      <main className="px-8 pb-8 pt-4 min-h-[calc(100vh-4rem)]">
         <div className="mb-8 flex justify-between items-end gap-4">
-          <div className="grid max-w-[min(100%,42rem)] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
-            <BackButton to="/dashboard" className="-ml-2 row-start-1" />
-            <h2 className="row-start-1 min-w-0 text-[28px] font-bold leading-[1.2] tracking-[-0.02em] text-[#171d16]">
-              Patient Directory
-            </h2>
-            <p className="col-start-2 row-start-2 text-slate-500">Manage and monitor registered medical profiles.</p>
-          </div>
+          <p className="text-slate-500">Manage and monitor registered medical profiles.</p>
           <div className="flex items-center gap-3">
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"

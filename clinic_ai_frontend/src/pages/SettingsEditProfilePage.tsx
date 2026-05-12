@@ -4,7 +4,10 @@ import {
   getDoctorScheduleSettings,
   saveDoctorScheduleSettings,
 } from '../lib/doctorScheduleSettings'
+import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
+import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 import { fetchMyProfile, getApiErrorMessage, patchMyProfile, type ProviderProfile } from '../services/profileApi'
@@ -98,6 +101,7 @@ function MeridiemToggle({
 }
 
 function SettingsEditProfilePage() {
+  const navigate = useNavigate()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -332,9 +336,10 @@ function SettingsEditProfilePage() {
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
       setBanner({ type: 'ok', text: 'Profile updated successfully.' })
+      navigate('/settings')
     } catch (err) {
       setBanner({
-        type: 'ok',
+        type: 'err',
         text: `OPD settings saved. Profile fields could not be updated right now (${getApiErrorMessage(err)}).`,
       })
     } finally {
@@ -357,7 +362,11 @@ function SettingsEditProfilePage() {
 
   return (
     <div className="font-manrope min-h-screen text-[#171d16] antialiased">
-      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
+        <div className="flex items-center gap-2">
+          <BackButton className="-ml-2" to="/dashboard" />
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">Settings</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button
             className="relative text-gray-500 transition-opacity hover:opacity-80"
@@ -373,18 +382,20 @@ function SettingsEditProfilePage() {
               <p className="text-sm font-semibold text-[#171d16]">{fullName || 'Provider'}</p>
               <p className="text-xs text-gray-500">{jobTitle || 'Clinical role'}</p>
             </div>
-            <img
-              alt=""
-              className="h-10 w-10 rounded-full border-2 border-[#00873a] object-cover"
-              src={avatarSrc}
+            <ProviderAvatar
+              className="border-2 border-[#00873a]"
+              imageUrl={avatarSrc}
+              label={fullName || 'Provider'}
+              size="md"
             />
           </div>
         </div>
       </header>
 
-      <main className="min-h-screen bg-[#f4fcf0] p-8 pt-16">
-        <div className="mx-auto max-w-6xl">
-          <SettingsHeadingNav />
+      <main className="min-h-screen bg-[#f4fcf0]">
+        <div className="mt-16 p-8">
+          <div className="mx-auto max-w-6xl">
+          <SettingsHeadingNav showHeading={false} />
 
           {banner ? (
             <div
@@ -410,10 +421,11 @@ function SettingsEditProfilePage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-4">
                   <div className="relative">
-                    <img
-                      alt=""
-                      className="h-24 w-24 rounded-full border-4 border-[#eff6ea] object-cover shadow-sm"
-                      src={avatarSrc}
+                    <ProviderAvatar
+                      className="border-4 border-[#eff6ea] shadow-sm"
+                      imageUrl={avatarSrc}
+                      label={fullName || 'Provider'}
+                      size="lg"
                     />
                     <input
                       ref={fileInputRef}
@@ -660,6 +672,7 @@ function SettingsEditProfilePage() {
                 View compliance notes
               </button>
             </section>
+          </div>
           </div>
         </div>
       </main>

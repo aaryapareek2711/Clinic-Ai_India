@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
@@ -111,15 +111,19 @@ function PatientDetailPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="sm"
+            />
           </div>
         </div>
       </header>
 
       <main className="p-8 min-h-[calc(100vh-4rem)]">
         <div className="flex items-center gap-2 mb-6">
-          <BackButton fallback="/patients" className="-ml-2" />
-          <nav className="flex items-center gap-2 text-sm text-slate-500">
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-500">
             <button className="hover:text-[#006b2c] transition-colors" onClick={() => navigate('/patients')} type="button">Patients</button>
             <span className="material-symbols-outlined text-xs">chevron_right</span>
             <span className="text-[#171d16] font-semibold">{displayName}</span>

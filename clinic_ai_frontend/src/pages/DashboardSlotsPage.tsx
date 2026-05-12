@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import {
@@ -253,26 +254,32 @@ function DashboardSlotsPage() {
   return (
     <div className="min-h-screen bg-white text-[#171d16] font-manrope">
       <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
-        <button
-          className="flex items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-[#171d16]"
-          onClick={() => navigate('/dashboard')}
-          type="button"
-        >
-          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-          Back to Dashboard
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center text-sm font-medium text-gray-600 transition-colors hover:text-[#171d16]"
+            onClick={() => navigate('/dashboard')}
+            type="button"
+          >
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          </button>
+          <h1 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">{titleForView(view, day)}</h1>
+        </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
             <p className="text-sm font-semibold">{provider.displayName || 'Dr.'}</p>
             <p className="text-[11px] text-gray-500">{provider.title || 'Clinical provider'}</p>
           </div>
-          <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+          <ProviderAvatar
+            className="border border-gray-200"
+            imageUrl={provider.avatarUrl}
+            label={provider.displayName}
+            size="md"
+          />
         </div>
       </header>
 
       <main className="space-y-6 p-8 pt-24">
         <section className="px-1 py-1">
-          <h1 className="text-[28px] leading-tight tracking-[-0.02em] font-bold text-[#171d16]">{titleForView(view, day)}</h1>
           <p className="text-slate-500 mt-1">
             {subtitleForView(view)} · {dayLabel}
           </p>

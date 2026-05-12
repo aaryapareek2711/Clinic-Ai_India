@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { getStoredAuthProfile } from '../lib/authSession'
 import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
-import { fetchMyProfile, getApiErrorMessage, type ProviderProfile } from '../services/profileApi'
+import { fetchMyProfile, getApiErrorMessage, PROVIDER_PROFILE_UPDATED_EVENT, type ProviderProfile } from '../services/profileApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderVisits, type ProviderVisitListItem } from '../services/visitWorkflowApi'
-import SettingsHeadingNav from '../components/SettingsHeadingNav'
+import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import NotificationsDrawer from './NotificationsDrawer'
 
 type DayAvailability = {
@@ -49,42 +51,47 @@ function SettingsPage() {
   const [profileError, setProfileError] = useState<string | null>(null)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const me = await fetchMyProfile()
-        if (!cancelled) setProfile(me)
-      } catch (e) {
-        if (!cancelled) {
-          const cached = getStoredAuthProfile()
-          if (cached.fullName || cached.username || cached.jobTitle) {
-            const fallbackProfile: ProviderProfile = {
-              id: '',
-              email: cached.username.includes('@') ? cached.username : '',
-              username: cached.username,
-              full_name: cached.fullName,
-              phone: null,
-              role: cached.role || 'doctor',
-              job_title: cached.jobTitle || null,
-              medical_license_number: null,
-              avatar_url: null,
-              is_active: true,
-              is_verified: true,
-              tenant_id: null,
-            }
-            setProfile(fallbackProfile)
-            setProfileError(null)
-          } else {
-            setProfileError(getApiErrorMessage(e))
-          }
+  const loadProfile = useCallback(async () => {
+    try {
+      const me = await fetchMyProfile()
+      setProfile(me)
+      setProfileError(null)
+    } catch (e) {
+      const cached = getStoredAuthProfile()
+      if (cached.fullName || cached.username || cached.jobTitle) {
+        const fallbackProfile: ProviderProfile = {
+          id: '',
+          email: cached.username.includes('@') ? cached.username : '',
+          username: cached.username,
+          full_name: cached.fullName,
+          phone: null,
+          role: cached.role || 'doctor',
+          job_title: cached.jobTitle || null,
+          medical_license_number: null,
+          avatar_url: null,
+          is_active: true,
+          is_verified: true,
+          tenant_id: null,
         }
+        setProfile(fallbackProfile)
+        setProfileError(null)
+      } else {
+        setProfileError(getApiErrorMessage(e))
       }
-    })()
-    return () => {
-      cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    void loadProfile()
+  }, [loadProfile])
+
+  useEffect(() => {
+    const onProfileUpdated = () => {
+      void loadProfile()
+    }
+    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
+    return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
+  }, [loadProfile])
 
   useEffect(() => {
     let cancelled = false
@@ -101,13 +108,25 @@ function SettingsPage() {
     }
   }, [])
 
-  const initials = useMemo(() => {
-    const raw = profile?.full_name?.trim() || provider.displayName.replace(/^Dr\.\s*/i, '').trim()
-    const parts = raw.split(/\s+/).filter(Boolean)
-    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-    return 'DR'
+  /** Prefer `profile` from `/api/auth/me` so the hero matches saved edits (hook can lag behind cache). */
+  const headerDisplayName = useMemo(() => {
+    const raw = profile?.full_name?.trim()
+    if (raw) return doctorNameLabel(raw)
+    return provider.displayName
   }, [profile?.full_name, provider.displayName])
+
+  const headerTitle = useMemo(
+    () => profile?.job_title?.trim() || provider.title,
+    [profile?.job_title, provider.title],
+  )
+
+  const headerAvatarUrl = useMemo(() => {
+    const u = profile?.avatar_url?.trim()
+    if (u) return u
+    return provider.avatarUrl
+  }, [profile?.avatar_url, provider.avatarUrl])
+
+  const heroAvatarUrl = headerAvatarUrl?.trim() || ''
 
   const email = profile?.email?.trim() || '—'
   const phone =
@@ -236,7 +255,11 @@ function SettingsPage() {
 
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-manrope">
-      <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
+      <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-40">
+        <div className="flex items-center gap-2">
+          <BackButton to="/dashboard" className="-ml-2" />
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">Settings</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
@@ -244,13 +267,14 @@ function SettingsPage() {
           </button>
           <div className="flex items-center gap-3 ml-2">
             <div className="text-right">
-              <div className="text-sm font-semibold text-[#171d16]">{provider.displayName}</div>
-              <div className="text-[11px] text-gray-500 uppercase font-bold tracking-tight">{provider.title}</div>
+              <div className="text-sm font-semibold text-[#171d16]">{headerDisplayName}</div>
+              <div className="text-[11px] text-gray-500 uppercase font-bold tracking-tight">{headerTitle}</div>
             </div>
-            <img
-              alt="Dr. Profile"
-              className="w-10 h-10 rounded-full object-cover border-2 border-[#00873a]"
-              src={provider.avatarUrl}
+            <ProviderAvatar
+              className="border-2 border-[#00873a]"
+              imageUrl={headerAvatarUrl}
+              label={headerDisplayName}
+              size="md"
             />
           </div>
         </div>
@@ -258,7 +282,7 @@ function SettingsPage() {
 
       <main className="min-h-screen bg-[#f4fcf0]">
         <div className="space-y-8 p-8 pt-24">
-          <SettingsHeadingNav backTo="/dashboard" showTabs={false} variant="wide" />
+          <p className="text-[#3e4a3d]">Manage your clinical profile, organization data, and medical team.</p>
 
           <section className="relative z-0 mx-auto max-w-7xl overflow-hidden rounded-2xl bg-gradient-to-r from-[#111827] to-[#1f2937] px-10 py-10 text-white shadow-lg">
           <div
@@ -274,8 +298,17 @@ function SettingsPage() {
             <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between lg:gap-12">
               <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8 lg:gap-10">
                 <div className="relative shrink-0">
-                  <div className="flex h-[5.5rem] w-[5.5rem] items-center justify-center rounded-full bg-gradient-to-br from-[#22c55e] via-[#16a34a] to-[#2563eb] shadow-lg shadow-black/30 ring-2 ring-white/[0.12] ring-offset-2 ring-offset-[#111827] sm:h-24 sm:w-24">
-                    <span className="select-none text-2xl font-bold tracking-tight text-white drop-shadow-sm sm:text-[1.75rem]">{initials}</span>
+                  <div className="flex h-[5.5rem] w-[5.5rem] items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#22c55e] via-[#16a34a] to-[#2563eb] shadow-lg shadow-black/30 ring-2 ring-white/[0.12] ring-offset-2 ring-offset-[#111827] sm:h-24 sm:w-24">
+                    {heroAvatarUrl ? (
+                      <img alt="" className="h-full w-full object-cover" src={heroAvatarUrl} />
+                    ) : (
+                      <span
+                        aria-hidden
+                        className="material-symbols-outlined select-none text-5xl text-white/95 drop-shadow-sm sm:text-6xl"
+                      >
+                        person
+                      </span>
+                    )}
                   </div>
                   <span
                     aria-label="Verified profile"
@@ -289,14 +322,14 @@ function SettingsPage() {
                 <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-left">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-start sm:gap-x-3">
                     <h1 className="text-balance text-xl font-bold tracking-tight sm:text-2xl md:text-[1.75rem]">
-                      {provider.displayName}
+                      {headerDisplayName}
                     </h1>
                     <span className="inline-flex shrink-0 items-center rounded-full border border-white/[0.12] bg-white/[0.08] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/95">
                       Active
                     </span>
                   </div>
                   <p className="mx-auto max-w-xl text-sm leading-snug text-slate-300 sm:mx-0">
-                    {provider.title}
+                    {headerTitle}
                   </p>
                   <dl className="mx-auto mt-3 flex max-w-xl flex-col gap-2 sm:mx-0 sm:flex-row sm:flex-wrap">
                     <div className="flex flex-1 justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 backdrop-blur-sm sm:flex-initial sm:justify-start">

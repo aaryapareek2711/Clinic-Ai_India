@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-
 import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
@@ -208,8 +208,9 @@ export default function CarePrepPage() {
   return (
     <div className="flex min-h-screen flex-col bg-[#f4fcf0] font-sans tracking-tight text-[#171d16] antialiased">
       <header className="fixed right-0 top-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-slate-200 bg-white px-8">
-        <div className="flex flex-1 items-center gap-6">
-          <span className="text-lg font-bold text-slate-900">MedGenie CarePrep</span>
+        <div className="flex flex-1 items-center gap-4">
+          <BackButton to="/dashboard" className="-ml-2 font-manrope" />
+          <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em] text-[#171d16]">Care Prep</h2>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -225,23 +226,27 @@ export default function CarePrepPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img alt="Dr. Profile" className="h-9 w-9 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="sm"
+            />
           </div>
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col pt-16">
-        <div className="flex-1 p-8">
-          <div className="mb-6 flex items-center gap-2">
-            <BackButton to="/dashboard" />
-            <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">CarePrep</h2>
-          </div>
-
+      <main className="flex flex-1 flex-col pt-20">
+        <div className="flex-1 px-8 pb-8">
           {errorMessage && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               {errorMessage}
             </div>
           )}
+
+          <div className="mb-8">
+            <p className="text-slate-500">Manage and monitor intake of all patients.</p>
+          </div>
 
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

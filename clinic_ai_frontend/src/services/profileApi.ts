@@ -28,6 +28,12 @@ let profileCache: ProviderProfile | null = null
 let profileCacheAt = 0
 let profileInFlight: Promise<ProviderProfile> | null = null
 
+/** Clears in-memory profile cache so the next `fetchMyProfile` hits the network. */
+export function invalidateMyProfileCache(): void {
+  profileCache = null
+  profileCacheAt = 0
+}
+
 /** Dispatched after a successful profile PATCH so mounted UI (e.g. sidebar) can refresh. */
 export const PROVIDER_PROFILE_UPDATED_EVENT = 'clinic-provider-profile-updated'
 
@@ -77,9 +83,8 @@ export async function patchMyProfile(body: ProviderProfilePatch): Promise<Provid
   const { data } = await apiClient.patch<ProviderProfile>('/api/auth/me', body, {
     headers: authHeaders(),
   })
-  profileCache = data
-  profileCacheAt = Date.now()
   persistProfileToLocalStorage(data)
+  invalidateMyProfileCache()
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PROVIDER_PROFILE_UPDATED_EVENT))
   }

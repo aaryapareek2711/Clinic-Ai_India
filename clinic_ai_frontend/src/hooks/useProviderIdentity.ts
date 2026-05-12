@@ -5,36 +5,43 @@ import { getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { fetchMyProfile, PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 
-const DEFAULT_AVATAR =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDaAYeQ0A8oF3vIfyLdOprOJ5SFTNVVvmJSbHXZgI1_hK5qpkoXqwV_MO6PstghTFvZxhRr4w_9UWJvAuxv6BAaL2Ki9iaopyTFj53ErGUzDUt0DPmIeEPkQ8QLnp9zdKrG7mSUR7QCKypwjDYeVy0wWE4WvCPcfkiJCCHGOCDYuuQZDw9ZSoHuRR0Y5GdkcuGswFoLmCDphSSFTzmWLMexlxM302h34UI87UnGQ_WgZ6-lEVzJP2xIG0bNin24u6kGXLX5-NY36vdO'
-
 export function useProviderIdentity() {
   const { pathname } = useLocation()
   const seed = getStoredAuthProfile()
   const [nameRaw, setNameRaw] = useState<string>(seed.fullName || seed.username || '')
   const [title, setTitle] = useState<string>(seed.jobTitle || seed.role.replace(/_/g, ' ') || 'Clinical provider')
-  const [avatarUrl, setAvatarUrl] = useState<string>(DEFAULT_AVATAR)
+  const [avatarUrl, setAvatarUrl] = useState<string>('')
+
+  const applyStoredProfile = useCallback(() => {
+    const s = getStoredAuthProfile()
+    setNameRaw((s.fullName || s.username || '').trim())
+    const roleLabel = (s.role || 'doctor').replace(/_/g, ' ')
+    setTitle((s.jobTitle || roleLabel || 'Clinical provider').trim())
+  }, [])
 
   const refreshFromServer = useCallback(async () => {
     try {
       const me = await fetchMyProfile()
       setNameRaw(me.full_name?.trim() || me.username?.trim() || '')
       setTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || 'Clinical provider')
-      setAvatarUrl(me.avatar_url?.trim() ? me.avatar_url.trim() : DEFAULT_AVATAR)
+      setAvatarUrl(me.avatar_url?.trim() ? me.avatar_url.trim() : '')
     } catch {
-      /* keep last known values */
+      applyStoredProfile()
     }
-  }, [])
+  }, [applyStoredProfile])
 
   useEffect(() => {
     void refreshFromServer()
   }, [pathname, refreshFromServer])
 
   useEffect(() => {
-    const onProfileUpdated = () => void refreshFromServer()
+    const onProfileUpdated = () => {
+      applyStoredProfile()
+      void refreshFromServer()
+    }
     window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
     return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
-  }, [refreshFromServer])
+  }, [applyStoredProfile, refreshFromServer])
 
   const displayName = useMemo(() => doctorNameLabel(nameRaw) || 'Dr.', [nameRaw])
   return { displayName, title, avatarUrl }

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -11,7 +13,11 @@ function SettingsOrganizationPage() {
 
   return (
     <div className="font-manrope text-[#171d16] min-h-screen antialiased">
-      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
+        <div className="flex items-center gap-2">
+          <BackButton className="-ml-2" to="/dashboard" />
+          <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">Settings</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button
             className="relative text-gray-500 transition-opacity hover:opacity-80"
@@ -26,18 +32,20 @@ function SettingsOrganizationPage() {
               <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
               <p className="text-xs text-gray-500">{provider.title}</p>
             </div>
-            <img
-              alt="Dr. Profile"
-              className="h-10 w-10 rounded-full border border-gray-200 object-cover"
-              src={provider.avatarUrl}
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="md"
             />
           </div>
         </div>
       </header>
 
-      <main className="min-h-screen bg-[#f4fcf0] p-8 pt-16">
-        <div className="mx-auto max-w-6xl">
-          <SettingsHeadingNav />
+      <main className="min-h-screen bg-[#f4fcf0]">
+        <div className="mt-16 p-8">
+          <div className="mx-auto max-w-6xl">
+            <SettingsHeadingNav showHeading={false} />
 
           <div className="grid grid-cols-12 gap-8">
             <section className="col-span-12 rounded-xl border border-[#bdcaba] bg-white p-8">
@@ -197,6 +205,7 @@ function SettingsOrganizationPage() {
 
           </div>
         </div>
+      </div>
       </main>
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />

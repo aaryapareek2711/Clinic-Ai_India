@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
@@ -256,7 +257,11 @@ function CalendarPage() {
 
   return (
     <div className="min-h-screen font-inter text-[#171d16]">
-      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-end border-b border-gray-200 bg-white px-8">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
+        <div className="flex items-center gap-2">
+          <BackButton to="/dashboard" className="-ml-2" />
+          <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Calendar</h2>
+        </div>
         <div className="flex items-center gap-6">
           <button className="text-gray-500 transition-opacity hover:opacity-80" onClick={() => setIsNotificationsOpen(true)} type="button">
             <span className="material-symbols-outlined">notifications</span>
@@ -266,20 +271,22 @@ function CalendarPage() {
               <p className="text-sm font-semibold">{provider.displayName}</p>
               <p className="text-[10px] uppercase text-[#3e4a3d]">{provider.title}</p>
             </div>
-            <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+            <ProviderAvatar
+              className="border border-gray-200"
+              imageUrl={provider.avatarUrl}
+              label={provider.displayName}
+              size="md"
+            />
           </div>
         </div>
       </header>
 
-      <main className="min-h-screen p-8 pt-24">
-        <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-          <div className="flex items-center gap-2">
-            <BackButton to="/dashboard" className="-ml-2" />
-            <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">Calendar</h2>
-          </div>
-          <div className="flex flex-wrap gap-3">
+      <main className="min-h-screen px-8 pb-8 pt-20">
+        <div className="mb-8 flex justify-between items-end gap-4">
+          <p className="text-slate-500">Manage and monitor all appointments.</p>
+          <div className="flex items-center gap-3">
             <button
-              className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-5 py-2.5 font-medium text-white"
+              className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
               onClick={() => navigate('/start-visit')}
               type="button"
             >

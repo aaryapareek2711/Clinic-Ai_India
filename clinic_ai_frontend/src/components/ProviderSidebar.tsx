@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { clearAuthSession, getStoredAuthProfile } from '../lib/authSession'
+import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 
 const ACTIVE =
@@ -26,10 +27,10 @@ export default function ProviderSidebar() {
   const navigate = useNavigate()
   const n = navState(pathname)
   const provider = useProviderIdentity()
-  const sidebarName = useMemo(
-    () => provider.displayName || seed.fullName || seed.username || '',
-    [provider.displayName, seed.fullName, seed.username],
-  )
+  const sidebarName = useMemo(() => {
+    const storedDisplay = doctorNameLabel(seed.fullName) || seed.username.trim()
+    return storedDisplay || provider.displayName
+  }, [seed.fullName, seed.username, provider.displayName])
 
   function handleLogout(): void {
     clearAuthSession()

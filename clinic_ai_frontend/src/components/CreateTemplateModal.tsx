@@ -293,7 +293,7 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
     setTagsInput('')
     setAppointmentTypes([])
     setContent(emptyContent())
-    setOptionalPreferences(String(contentFromTemplate.optional_preferences || ''))
+    setOptionalPreferences('')
     setRedFlagsText('')
     setDataGapsText('')
     setError(null)

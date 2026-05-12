@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import ProviderAvatar from '../components/ProviderAvatar'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_PROVIDER_ID,
@@ -264,7 +265,12 @@ function ProviderDashboardPage() {
                 <p className="text-sm font-semibold">{headerName}</p>
                 <p className="text-[11px] text-gray-500">{provider.title || 'Clinical provider'}</p>
               </div>
-              <img alt="Dr. Profile" className="h-10 w-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+              <ProviderAvatar
+                className="border border-gray-200"
+                imageUrl={provider.avatarUrl}
+                label={provider.displayName}
+                size="md"
+              />
             </div>
           </div>
         </header>

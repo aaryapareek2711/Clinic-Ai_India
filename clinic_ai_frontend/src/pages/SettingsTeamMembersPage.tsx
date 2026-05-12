@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
+import BackButton from '../components/BackButton'
+import ProviderAvatar from '../components/ProviderAvatar'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
 
@@ -10,7 +12,11 @@ function SettingsTeamMembersPage() {
   return (
     <div className="text-[#171d16] antialiased overflow-hidden">
       <main className="flex flex-col h-screen overflow-y-auto">
-        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-40">
+        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-40">
+          <div className="flex items-center gap-2">
+            <BackButton className="-ml-2" to="/dashboard" />
+            <h2 className="text-[28px] leading-[1.2] font-bold tracking-[-0.02em] text-[#171d16]">Settings</h2>
+          </div>
           <div className="flex items-center space-x-6">
             <button className="text-gray-500 hover:opacity-80 transition-opacity relative" onClick={() => setIsNotificationsOpen(true)} type="button">
               <span className="material-symbols-outlined">notifications</span>
@@ -22,14 +28,19 @@ function SettingsTeamMembersPage() {
                 <p className="text-sm font-semibold text-gray-900">{provider.displayName}</p>
                 <p className="text-xs text-gray-500">{provider.title}</p>
               </div>
-              <img alt="Dr. Profile" className="w-10 h-10 rounded-full border border-gray-200 object-cover" src={provider.avatarUrl} />
+              <ProviderAvatar
+                className="border border-gray-200"
+                imageUrl={provider.avatarUrl}
+                label={provider.displayName}
+                size="md"
+              />
             </div>
           </div>
         </header>
 
         <div className="mt-16 flex-1 bg-[#f4fcf0] p-8">
           <div className="mx-auto max-w-6xl">
-            <SettingsHeadingNav />
+            <SettingsHeadingNav showHeading={false} />
 
             <div className="mb-6 flex items-center justify-between">
               <div className="relative w-72">
