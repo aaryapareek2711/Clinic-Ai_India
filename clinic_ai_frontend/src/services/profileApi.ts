@@ -2,6 +2,7 @@ import { apiClient, getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_DOCTOR_SCHEDULE,
   getDoctorScheduleSettings,
+  OPD_DAY_KEYS,
   saveDoctorScheduleSettings,
   type DoctorScheduleSettings,
   type OpdDayKey,
@@ -51,6 +52,48 @@ function firstNonEmpty(...vals: unknown[]): string {
     if (s) return s
   }
   return ''
+}
+
+const WEEKDAY_SET = new Set<string>(OPD_DAY_KEYS)
+
+function validTime(v: string | null | undefined): v is string {
+  return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
+}
+
+function optionalHHmm(raw: unknown): string | null {
+  const s = raw == null ? '' : str(raw)
+  if (!s) return null
+  return validTime(s) ? s : null
+}
+
+/** Parse `/api/auth/me` weekly array into UI payload shape; invalid → null. */
+function coerceOpdWeeklyFromApi(raw: unknown): OpdWeeklyDayPayload[] | null {
+  if (raw == null) return null
+  if (!Array.isArray(raw) || raw.length !== 7) return null
+  const out: OpdWeeklyDayPayload[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null
+    const o = item as Record<string, unknown>
+    const day = str(o.day) as OpdDayKey
+    if (!WEEKDAY_SET.has(day)) return null
+    const closed = Boolean(o.closed)
+    const ms = o.morning_start == null ? null : str(o.morning_start)
+    const me = o.morning_end == null ? null : str(o.morning_end)
+    const eveningEnabled = Boolean(o.evening_enabled)
+    const es = o.evening_start == null ? null : str(o.evening_start)
+    const ee = o.evening_end == null ? null : str(o.evening_end)
+    out.push({
+      day,
+      closed,
+      morning_start: closed ? null : ms || null,
+      morning_end: closed ? null : me || null,
+      evening_enabled: !closed && eveningEnabled,
+      evening_start: closed || !eveningEnabled ? null : es || null,
+      evening_end: closed || !eveningEnabled ? null : ee || null,
+    })
+  }
+  if (new Set(out.map((x) => x.day)).size !== 7) return null
+  return out
 }
 
 /** Map Compass / legacy field names onto the shape the settings UI expects. */
@@ -109,6 +152,12 @@ export function coerceProviderProfile(raw: unknown): ProviderProfile {
     is_active: Boolean(r.is_active ?? true),
     is_verified: Boolean(r.is_verified ?? true),
     tenant_id: r.tenant_id != null ? str(r.tenant_id) : null,
+    opd_morning_start: optionalHHmm(r.opd_morning_start),
+    opd_morning_end: optionalHHmm(r.opd_morning_end),
+    opd_evening_enabled: Boolean(r.opd_evening_enabled),
+    opd_evening_start: optionalHHmm(r.opd_evening_start),
+    opd_evening_end: optionalHHmm(r.opd_evening_end),
+    opd_weekly_schedule: coerceOpdWeeklyFromApi(r.opd_weekly_schedule),
   }
 }
 
@@ -149,10 +198,6 @@ function persistProfileToLocalStorage(data: ProviderProfile): void {
   } catch {
     /* ignore */
   }
-}
-
-function validTime(v: string | null | undefined): v is string {
-  return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
 }
 
 function weeklyPayloadToRows(data: ProviderProfile): OpdDayScheduleRow[] | null {
