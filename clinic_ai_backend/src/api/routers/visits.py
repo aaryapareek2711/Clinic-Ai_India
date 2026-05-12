@@ -81,6 +81,33 @@ def _parse_iso_datetime(value: object):
         return None
 
 
+def _visit_paged_time_window_clause(range_start: str | None, range_end: str | None) -> dict | None:
+    """
+    Optional filter: include a visit if created_at, updated_at, or scheduled_start falls in
+    [range_start, range_end) (range_end exclusive). Client should send ISO-8601 instants.
+    """
+    rs_raw = str(range_start or "").strip()
+    re_raw = str(range_end or "").strip()
+    if not rs_raw or not re_raw:
+        return None
+    rs = _parse_iso_datetime(rs_raw)
+    re = _parse_iso_datetime(re_raw)
+    if rs is None or re is None or rs >= re:
+        return None
+    return {
+        "$or": [
+            {"created_at": {"$gte": rs, "$lt": re}},
+            {"updated_at": {"$gte": rs, "$lt": re}},
+            {
+                "$and": [
+                    {"scheduled_start": {"$exists": True, "$nin": [None, ""]}},
+                    {"scheduled_start": {"$gte": rs_raw, "$lt": re_raw}},
+                ]
+            },
+        ]
+    }
+
+
 def _workflow_stage_triplet_for_status(status: str) -> dict:
     s = str(status or "").strip().lower()
     if s in {"patient_registered"}:
@@ -568,6 +595,14 @@ def list_provider_visits_paged(
     status_filter: str | None = Query(default=None, description="Filter by visit status"),
     search: str | None = Query(default=None, description="Search by patient name/mobile/id/visit id"),
     sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|time_newest|time_oldest|name_az|name_za|visit_id"),
+    range_start: str | None = Query(
+        default=None,
+        description="Optional ISO-8601 lower bound (inclusive) for visit time-window filter",
+    ),
+    range_end: str | None = Query(
+        default=None,
+        description="Optional ISO-8601 upper bound (exclusive) for visit time-window filter",
+    ),
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
@@ -610,6 +645,9 @@ def list_provider_visits_paged(
                 ]
             }
         ]
+    time_window = _visit_paged_time_window_clause(range_start, range_end)
+    if time_window is not None:
+        query.setdefault("$and", []).append(time_window)
     total = int(db.visits.count_documents(query))
     skip = (page - 1) * page_size
     sort_spec: list[tuple[str, int]]

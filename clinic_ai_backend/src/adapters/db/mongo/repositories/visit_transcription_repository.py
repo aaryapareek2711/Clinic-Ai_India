@@ -169,9 +169,16 @@ class VisitTranscriptionRepository:
         session = self.get_session(patient_id=patient_id, visit_id=visit_id)
         if not session:
             return False
-        self._sync_visit_transcription_projection(
-            visit_id=visit_id,
-            payload={"structured_dialogue": None, "updated_at": now},
-            now=now,
+        # Use dotted paths so we never replace the whole `transcription_session` object
+        # (which could drop sibling fields if the read model were ever incomplete).
+        self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {
+                "$unset": {"transcription_session.structured_dialogue": ""},
+                "$set": {
+                    "transcription_session.updated_at": now,
+                    "updated_at": now,
+                },
+            },
         )
         return True
