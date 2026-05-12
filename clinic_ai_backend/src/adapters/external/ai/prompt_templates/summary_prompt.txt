@@ -4,7 +4,7 @@ Task:
 Create a structured pre-visit summary in exactly 5 sections from intake answers.
 
 Inputs:
-- language: {{language}}
+- intake_conversation_language_code: {{language}}  (patient may have answered in this language; use only to interpret meaning)
 - intake_answers_json: {{intake_answers_json}}
 
 Rules:
@@ -13,12 +13,14 @@ Rules:
    - chief_complaint
    - hpi
    - current_medication
-   - past_medical_history_allergies_family
+   - past_medical_history_allergies
    - red_flag_indicators
 3) Do NOT include vitals.
 4) If data is missing, write "Not provided".
 5) Keep concise, factual, and doctor-facing.
 6) Do not provide diagnosis or treatment advice.
+7) Write every string value in the JSON in English only (clinical prose). Translate or transliterate from the intake language as needed; do not output Kannada, Hindi, or other non-English scripts in the summary text.
+8) Section headings are implied by the JSON keys only; do not add extra wrapper keys.
 
 Required nested structure:
 {
@@ -37,7 +39,6 @@ Required nested structure:
   "past_medical_history_allergies": {
     "past_medical_history": "...",
     "allergies": "..."
-    "family_history":"..."
   },
   "red_flag_indicators": ["..."]
 }

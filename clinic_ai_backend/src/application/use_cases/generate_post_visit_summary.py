@@ -21,6 +21,16 @@ LANGUAGE_NAMES = {
     "en_us": "English",
     "hi": "Hindi",
     "hi-eng": "Hindi and English (short, patient-friendly mixed wording for WhatsApp)",
+    "kn": "Kannada",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "mr": "Marathi",
+    "bn": "Bengali",
+    "ml": "Malayalam",
+    "gu": "Gujarati",
+    "or": "Odia",
+    "pa": "Punjabi",
+    "ur": "Urdu",
 }
 
 
@@ -137,7 +147,10 @@ class GeneratePostVisitSummaryUseCase:
 
         preferred = str(preferred_language or "").strip().lower()
         if preferred and preferred != "en":
-            preferred_language_name = LANGUAGE_NAMES.get(preferred, preferred)
+            preferred_language_name = LANGUAGE_NAMES.get(
+                preferred,
+                preferred.replace("-", " ").replace("_", " ").strip().title(),
+            )
             preferred_payload = self._generate_payload(context=context, language_name=preferred_language_name)
             payloads[preferred] = self._apply_follow_up_overrides(
                 payload=preferred_payload,

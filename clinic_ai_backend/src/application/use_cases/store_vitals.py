@@ -9,33 +9,13 @@ from uuid import uuid4
 from src.adapters.db.mongo.client import get_database
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
 from src.application.utils.patient_identity import stable_patient_id
+from src.core.vitals_catalog import VITAL_CONTEXT_BY_KEY, normalize_contextual_vital_key
 
 _ALLOWED_FIELD_TYPES = frozenset({"number", "text", "boolean", "select"})
 _FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_VITAL_FIELDS = 8
 # Illness-specific vitals from the model (excluding weight/BP, which are always prepended when vitals are needed).
 _MAX_CONTEXTUAL_VITAL_FIELDS = 3
-
-# Normalized keys the model might return for weight/BP; these are dropped from contextual list (fixed fields used instead).
-_CONTEXTUAL_EXCLUDE_KEYS = frozenset(
-    {
-        "body_weight_kg",
-        "weight_kg",
-        "weight",
-        "body_weight",
-        "blood_pressure_mmhg",
-        "blood_pressure",
-        "bp_mmhg",
-        "bp",
-        "systolic_bp",
-        "diastolic_bp",
-        "blood_pressure_systolic",
-        "blood_pressure_diastolic",
-        "systolic_blood_pressure",
-        "diastolic_blood_pressure",
-    }
-)
-
 
 def _one_line_chief_complaint(intake: dict, pre_visit: dict) -> str:
     """Single string tying illness + pre-visit chief for the vitals model."""
@@ -135,7 +115,7 @@ class StoreVitalsUseCase:
 
     @staticmethod
     def _sanitize_contextual_vitals_fields(fields: Any, *, max_count: int = _MAX_CONTEXTUAL_VITAL_FIELDS) -> list[dict[str, Any]]:
-        """Validated illness-specific vitals only; numeric readings only; omits weight/BP; hard cap ``max_count``."""
+        """Map illness-specific picks to the canonical vitals catalog; numeric only; omits weight/BP; cap ``max_count``."""
         if not isinstance(fields, list):
             return []
         out: list[dict[str, Any]] = []
@@ -146,28 +126,29 @@ class StoreVitalsUseCase:
                 break
             if not isinstance(raw, dict):
                 continue
-            key = str(raw.get("key", "")).strip().lower().replace(" ", "_").replace("-", "_")
-            if not key or not _FIELD_KEY_RE.match(key):
+            raw_key = str(raw.get("key", "")).strip().lower().replace(" ", "_").replace("-", "_")
+            canonical = normalize_contextual_vital_key(raw_key)
+            if not canonical or canonical in seen:
                 continue
-            if key in _CONTEXTUAL_EXCLUDE_KEYS or key in seen:
+            if not _FIELD_KEY_RE.match(canonical):
                 continue
-            seen.add(key)
+            seen.add(canonical)
             ft = str(raw.get("field_type", "number")).strip().lower()
-            # Contextual vitals must be measurable readings; discard non-numeric suggestions.
             if ft != "number":
                 continue
-            label = str(raw.get("label", key)).strip() or key
-            unit = raw.get("unit")
+            spec = VITAL_CONTEXT_BY_KEY[canonical]
+            label = str(spec.get("label") or canonical).strip()[:120]
+            unit_raw = spec.get("unit")
             unit_out: str | None
-            if unit in (None, ""):
+            if unit_raw in (None, ""):
                 unit_out = None
             else:
-                unit_out = str(unit).strip()[:32] or None
+                unit_out = str(unit_raw).strip()[:32] or None
             out.append(
                 {
-                    "key": key,
-                    "label": label[:120],
-                    "field_type": ft,
+                    "key": canonical,
+                    "label": label,
+                    "field_type": "number",
                     "unit": unit_out,
                     "required": bool(raw.get("required", True)),
                     "reason": str(raw.get("reason", "")).strip()[:400] or "Linked to visit intake context",
@@ -321,7 +302,7 @@ class StoreVitalsUseCase:
                 raise ValueError(
                     "Missing required vitals: "
                     + ", ".join(missing)
-                    + ". Submit one value per `key` from the form `fields` array (e.g. body_weight_kg, blood_pressure_mmhg, temperature_c)."
+                    + ". Submit one value per `key` from the form `fields` array (e.g. body_weight_kg, blood_pressure_mmhg, temperature_f)."
                     f" Allowed keys: {', '.join(sorted(allowed))}."
                 )
             values_out = filtered

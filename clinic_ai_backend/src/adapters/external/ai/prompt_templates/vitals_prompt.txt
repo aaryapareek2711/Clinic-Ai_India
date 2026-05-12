@@ -6,7 +6,12 @@ Decide whether a vitals form is needed for this patient and, if needed, generate
 Input:
 {{context_json}}
 
-Read the patient's name, age, gender, language, intake Q&A, chief-complaint text, and pre-visit sections. Every visit is different: your field list MUST follow the presenting problem and include only measurable numeric readings (e.g. rash itch score 0-10 or lesion count; knee injury pain score/ROM angle; cough SpO2/respiratory rate only if relevant; UTI pain score or urine frequency count).
+ALLOWED OPTIONAL VITALS (choose only from this list; keys must match exactly):
+{{vitals_catalog_json}}
+
+The API always prepends **body weight (kg)** and **blood pressure (mmHg, systolic/diastolic as text like 120/80)** for every visit that needs vitals. Do NOT include weight or blood pressure in your "fields" array.
+
+Read the patient's name, age, gender, language, intake Q&A, chief_complaint_line, and pre-visit sections. Use **chief_complaint_line** and intake/pre-visit clues to decide **which optional vitals matter** for this visit (e.g. fever or systemic infection concern → temperature_f; cough, breathlessness, chest pain → spo2_percent and/or respiratory_rate; palpitations → heart_rate_bpm; diabetes/polyuria/polydipsia → random_blood_sugar_mg_dl; growth/nutrition context → height_cm when relevant).
 
 Rules:
 1) Return only valid JSON object (no markdown).
@@ -16,27 +21,27 @@ Rules:
    - fields (array)
 3) If needs_vitals is false, fields must be [] and reason must explain why.
 4) If needs_vitals is true:
-   - The API always prepends two common vitals for every illness: body weight (kg) and blood pressure. Do NOT include body weight, weight_kg, or blood pressure in your "fields" array — they are added server-side.
-   - YOU choose which extra vitals matter for THIS patient and how many: your "fields" array may contain 0, 1, 2, or at most 3 items. Do not pad to three "just because" — fewer fields is correct when the story needs fewer. Never exceed three contextual fields.
-   - Each contextual field must be justified by chief complaint and intake (e.g. rash visit → different extras than cough visit). Do NOT default to a generic emergency panel (temperature_c, heart_rate, respiratory_rate) unless intake/pre-visit clearly supports those (e.g. explicit fever + systemic symptoms, sepsis concern, chest pain, severe dyspnoea).
-   - Each field's "reason" must explicitly tie to a phrase or theme from intake or pre-visit (not generic boilerplate).
+   - Each item in "fields" must use **key** exactly equal to one of the allowed optional keys above (no invented keys, no synonyms — use the canonical key strings only).
+   - Include **0 to 3** optional fields only. Do not pad. Fewer is correct when the story does not justify more.
+   - Each field object must include: key, label, field_type, unit, required, reason.
+   - Set **label** and **unit** to match the catalog row for that key (same spelling/units as catalog).
+   - field_type must always be "number" for optional rows (vitals are numeric readings; BP is handled separately).
+   - Each field's "reason" must explicitly tie to a phrase or theme from chief_complaint_line, intake, or pre-visit (not generic boilerplate).
 5) Do not diagnose or prescribe treatment.
-6) field_type must always be "number" for contextual fields (vitals are numeric readings).
-7) Each field object must include: key (snake_case, unique), label, field_type, unit (string or null), required, reason.
-8) Prefer visit-specific keys (e.g. pain_score_0_10, rash_photo_url, spo2_percent) when the story warrants them — never duplicate weight or blood pressure (handled outside this list).
+6) If no optional vital is clearly justified, return needs_vitals true with fields [] (weight and BP are still captured by the system).
 
-Output example (illustrative only — do not copy fields unless they match this patient's story; weight/BP omitted here):
+Output example (illustrative — keys must be from the catalog; weight/BP omitted):
 {
   "needs_vitals": true,
-  "reason": "Intake describes focal joint swelling after injury; staff should capture targeted measures.",
+  "reason": "Chief complaint and intake suggest fever; capture temperature.",
   "fields": [
     {
-      "key": "pain_score_0_10",
-      "label": "Pain severity (0–10)",
+      "key": "temperature_f",
+      "label": "Temperature",
       "field_type": "number",
-      "unit": null,
+      "unit": "°F",
       "required": true,
-      "reason": "Patient rated severe knee pain in intake"
+      "reason": "Patient reports fever and chills in intake."
     }
   ]
 }

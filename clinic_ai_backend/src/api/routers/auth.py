@@ -60,26 +60,87 @@ def _ensure_doctor_id(db, user_doc: dict) -> dict:
     return refreshed or user_doc
 
 
+def _first_nonempty_str(doc: dict, *keys: str) -> str:
+    for key in keys:
+        raw = doc.get(key)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if text:
+            return text
+    return ""
+
+
+def _normalize_user_doc_for_api(user_doc: dict) -> dict:
+    """
+    Map common Compass / legacy field names onto the canonical keys the app expects.
+
+    Providers often edit `users` documents with labels like "name" or "phone_number"
+    that do not match `full_name` / `phone`, which makes the settings UI look empty.
+    """
+    merged = dict(user_doc)
+    if not _first_nonempty_str(merged, "full_name"):
+        for alt in ("display_name", "name", "fullName", "doctor_name", "provider_name"):
+            if _first_nonempty_str(merged, alt):
+                merged["full_name"] = _first_nonempty_str(merged, alt)
+                break
+    if not _first_nonempty_str(merged, "phone"):
+        for alt in ("phone_number", "mobile", "whatsapp_number", "contact_phone"):
+            if _first_nonempty_str(merged, alt):
+                merged["phone"] = _first_nonempty_str(merged, alt)
+                break
+    if not _first_nonempty_str(merged, "job_title"):
+        for alt in ("specialization", "title", "clinical_title", "designation", "speciality", "specialty"):
+            if _first_nonempty_str(merged, alt):
+                merged["job_title"] = _first_nonempty_str(merged, alt)
+                break
+    if not _first_nonempty_str(merged, "medical_license_number"):
+        for alt in (
+            "medical_registration",
+            "license_number",
+            "registration_number",
+            "medical_license",
+            "nmc_number",
+            "registration_no",
+            "license_no",
+        ):
+            if _first_nonempty_str(merged, alt):
+                merged["medical_license_number"] = _first_nonempty_str(merged, alt)
+                break
+    if not _first_nonempty_str(merged, "avatar_url"):
+        for alt in ("profile_image_url", "photo_url", "image_url", "picture", "profile_photo_url", "portrait_url"):
+            if _first_nonempty_str(merged, alt):
+                merged["avatar_url"] = _first_nonempty_str(merged, alt)
+                break
+    if not _first_nonempty_str(merged, "email"):
+        for alt in ("email_address", "user_email"):
+            if _first_nonempty_str(merged, alt):
+                merged["email"] = _first_nonempty_str(merged, alt)
+                break
+    return merged
+
+
 def _as_user_response(user_doc: dict) -> UserResponse:
+    doc = _normalize_user_doc_for_api(user_doc)
     return UserResponse(
-        id=str(user_doc["id"]),
-        doctor_id=str(user_doc.get("doctor_id") or "") or None,
-        email=str(user_doc["email"]),
-        username=str(user_doc["username"]),
-        full_name=str(user_doc.get("full_name") or ""),
-        phone=user_doc.get("phone"),
-        role=str(user_doc.get("role") or "doctor"),
-        job_title=user_doc.get("job_title"),
-        medical_license_number=user_doc.get("medical_license_number"),
-        avatar_url=user_doc.get("avatar_url"),
-        is_active=bool(user_doc.get("is_active", True)),
-        is_verified=bool(user_doc.get("is_verified", True)),
-        tenant_id=user_doc.get("tenant_id"),
-        opd_morning_start=user_doc.get("opd_morning_start"),
-        opd_morning_end=user_doc.get("opd_morning_end"),
-        opd_evening_enabled=bool(user_doc.get("opd_evening_enabled", False)),
-        opd_evening_start=user_doc.get("opd_evening_start"),
-        opd_evening_end=user_doc.get("opd_evening_end"),
+        id=str(doc["id"]),
+        doctor_id=str(doc.get("doctor_id") or "") or None,
+        email=str(doc.get("email") or ""),
+        username=str(doc.get("username") or ""),
+        full_name=str(doc.get("full_name") or ""),
+        phone=doc.get("phone"),
+        role=str(doc.get("role") or "doctor"),
+        job_title=doc.get("job_title"),
+        medical_license_number=doc.get("medical_license_number"),
+        avatar_url=doc.get("avatar_url"),
+        is_active=bool(doc.get("is_active", True)),
+        is_verified=bool(doc.get("is_verified", True)),
+        tenant_id=doc.get("tenant_id"),
+        opd_morning_start=doc.get("opd_morning_start"),
+        opd_morning_end=doc.get("opd_morning_end"),
+        opd_evening_enabled=bool(doc.get("opd_evening_enabled", False)),
+        opd_evening_start=doc.get("opd_evening_start"),
+        opd_evening_end=doc.get("opd_evening_end"),
     )
 
 
@@ -110,6 +171,11 @@ def _get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
     db = get_database()
     user_doc = db.users.find_one({"id": user_id})
+    if not user_doc:
+        # Compass edits sometimes drift `id`; JWT still carries email from login.
+        email = str(payload.get("email") or "").strip()
+        if email:
+            user_doc = db.users.find_one({"email": email})
     if not user_doc or not bool(user_doc.get("is_active", True)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
     return user_doc

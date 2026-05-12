@@ -100,6 +100,7 @@ export default function CarePrepIntakeDetailPage() {
   }, [visit])
 
   const chiefLabel = (
+    (languageMode === 'english' && intake?.display_chief_en?.trim()) ||
     visit?.chief_complaint?.trim() ||
     preVisit?.sections?.chief_complaint?.reason_for_visit?.trim() ||
     intake?.illness?.trim() ||
@@ -119,17 +120,27 @@ export default function CarePrepIntakeDetailPage() {
   }, [intake?.updated_at, visit])
 
   const recapRows = useMemo(() => {
-    return (intake?.question_answers ?? []).filter((item) => {
+    const storedEn = intake?.display_recap_by_language?.en
+    const source =
+      languageMode === 'english' && Array.isArray(storedEn) && storedEn.length > 0 ? storedEn : (intake?.question_answers ?? [])
+    return source.filter((item) => {
       const answer = (item.answer || '').trim()
       return answer.length > 0 && !shouldHideQuestionLabel(item.question)
     })
-  }, [intake?.question_answers])
+  }, [intake?.question_answers, intake?.display_recap_by_language, languageMode])
 
   useEffect(() => {
     let cancelled = false
     const pref = preferredLanguageCode.trim().toLowerCase()
-    const shouldTranslateToEnglish = languageMode === 'english' && !!pref && pref !== 'en'
-    const shouldTranslateToPreferred = languageMode === 'preferred' && !!pref && pref !== 'en'
+    const prefNonEn = !!pref && pref !== 'en'
+    const hasStoredEnglishRecap =
+      Array.isArray(intake?.display_recap_by_language?.en) && (intake?.display_recap_by_language?.en?.length ?? 0) > 0
+    const hasFastEnglish =
+      languageMode === 'english' &&
+      hasStoredEnglishRecap &&
+      (!!intake?.display_chief_en?.trim() || !prefNonEn)
+    const shouldTranslateToEnglish = languageMode === 'english' && prefNonEn && !hasFastEnglish
+    const shouldTranslateToPreferred = false
     if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedRecapRows(null)
       setTranslatedChiefLabel(null)
@@ -168,7 +179,7 @@ export default function CarePrepIntakeDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [languageMode, preferredLanguageCode, chiefLabel, recapRows])
+  }, [languageMode, preferredLanguageCode, chiefLabel, recapRows, intake?.display_recap_by_language, intake?.display_chief_en])
 
   const displayChiefLabel = translatedChiefLabel || chiefLabel
   const displayRecapRows = translatedRecapRows || recapRows

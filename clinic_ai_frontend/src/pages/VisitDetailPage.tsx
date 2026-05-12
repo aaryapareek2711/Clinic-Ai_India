@@ -82,7 +82,18 @@ function normalizeWorkflowTab(raw: string): VisitWorkflowTab {
   return 'vitals'
 }
 
-function isTemperatureCelsiusField(key: string, unit?: string | null): boolean {
+/** Canonical catalog field: value is stored in °F as entered (no submit conversion). */
+function isTemperatureFahrenheitField(key: string): boolean {
+  const k = (key || '').toLowerCase()
+  return k === 'temperature_f' || k.includes('temperature_f')
+}
+
+/**
+ * Legacy forms used a Celsius storage key while the UI collected °F and converted on submit.
+ * Keep that path only when the field is not `temperature_f`.
+ */
+function isLegacyTemperatureCelsiusStoredField(key: string, unit?: string | null): boolean {
+  if (isTemperatureFahrenheitField(key)) return false
   const k = (key || '').toLowerCase()
   const u = (unit || '').toLowerCase()
   return k.includes('temperature_c') || (k.includes('temperature') && u.includes('c'))
@@ -102,6 +113,13 @@ function toCelsiusFromFahrenheit(raw: string): string {
   if (!Number.isFinite(n)) return raw
   const c = ((n - 32) * 5) / 9
   return (Math.round(c * 10) / 10).toString()
+}
+
+function toFahrenheitFromCelsius(raw: string): string {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return raw
+  const f = (n * 9) / 5 + 32
+  return (Math.round(f * 10) / 10).toString()
 }
 
 function digitsOnlyPhone(raw: string): string {
@@ -125,6 +143,33 @@ function resolvePreferredLanguageCode(
     .map((v) => (v || '').trim())
     .find((v) => v.length > 0 && v.toLowerCase() !== 'null' && v.toLowerCase() !== 'none')
   return preferred || 'en'
+}
+
+/** Normalize BCP-47-ish codes to match ``payload_by_language`` / ``whatsapp_payload_by_language`` keys. */
+function normalizeBcp47ForPayloadKey(code: string | null | undefined): string {
+  return (code || '').trim().toLowerCase().replace(/_/g, '-')
+}
+
+function pickPostVisitWhatsAppPreviewText(
+  summary: PostVisitSummaryResponse,
+  mode: 'english' | 'preferred',
+  patientUiLanguageCode: string,
+): string {
+  const by = summary.whatsapp_payload_by_language ?? {}
+  if (mode === 'english') {
+    return String(by.en ?? summary.whatsapp_payload ?? '').trim()
+  }
+  const storedPref = normalizeBcp47ForPayloadKey(summary.preferred_language)
+  const patientPref = normalizeBcp47ForPayloadKey(patientUiLanguageCode)
+  const tryKeys = [storedPref, patientPref].filter((k, i, a) => k && a.indexOf(k) === i)
+  for (const k of tryKeys) {
+    if (!k) continue
+    if (k.startsWith('hi') && k !== 'hi-eng' && by.hi) {
+      return String(by.hi).trim()
+    }
+    if (by[k]) return String(by[k]).trim()
+  }
+  return String(by.en ?? summary.whatsapp_payload ?? '').trim()
 }
 
 function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLanguage {
@@ -543,9 +588,11 @@ export default function VisitDetailPage() {
   }, [visit])
 
   const genderLabel = visit?.patient?.gender ? visit.patient.gender.replace(/_/g, ' ') : '—'
+  const preVisitReason = preVisit?.sections?.chief_complaint?.reason_for_visit?.trim() || ''
   const chief =
+    (preVisit?.summary_display_language === 'en' && preVisitReason) ||
     visit?.chief_complaint?.trim() ||
-    preVisit?.sections?.chief_complaint?.reason_for_visit?.trim() ||
+    preVisitReason ||
     intake?.illness?.trim() ||
     'Consultation'
 
@@ -567,12 +614,12 @@ export default function VisitDetailPage() {
   const postVisitLanguage = toPostVisitPatientLanguage(
     effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
   )
-  const patientPreferredPostVisitLanguage = toPostVisitPatientLanguage(preferredLanguageCode)
   const transcriptionLanguageMix = toTranscriptionLanguageMix(preferredLanguageCode)
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
+  const rawPreferredLanguageForApi = normalizeBcp47ForPayloadKey(preferredLanguageCode) || 'en'
   useEffect(() => {
     let cancelled = false
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
@@ -580,7 +627,7 @@ export default function VisitDetailPage() {
       setChiefEnglish('Consultation')
       return
     }
-    if (!pref || pref === 'en') {
+    if (!pref || pref === 'en' || preVisit?.summary_display_language === 'en') {
       setChiefEnglish(chief)
       return
     }
@@ -595,7 +642,7 @@ export default function VisitDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [chief, preferredLanguageCode])
+  }, [chief, preferredLanguageCode, preVisit?.summary_display_language])
 
   useEffect(() => {
     let cancelled = false
@@ -605,8 +652,29 @@ export default function VisitDetailPage() {
       return
     }
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
+    const prefNonEn = !!pref && pref !== 'en'
+    if (tab === 'post-visit' && postVisitSummary?.whatsapp_payload_by_language) {
+      const by = postVisitSummary.whatsapp_payload_by_language
+      const prefKey = normalizeBcp47ForPayloadKey(
+        postVisitSummary.preferred_language || preferredLanguageCode,
+      )
+      const hasEn = String(by.en ?? postVisitSummary.whatsapp_payload ?? '').trim().length > 0
+      if (effectiveLanguageMode === 'english' && hasEn) {
+        setTranslatedDisplayBundle(null)
+        setTranslatingDisplay(false)
+        return
+      }
+      if (effectiveLanguageMode === 'preferred' && prefKey !== 'en' && String(by[prefKey] ?? '').trim()) {
+        setTranslatedDisplayBundle(null)
+        setTranslatingDisplay(false)
+        return
+      }
+    }
+    /** Post-visit English mode, or legacy pre-visit rows not yet stored as English. */
     const shouldTranslateToEnglish =
-      (preVisitEnglishDefault || effectiveLanguageMode === 'english') && !!pref && pref !== 'en'
+      prefNonEn &&
+      effectiveLanguageMode === 'english' &&
+      (!preVisitEnglishDefault || preVisit?.summary_display_language !== 'en')
     const shouldTranslateToPreferred = !preVisitEnglishDefault && effectiveLanguageMode === 'preferred' && !!pref && pref !== 'en'
     if (!shouldTranslateToEnglish && !shouldTranslateToPreferred) {
       setTranslatedDisplayBundle(null)
@@ -657,6 +725,7 @@ export default function VisitDetailPage() {
     transcriptionStructuredDialogue,
     clinicalNote,
     postVisitSummary,
+    tab,
   ])
 
   const displayIntake = translatedDisplayBundle?.intake ?? intake
@@ -670,11 +739,8 @@ export default function VisitDetailPage() {
   const displayPostVisitWhatsAppPreview = useMemo(() => {
     const summary = postVisitSource
     if (!summary) return ''
-    const byLanguage = summary.whatsapp_payload_by_language ?? {}
-    const preferredPreview = effectiveLanguageMode === 'english' ? 'en' : patientPreferredPostVisitLanguage
-    const candidate = byLanguage[preferredPreview] || byLanguage.en || summary.whatsapp_payload || ''
-    return String(candidate || '').trim()
-  }, [effectiveLanguageMode, patientPreferredPostVisitLanguage, postVisitSource])
+    return pickPostVisitWhatsAppPreviewText(summary, effectiveLanguageMode, preferredLanguageCode)
+  }, [effectiveLanguageMode, postVisitSource, preferredLanguageCode])
   const recapFollowUpDateMin = useMemo(() => localDateInputMin(), [])
 
   const clinicalFollowUpIn = useMemo(() => {
@@ -714,7 +780,7 @@ export default function VisitDetailPage() {
       try {
         const values = form.fields.map((f) => ({
           key: f.key,
-          value: isTemperatureCelsiusField(f.key, f.unit)
+          value: isLegacyTemperatureCelsiusStoredField(f.key, f.unit)
             ? toCelsiusFromFahrenheit(vals[f.key] ?? '')
             : vals[f.key] ?? '',
         }))
@@ -779,8 +845,17 @@ export default function VisitDetailPage() {
           if (cancelled) return
           setVitalsForm(form)
           const hydratedValues: Record<string, string> = {}
+          const latestVals = latest.values && typeof latest.values === 'object' ? latest.values : {}
           form.fields.forEach((f) => {
-            const raw = latest.values?.[f.key]
+            let raw: string | number | boolean | null | undefined = latestVals[f.key as keyof typeof latestVals]
+            if (
+              raw == null &&
+              isTemperatureFahrenheitField(f.key) &&
+              latestVals.temperature_c != null &&
+              String(latestVals.temperature_c).trim() !== ''
+            ) {
+              raw = toFahrenheitFromCelsius(String(latestVals.temperature_c))
+            }
             hydratedValues[f.key] = raw == null ? '' : String(raw)
           })
           setVitalsValues(hydratedValues)
@@ -1519,7 +1594,9 @@ export default function VisitDetailPage() {
                       <div className="grid gap-3 md:grid-cols-2">
                         {vitalsForm.fields.map((field) => (
                           <label className="block text-xs font-semibold text-[#171d16]" key={field.key}>
-                            {isTemperatureCelsiusField(field.key, field.unit) ? 'Temperature (F)' : field.label}
+                            {isLegacyTemperatureCelsiusStoredField(field.key, field.unit)
+                              ? 'Temperature (F)'
+                              : field.label}
                             <input
                               className="mt-1 w-full rounded-md border border-[#bdcaba] px-3 py-2 text-sm"
                               disabled={vitalsLocked || vitalsSubmitting}
@@ -1532,7 +1609,7 @@ export default function VisitDetailPage() {
                               placeholder={
                                 isBloodPressureField(field.key, field.label)
                                   ? '120/80 mmHg'
-                                  : isTemperatureCelsiusField(field.key, field.unit)
+                                  : isLegacyTemperatureCelsiusStoredField(field.key, field.unit)
                                     ? 'Unit: F'
                                     : field.unit
                                       ? `Unit: ${field.unit}`
@@ -2027,7 +2104,7 @@ export default function VisitDetailPage() {
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: patientPreferredPostVisitLanguage,
+                              preferred_language: rawPreferredLanguageForApi,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                             })
@@ -2062,7 +2139,7 @@ export default function VisitDetailPage() {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const refreshedSummary = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: patientPreferredPostVisitLanguage,
+                              preferred_language: rawPreferredLanguageForApi,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                               follow_up_time: nextVisitTime || undefined,

@@ -12,6 +12,7 @@ from urllib import request
 from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
 from src.core.language_support import normalize_intake_language
+from src.core.vitals_catalog import vital_catalog_json_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -462,7 +463,9 @@ class OpenAIQuestionClient:
                 prompt=prompt,
                 system_role=(
                     "You are an expert clinical intake orchestration engine. "
-                    "Follow the provided instructions exactly and return strict JSON only."
+                    "Follow the provided instructions exactly and return strict JSON only. "
+                    "Every `message` must be a fresh, concise question in the patient's language — "
+                    "never copy example strings from the prompt verbatim."
                 ),
             )
         except (error.HTTPError, error.URLError, TimeoutError) as exc:
@@ -623,25 +626,72 @@ class OpenAIQuestionClient:
         )
         content = self._chat_completion(
             prompt=prompt,
-            system_role="You generate structured pre-visit summaries for doctors.",
+            system_role=(
+                "You generate structured pre-visit summaries for doctors. "
+                "Intake answers may be in any language; you must still output every string field in clear clinical English only."
+            ),
         )
         summary = json.loads(content)
         if not isinstance(summary, dict):
             raise RuntimeError("Model did not return object")
         return summary
 
+    def translate_json_payload_for_display(self, payload: dict, *, target_language: str) -> dict:
+        """Translate human-readable string values; preserve structure (stored bilingual intake recap)."""
+        if not payload:
+            return {}
+        target = str(target_language or "English").strip() or "English"
+        prompt = (
+            "Translate all human-readable string values in this JSON payload to "
+            f"{target}. Preserve object/array structure, keys, and non-language data.\n"
+            "Rules:\n"
+            "- Keep IDs, codes, dates/times, URLs, phone numbers, and numeric values unchanged.\n"
+            "- Keep medical meaning accurate.\n"
+            "- Return strict JSON object only.\n\n"
+            f"INPUT_JSON:\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+        content = self._chat_completion(
+            prompt=prompt,
+            system_role="You are a medical translation engine. Return strict JSON only.",
+        )
+        return OpenAIQuestionClient._parse_llm_json_object_loose(content)
+
+    @staticmethod
+    def _parse_llm_json_object_loose(raw: str) -> dict:
+        text = str(raw or "").strip()
+        if not text:
+            raise ValueError("empty_translation_response")
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            raise ValueError("translation_json_not_found")
+        parsed = json.loads(match.group(0))
+        if not isinstance(parsed, dict):
+            raise ValueError("translation_json_not_object")
+        return parsed
+
     def generate_vitals_form(self, context: dict) -> dict:
         """Generate context-aware vitals requirement form."""
         template_path = Path(__file__).resolve().parent / "prompt_templates" / "vitals_prompt.txt"
         template = template_path.read_text(encoding="utf-8")
-        prompt = template.replace("{{context_json}}", json.dumps(context, ensure_ascii=True))
+        catalog_json = json.dumps(vital_catalog_json_for_prompt(), ensure_ascii=True)
+        prompt = (
+            template.replace("{{context_json}}", json.dumps(context, ensure_ascii=True)).replace(
+                "{{vitals_catalog_json}}", catalog_json
+            )
+        )
         content = self._chat_completion(
             prompt=prompt,
             system_role=(
                 "You decide if vitals are needed and output strict JSON only. "
-                "Body weight and blood pressure are always collected by the system when vitals are needed. "
-                "You choose zero to three additional fields only where intake/pre-visit justify them — do not pad to three. "
-                "Contextual fields must be numeric clinical readings (field_type=number), not symptom narratives."
+                "Body weight (kg) and blood pressure (mmHg) are always collected by the system when vitals are needed. "
+                "For extra rows you may ONLY use keys from the injected vitals catalog JSON — pick 0 to 3 by chief complaint and intake; "
+                "each must be field_type number. Do not invent keys or free-text symptom fields."
             ),
         )
         result = json.loads(content)
@@ -816,6 +866,9 @@ class OpenAIQuestionClient:
 
         return {"valid": True, "reason_code": "", "field": ""}
 
+    # Hard cap for patient-visible intake lines (WhatsApp); beyond this we fall back to templates.
+    _MAX_LLM_INTAKE_MESSAGE_CHARS = 320
+
     @classmethod
     def _select_intake_message(
         cls,
@@ -834,26 +887,44 @@ class OpenAIQuestionClient:
                 "fallback_reason": "",
                 "llm_message_valid": False,
             }
-        if not str(llm_message or "").strip():
+        trimmed = str(llm_message or "").strip()
+        message_validation = validate_intake_message_quality(trimmed, topic=enforced_topic, language=language)
+        llm_valid = bool(message_validation["valid"])
+        if not trimmed:
             return {
                 "message": cls._topic_message(enforced_topic, language),
                 "source": "template_fallback",
-                "fallback_reason": "message_invalid",
+                "fallback_reason": "empty_message",
                 "llm_message_valid": False,
             }
-        message_validation = validate_intake_message_quality(llm_message, topic=enforced_topic, language=language)
-        if not allow_llm_message or not bool(message_validation["valid"]):
+        if len(trimmed) > cls._MAX_LLM_INTAKE_MESSAGE_CHARS:
             return {
                 "message": cls._topic_message(enforced_topic, language),
                 "source": "template_fallback",
-                "fallback_reason": "message_invalid",
-                "llm_message_valid": bool(message_validation["valid"]),
+                "fallback_reason": "message_too_long",
+                "llm_message_valid": False,
+            }
+        if not allow_llm_message:
+            return {
+                "message": cls._topic_message(enforced_topic, language),
+                "source": "template_fallback",
+                "fallback_reason": "llm_disabled",
+                "llm_message_valid": llm_valid,
+            }
+        # Prefer the model's question whenever it returns usable text. Hardcoded `_topic_message`
+        # strings are reserved for empty output, oversized lines, opt-out of LLM text, or closing.
+        if message_validation.get("reason") == "low_information_prompt":
+            return {
+                "message": cls._topic_message(enforced_topic, language),
+                "source": "template_fallback",
+                "fallback_reason": "low_information_prompt",
+                "llm_message_valid": False,
             }
         return {
-            "message": llm_message,
+            "message": trimmed,
             "source": "llm",
             "fallback_reason": "" if normalize_topic_key(llm_topic) == enforced_topic else "topic_mismatch",
-            "llm_message_valid": bool(message_validation["valid"]),
+            "llm_message_valid": llm_valid,
         }
 
     @classmethod

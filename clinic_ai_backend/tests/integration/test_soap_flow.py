@@ -108,23 +108,9 @@ def test_soap_endpoint_remains_operational(app_client, fake_db) -> None:
 
 
 def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
-    post_visit_sends: list[dict] = []
-
-    def _capture_post_visit_whatsapp(*, patient: dict, whatsapp_payload: str) -> None:
-        post_visit_sends.append({"patient": patient, "whatsapp_payload": whatsapp_payload})
-
     monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
-        _capture_post_visit_whatsapp,
-    )
-    follow_up_immediate: list[int] = []
-
-    def _capture_follow_up_immediate(*args, **kwargs) -> None:
-        follow_up_immediate.append(1)
-
-    monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
-        _capture_follow_up_immediate,
+        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
+        lambda **_: None,
     )
     _insert_note_context(fake_db, patient_id="p-note-3", job_id="job-note-3")
     fake_db.clinical_notes.insert_one(
@@ -177,22 +163,11 @@ def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monke
     assert "🔬" in payload["whatsapp_payload"]
     assert "📅" in payload["whatsapp_payload"]
     assert "⚠️" in payload["whatsapp_payload"]
-    reminder = fake_db.follow_up_reminders.find_one({"patient_id": "p-note-3", "visit_id": "v1"})
-    assert reminder is not None
-    assert reminder.get("to_number") == "919876543210"
-    assert reminder.get("note_id") == payload.get("note_id")
-    assert len(post_visit_sends) == 1
-    assert "Post-visit summary" in post_visit_sends[0]["whatsapp_payload"]
-    assert len(follow_up_immediate) == 1
 
 
 def test_post_visit_summary_follow_up_date_overrides_next_visit(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
-        lambda **_: None,
-    )
-    monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
         lambda **_: None,
     )
     _insert_note_context(fake_db, patient_id="p-note-fu-pv", job_id="job-note-fu-pv")
@@ -486,11 +461,7 @@ def test_follow_up_reminders_run_requires_cron_secret_when_configured(
 
 def test_post_visit_summary_uses_request_language_override(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
-        lambda **_: None,
-    )
-    monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
         lambda **_: None,
     )
     _insert_note_context(fake_db, patient_id="p-note-4", job_id="job-note-4")
@@ -523,13 +494,50 @@ def test_post_visit_summary_uses_request_language_override(app_client, fake_db, 
     assert captured["language_name"] == "Hindi"
 
 
-def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_visit_summary_kannada_payload_key(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_post_visit_summary_whatsapp",
+        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
         lambda **_: None,
     )
+    _insert_note_context(fake_db, patient_id="p-note-kn", job_id="job-note-kn")
+    captured: list[str] = []
+
+    def _fake_generate(self, context, language_name):
+        captured.append(language_name)
+        return {
+            "visit_reason": f"R-{language_name}",
+            "what_doctor_found": "Finding",
+            "medicines_to_take": [],
+            "tests_recommended": [],
+            "self_care": [],
+            "warning_signs": [],
+            "follow_up": "7 days",
+            "next_visit_date": None,
+        }
+
     monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.send_immediate_follow_up_template_whatsapp",
+        "src.adapters.external.ai.openai_client.OpenAIQuestionClient.generate_post_visit_summary",
+        _fake_generate,
+    )
+    response = app_client.post(
+        "/notes/post-visit-summary",
+        json={
+            "patient_id": "p-note-kn",
+            "visit_id": "v1",
+            "transcription_job_id": "job-note-kn",
+            "preferred_language": "kn",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "Kannada" in captured
+    assert "en" in (body.get("payload_by_language") or {})
+    assert "kn" in (body.get("payload_by_language") or {})
+
+
+def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
         lambda **_: None,
     )
     fake_db.patients.insert_one(

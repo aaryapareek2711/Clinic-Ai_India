@@ -6,13 +6,13 @@ from src.application.use_cases.store_vitals import StoreVitalsUseCase
 
 def test_sanitize_dedupes_and_caps_fields() -> None:
     raw = [
-        {"key": "temperature_c", "label": "Temp", "field_type": "number", "unit": "C", "required": True, "reason": "fever"},
-        {"key": "temperature_c", "label": "Dup", "field_type": "number", "unit": "C", "required": True, "reason": "x"},
+        {"key": "temperature_f", "label": "Temp", "field_type": "number", "unit": "°F", "required": True, "reason": "fever"},
+        {"key": "temperature_f", "label": "Dup", "field_type": "number", "unit": "°F", "required": True, "reason": "x"},
         {"key": "BAD KEY!", "label": "x", "field_type": "number", "unit": None, "required": True, "reason": "y"},
     ]
     out = StoreVitalsUseCase._sanitize_vitals_fields(raw)
     assert len(out) == 1
-    assert out[0]["key"] == "temperature_c"
+    assert out[0]["key"] == "temperature_f"
 
 
 def test_sanitize_invalid_field_type_becomes_text() -> None:
@@ -41,7 +41,7 @@ def test_contextual_vitals_excludes_weight_bp_and_caps_at_three() -> None:
         # Model must not send these — server adds canonical weight/BP — included here to assert they are dropped.
         {"key": "weight_kg", "label": "Weight", "field_type": "number", "unit": "kg", "required": True, "reason": "x"},
         {"key": "blood_pressure", "label": "BP", "field_type": "text", "unit": None, "required": True, "reason": "x"},
-        # Illustrative contextual picks (would differ for e.g. rash-only vs UTI vs injury).
+        # Illustrative contextual picks (catalog keys / aliases).
         {"key": "temperature_c", "label": "Temp", "field_type": "number", "unit": "C", "required": True, "reason": "fever"},
         {"key": "spo2_percent", "label": "SpO2", "field_type": "number", "unit": "%", "required": True, "reason": "cough"},
         {"key": "heart_rate_bpm", "label": "HR", "field_type": "number", "unit": "bpm", "required": True, "reason": "tachy"},
@@ -52,7 +52,7 @@ def test_contextual_vitals_excludes_weight_bp_and_caps_at_three() -> None:
         max_count=3,
     )
     keys = [f["key"] for f in out]
-    assert keys == ["temperature_c", "spo2_percent", "heart_rate_bpm"]
+    assert keys == ["temperature_f", "spo2_percent", "heart_rate_bpm"]
     assert "weight_kg" not in keys
     assert "blood_pressure" not in keys
 
@@ -60,21 +60,21 @@ def test_contextual_vitals_excludes_weight_bp_and_caps_at_three() -> None:
 def test_contextual_vitals_llm_can_return_fewer_than_three() -> None:
     """When the model only needs one extra measure, the form keeps just that (plus fixed vitals at merge time)."""
     raw_one_contextual_from_llm = [
-        {"key": "pain_score_0_10", "label": "Pain 0–10", "field_type": "number", "unit": None, "required": True, "reason": "knee injury intake"},
+        {"key": "height_cm", "label": "Height", "field_type": "number", "unit": "cm", "required": True, "reason": "growth follow-up in intake"},
     ]
     out = StoreVitalsUseCase._sanitize_contextual_vitals_fields(raw_one_contextual_from_llm, max_count=3)
     assert len(out) == 1
-    assert out[0]["key"] == "pain_score_0_10"
+    assert out[0]["key"] == "height_cm"
 
 
 def test_contextual_vitals_drops_non_numeric_fields_dynamically() -> None:
     raw = [
-        {"key": "pain_score_0_10", "label": "Pain", "field_type": "number", "unit": None, "required": True, "reason": "injury"},
+        {"key": "random_blood_sugar_mg_dl", "label": "RBS", "field_type": "number", "unit": "mg/dL", "required": True, "reason": "diabetes follow-up"},
         {"key": "associated_symptoms", "label": "Associated symptoms", "field_type": "text", "unit": None, "required": True, "reason": "narrative"},
         {"key": "red_flag_present", "label": "Red flags", "field_type": "boolean", "unit": None, "required": True, "reason": "screening"},
     ]
     out = StoreVitalsUseCase._sanitize_contextual_vitals_fields(raw, max_count=3)
-    assert [f["key"] for f in out] == ["pain_score_0_10"]
+    assert [f["key"] for f in out] == ["random_blood_sugar_mg_dl"]
     assert all(f["field_type"] == "number" for f in out)
 
 
@@ -82,7 +82,7 @@ def test_fixed_common_vitals_prepended_order() -> None:
     fixed = StoreVitalsUseCase._fixed_common_vitals_fields()
     assert [f["key"] for f in fixed] == ["body_weight_kg", "blood_pressure_mmhg"]
     ctx = StoreVitalsUseCase._sanitize_contextual_vitals_fields(
-        [{"key": "temperature_c", "label": "T", "field_type": "number", "unit": "C", "required": True, "reason": "r"}],
+        [{"key": "temperature_f", "label": "T", "field_type": "number", "unit": "°F", "required": True, "reason": "r"}],
         max_count=3,
     )
     merged = fixed + ctx

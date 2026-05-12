@@ -53,7 +53,10 @@ class PreVisitSummaryResponse(BaseModel):
     patient_id: str
     visit_id: str | None = None
     intake_session_id: str
+    # BCP-47-ish intake language (patient); sections are English when summary_display_language is "en".
     language: str
+    # When "en", doctor-facing sections were produced in English (UI may skip on-load translation).
+    summary_display_language: str | None = None
     status: str
     sections: PreVisitSections
 
