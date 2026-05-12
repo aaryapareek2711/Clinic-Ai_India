@@ -22,7 +22,7 @@ function addCalendarMonths(d: Date, delta: number): Date {
   return new Date(d.getFullYear(), d.getMonth() + delta, d.getDate(), 0, 0, 0, 0)
 }
 
-function startOfMonth(d: Date): Date {
+export function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0)
 }
 
@@ -72,8 +72,36 @@ function lastInclusiveDay(startDay: Date, endExclusive: Date): Date {
   return startOfLocalDay(x)
 }
 
-export function formatRangeHint(preset: VisitDatePresetId, now: Date, customFromYmd: string, customToYmd: string): string {
-  const { rangeStartIso, rangeEndExclusiveIso } = computeVisitDateRange(preset, now, customFromYmd, customToYmd)
+/** Presets whose range is always tied to the real current day (menu month navigation does not apply). */
+export function presetAnchoredToLiveToday(preset: VisitDatePresetId): boolean {
+  return preset === 'today' || preset === 'last_7' || preset === 'last_30' || preset === 'custom'
+}
+
+/**
+ * Reference instant for calendar-based presets when the user browses months in the menu.
+ * Use the 15th to avoid edge cases around month length and quarter boundaries.
+ */
+function monthMenuAsReferenceDate(menuMonthStart: Date): Date {
+  return new Date(menuMonthStart.getFullYear(), menuMonthStart.getMonth(), 15, 12, 0, 0, 0)
+}
+
+export type VisitDateRangeOptions = {
+  /** First local day of the month focused in the dropdown; drives month/quarter/year presets only. */
+  menuMonthStart?: Date
+}
+
+export function formatMenuNavMonthLabel(menuMonthStart: Date): string {
+  return menuMonthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+export function formatRangeHint(
+  preset: VisitDatePresetId,
+  now: Date,
+  customFromYmd: string,
+  customToYmd: string,
+  opts?: VisitDateRangeOptions,
+): string {
+  const { rangeStartIso, rangeEndExclusiveIso } = computeVisitDateRange(preset, now, customFromYmd, customToYmd, opts)
   const start = new Date(rangeStartIso)
   const endEx = new Date(rangeEndExclusiveIso)
   const last = lastInclusiveDay(start, endEx)
@@ -99,66 +127,73 @@ export function computeVisitDateRange(
   now: Date,
   customFromYmd: string,
   customToYmd: string,
+  opts?: VisitDateRangeOptions,
 ): { rangeStartIso: string; rangeEndExclusiveIso: string } {
-  const todayStart = startOfLocalDay(now)
-  const tomorrowStart = endExclusiveFromStartDay(todayStart)
+  const liveTodayStart = startOfLocalDay(now)
+  const liveTomorrowStart = endExclusiveFromStartDay(liveTodayStart)
+
+  const ref = presetAnchoredToLiveToday(preset)
+    ? now
+    : opts?.menuMonthStart
+      ? monthMenuAsReferenceDate(opts.menuMonthStart)
+      : now
 
   switch (preset) {
     case 'today':
-      return { rangeStartIso: todayStart.toISOString(), rangeEndExclusiveIso: tomorrowStart.toISOString() }
+      return { rangeStartIso: liveTodayStart.toISOString(), rangeEndExclusiveIso: liveTomorrowStart.toISOString() }
     case 'last_7': {
-      const start = new Date(todayStart)
+      const start = new Date(liveTodayStart)
       start.setDate(start.getDate() - 6)
-      return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: tomorrowStart.toISOString() }
+      return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: liveTomorrowStart.toISOString() }
     }
     case 'last_30': {
-      const start = new Date(todayStart)
+      const start = new Date(liveTodayStart)
       start.setDate(start.getDate() - 29)
-      return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: tomorrowStart.toISOString() }
+      return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: liveTomorrowStart.toISOString() }
     }
     case 'this_month': {
-      const start = startOfMonth(now)
+      const start = startOfMonth(ref)
       const end = addCalendarMonths(start, 1)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: end.toISOString() }
     }
     case 'this_quarter': {
-      const start = startOfQuarter(now)
+      const start = startOfQuarter(ref)
       const end = addCalendarMonths(start, 3)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: end.toISOString() }
     }
     case 'this_year': {
-      const start = startOfYear(now)
-      const end = new Date(now.getFullYear() + 1, 0, 1, 0, 0, 0, 0)
+      const start = startOfYear(ref)
+      const end = new Date(ref.getFullYear() + 1, 0, 1, 0, 0, 0, 0)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: end.toISOString() }
     }
     case 'last_month': {
-      const thisMonth = startOfMonth(now)
+      const thisMonth = startOfMonth(ref)
       const start = addCalendarMonths(thisMonth, -1)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: thisMonth.toISOString() }
     }
     case 'last_quarter': {
-      const thisQ = startOfQuarter(now)
+      const thisQ = startOfQuarter(ref)
       const start = addCalendarMonths(thisQ, -3)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: thisQ.toISOString() }
     }
     case 'last_3_months': {
-      const thisMonthStart = startOfMonth(now)
+      const thisMonthStart = startOfMonth(ref)
       const start = addCalendarMonths(thisMonthStart, -3)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: thisMonthStart.toISOString() }
     }
     case 'last_6_months': {
-      const thisMonthStart = startOfMonth(now)
+      const thisMonthStart = startOfMonth(ref)
       const start = addCalendarMonths(thisMonthStart, -6)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: thisMonthStart.toISOString() }
     }
     case 'last_12_months': {
-      const thisMonthStart = startOfMonth(now)
+      const thisMonthStart = startOfMonth(ref)
       const start = addCalendarMonths(thisMonthStart, -12)
       return { rangeStartIso: start.toISOString(), rangeEndExclusiveIso: thisMonthStart.toISOString() }
     }
     case 'custom': {
-      const from = ymdToLocalStart(customFromYmd || ymdFromLocalDate(todayStart), todayStart)
-      const toDay = ymdToLocalStart(customToYmd || ymdFromLocalDate(todayStart), todayStart)
+      const from = ymdToLocalStart(customFromYmd || ymdFromLocalDate(liveTodayStart), liveTodayStart)
+      const toDay = ymdToLocalStart(customToYmd || ymdFromLocalDate(liveTodayStart), liveTodayStart)
       const lo = from.getTime() <= toDay.getTime() ? from : toDay
       const hi = from.getTime() <= toDay.getTime() ? toDay : from
       return {
@@ -167,7 +202,7 @@ export function computeVisitDateRange(
       }
     }
     default:
-      return { rangeStartIso: todayStart.toISOString(), rangeEndExclusiveIso: tomorrowStart.toISOString() }
+      return { rangeStartIso: liveTodayStart.toISOString(), rangeEndExclusiveIso: liveTomorrowStart.toISOString() }
   }
 }
 

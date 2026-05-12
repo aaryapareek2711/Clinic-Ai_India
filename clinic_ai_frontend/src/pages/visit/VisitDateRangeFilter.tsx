@@ -3,43 +3,50 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   type VisitDatePresetId,
   computeVisitDateRange,
+  formatMenuNavMonthLabel,
   formatRangeHint,
+  presetAnchoredToLiveToday,
   presetTriggerTitle,
+  startOfMonth,
   ymdFromLocalDate,
+  ymdToLocalStart,
 } from '../../lib/visitDateRangePresets'
 
 export type VisitDateRangeFilterProps = {
   preset: VisitDatePresetId
+  /** First day of month (YYYY-MM-DD) for applied month-relative presets; null otherwise. */
+  rangeMonthAnchorYmd: string | null
   customFromYmd: string
   customToYmd: string
-  onChange: (next: { preset: VisitDatePresetId; customFromYmd?: string; customToYmd?: string }) => void
+  onChange: (next: {
+    preset: VisitDatePresetId
+    customFromYmd?: string
+    customToYmd?: string
+    /** YYYY-MM-DD first of month when applying a menu-month-relative preset; null for today / rolling / custom. */
+    monthMenuAnchorYmd?: string | null
+  }) => void
 }
 
 const MENU_SECTIONS: { title: string; presets: VisitDatePresetId[] }[] = [
   { title: 'Recommended', presets: ['today', 'last_7', 'this_month'] },
   { title: 'Relative dates', presets: ['last_7', 'last_30'] },
-  {
-    title: 'Calendar months',
-    presets: [
-      'this_month',
-      'this_quarter',
-      'this_year',
-      'last_month',
-      'last_quarter',
-      'last_3_months',
-      'last_6_months',
-      'last_12_months',
-    ],
-  },
 ]
 
-function rowRightHint(preset: VisitDatePresetId, now: Date, customFromYmd: string, customToYmd: string): string {
+function rowRightHint(
+  preset: VisitDatePresetId,
+  now: Date,
+  customFromYmd: string,
+  customToYmd: string,
+  menuViewMonth: Date,
+): string {
   if (preset === 'custom') return ''
-  return formatRangeHint(preset, now, customFromYmd, customToYmd)
+  const opts = { menuMonthStart: menuViewMonth }
+  return formatRangeHint(preset, now, customFromYmd, customToYmd, opts)
 }
 
 export default function VisitDateRangeFilter({
   preset,
+  rangeMonthAnchorYmd,
   customFromYmd,
   customToYmd,
   onChange,
@@ -52,10 +59,31 @@ export default function VisitDateRangeFilter({
   const [customError, setCustomError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const now = new Date()
+  const [menuViewMonth, setMenuViewMonth] = useState(() => startOfMonth(new Date()))
 
-  const { rangeStartIso, rangeEndExclusiveIso } = computeVisitDateRange(preset, now, customFromYmd, customToYmd)
-  const triggerHint = formatRangeHint(preset, now, customFromYmd, customToYmd)
+  const appliedMenuMonthStart =
+    rangeMonthAnchorYmd != null && rangeMonthAnchorYmd !== ''
+      ? ymdToLocalStart(rangeMonthAnchorYmd, now)
+      : undefined
+  const triggerOpts =
+    !presetAnchoredToLiveToday(preset) && appliedMenuMonthStart
+      ? { menuMonthStart: appliedMenuMonthStart }
+      : undefined
+  const { rangeStartIso, rangeEndExclusiveIso } = computeVisitDateRange(preset, now, customFromYmd, customToYmd, triggerOpts)
+  const triggerHint = formatRangeHint(preset, now, customFromYmd, customToYmd, triggerOpts)
   const triggerTitle = presetTriggerTitle(preset)
+
+  const startThisCalendarMonth = startOfMonth(now)
+  const startNextMenuMonth = new Date(menuViewMonth.getFullYear(), menuViewMonth.getMonth() + 1, 1, 0, 0, 0, 0)
+  const canGoNextMonth = startNextMenuMonth.getTime() <= startThisCalendarMonth.getTime()
+
+  useEffect(() => {
+    if (open) setMenuViewMonth(startOfMonth(new Date()))
+  }, [open])
+
+  const shiftMenuMonth = (delta: number) => {
+    setMenuViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1, 0, 0, 0, 0))
+  }
 
   const openCustomModal = useCallback(() => {
     setOpen(false)
@@ -96,7 +124,10 @@ export default function VisitDateRangeFilter({
       openCustomModal()
       return
     }
-    onChange({ preset: p })
+    onChange({
+      preset: p,
+      monthMenuAnchorYmd: presetAnchoredToLiveToday(p) ? null : ymdFromLocalDate(menuViewMonth),
+    })
     setOpen(false)
   }
 
@@ -106,7 +137,7 @@ export default function VisitDateRangeFilter({
       return
     }
     setCustomError(null)
-    onChange({ preset: 'custom', customFromYmd: draftFrom, customToYmd: draftTo })
+    onChange({ preset: 'custom', customFromYmd: draftFrom, customToYmd: draftTo, monthMenuAnchorYmd: null })
     setCustomOpen(false)
   }
 
@@ -131,20 +162,34 @@ export default function VisitDateRangeFilter({
 
       {open && (
         <div
-          className="absolute right-0 z-50 mt-2 w-[min(100vw-2rem,380px)] rounded-xl border border-gray-200 bg-white py-2 shadow-xl"
+          className="absolute right-0 z-50 mt-2 flex max-h-[min(85vh,420px)] w-[min(100vw-2rem,320px)] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white py-2 shadow-xl"
           id={menuId}
           role="menu"
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            <button className="rounded px-1 py-0.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600" disabled type="button">
-              &lt; Previous
-            </button>
-            <button className="rounded px-1 py-0.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600" disabled type="button">
-              Next &gt;
-            </button>
+          <div className="shrink-0 border-b border-gray-100 px-3 pb-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                className="rounded px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100 hover:text-[#171d16]"
+                onClick={() => shiftMenuMonth(-1)}
+                type="button"
+              >
+                &lt; Previous
+              </button>
+              <span className="min-w-0 truncate text-center text-xs font-semibold text-[#171d16]">
+                {formatMenuNavMonthLabel(menuViewMonth)}
+              </span>
+              <button
+                className="rounded px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100 hover:text-[#171d16] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                disabled={!canGoNextMonth}
+                onClick={() => canGoNextMonth && shiftMenuMonth(1)}
+                type="button"
+              >
+                Next &gt;
+              </button>
+            </div>
           </div>
 
-          <div className="max-h-[min(70vh,520px)] overflow-y-auto py-1">
+          <div className="max-h-56 min-h-0 overflow-y-auto overscroll-contain py-1">
             {MENU_SECTIONS.map((section) => (
               <div className="px-2 py-2" key={section.title}>
                 <p className="px-2 pb-1 text-xs font-bold text-[#171d16]">{section.title}</p>
@@ -158,7 +203,7 @@ export default function VisitDateRangeFilter({
                         type="button"
                       >
                         <span className={preset === p ? 'font-semibold text-[#2563eb]' : ''}>{presetTriggerTitle(p)}</span>
-                        <span className="shrink-0 text-right text-xs text-slate-500">{rowRightHint(p, now, customFromYmd, customToYmd)}</span>
+                        <span className="shrink-0 text-right text-xs text-slate-500">{rowRightHint(p, now, customFromYmd, customToYmd, menuViewMonth)}</span>
                       </button>
                     </li>
                   ))}

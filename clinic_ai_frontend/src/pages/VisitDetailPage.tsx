@@ -1214,7 +1214,9 @@ export default function VisitDetailPage() {
         setTranscriptionMessage(baseMessage)
       }
       const st = (normalizedStatus.status || '').toLowerCase()
-      if (st === 'completed') {
+      const hasTranscriptReady =
+        st === 'completed' || st === 'success' || st === 'partial_success'
+      if (hasTranscriptReady) {
         await loadTranscriptBody()
       } else {
         setTranscriptionText(null)
@@ -1223,7 +1225,7 @@ export default function VisitDetailPage() {
 
       // If transcription is terminal, clear the per-visit "upload attempt" guard so
       // reopening the page doesn't keep controls frozen from a prior session.
-      if (st === 'completed' || st === 'failed') {
+      if (hasTranscriptReady || st === 'failed') {
         setHasTranscriptionUploadAttempt(false)
       }
     } catch (e) {
@@ -1255,6 +1257,7 @@ export default function VisitDetailPage() {
       setTranslatedDisplayBundle((prev) =>
         prev ? { ...prev, transcriptionStructuredDialogue: null } : null,
       )
+      await loadTranscriptBody({ silent: true })
       setTranscriptionMessage('Speaker dialogue deleted.')
       setDeleteDialogueOpen(false)
     } catch (e) {
@@ -1262,7 +1265,7 @@ export default function VisitDetailPage() {
     } finally {
       setDeleteDialogueLoading(false)
     }
-  }, [deleteDialogueLoading, patientId, visitId])
+  }, [deleteDialogueLoading, loadTranscriptBody, patientId, visitId])
 
   const dialogueTurns = useMemo(
     () => flattenStructuredDialogue(displayStructuredDialogue),
@@ -1271,7 +1274,10 @@ export default function VisitDetailPage() {
   const transcriptionStateLowerRaw = (transcriptionStatus?.status || 'pending').toLowerCase()
   const queuedStatuses = new Set(['queued', 'uploading'])
   const processingStatuses = new Set(['processing', 'in_progress', 'running', 'started', 'stale_processing'])
-  const effectiveStateLower = transcriptionStateLowerRaw
+  const transcriptReadyStatuses = new Set(['completed', 'success', 'partial_success'])
+  const effectiveStateLower = transcriptReadyStatuses.has(transcriptionStateLowerRaw)
+    ? 'completed'
+    : transcriptionStateLowerRaw
 
   const isTranscriptionQueued = queuedStatuses.has(effectiveStateLower)
   const isTranscriptionCurrentlyProcessing = processingStatuses.has(effectiveStateLower)
@@ -2062,7 +2068,7 @@ export default function VisitDetailPage() {
                     clinicalNote={displayClinicalNote}
                     onNoteUpdated={setClinicalNote}
                     patientId={patientId}
-                    transcriptionCompleted={(transcriptionStatus?.status || '').toLowerCase() === 'completed'}
+                    transcriptionCompleted={transcriptionStateLower === 'completed'}
                     transcriptionStatusKnown={transcriptionStatus != null}
                     visitId={visitId}
                     visitTitle={chief}

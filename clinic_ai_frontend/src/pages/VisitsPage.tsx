@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import BackButton from '../components/BackButton'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { computeVisitDateRange, ymdFromLocalDate, type VisitDatePresetId } from '../lib/visitDateRangePresets'
+import { computeVisitDateRange, presetAnchoredToLiveToday, ymdFromLocalDate, ymdToLocalStart, type VisitDatePresetId } from '../lib/visitDateRangePresets'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
@@ -33,11 +33,20 @@ function VisitsPage() {
   const [datePreset, setDatePreset] = useState<VisitDatePresetId>('today')
   const [customFromYmd, setCustomFromYmd] = useState(() => ymdFromLocalDate(new Date()))
   const [customToYmd, setCustomToYmd] = useState(() => ymdFromLocalDate(new Date()))
+  const [monthMenuAnchorYmd, setMonthMenuAnchorYmd] = useState<string | null>(null)
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
+  const appliedMenuMonthStart =
+    monthMenuAnchorYmd != null && monthMenuAnchorYmd !== ''
+      ? ymdToLocalStart(monthMenuAnchorYmd, new Date())
+      : undefined
+  const rangeOpts =
+    !presetAnchoredToLiveToday(datePreset) && appliedMenuMonthStart
+      ? { menuMonthStart: appliedMenuMonthStart }
+      : undefined
   const { rangeStartIso, rangeEndExclusiveIso } = useMemo(
-    () => computeVisitDateRange(datePreset, new Date(), customFromYmd, customToYmd),
-    [datePreset, customFromYmd, customToYmd],
+    () => computeVisitDateRange(datePreset, new Date(), customFromYmd, customToYmd, rangeOpts),
+    [datePreset, customFromYmd, customToYmd, monthMenuAnchorYmd],
   )
   /** When sorting one column only, keep a fixed server order so changing sort does not reorder every bucket via the API response. */
   const serverSort = useMemo(
@@ -161,17 +170,7 @@ function VisitsPage() {
             </div>
           )}
 
-          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <VisitDateRangeFilter
-              customFromYmd={customFromYmd}
-              customToYmd={customToYmd}
-              onChange={(next) => {
-                setDatePreset(next.preset)
-                if (next.customFromYmd !== undefined) setCustomFromYmd(next.customFromYmd)
-                if (next.customToYmd !== undefined) setCustomToYmd(next.customToYmd)
-              }}
-              preset={datePreset}
-            />
+          <div className="mb-8 flex justify-end">
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
               onClick={() => navigate('/start-visit')}
@@ -238,6 +237,21 @@ function VisitsPage() {
                 </span>
               </div>
             </div>
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <VisitDateRangeFilter
+              customFromYmd={customFromYmd}
+              customToYmd={customToYmd}
+              onChange={(next) => {
+                setDatePreset(next.preset)
+                if (next.customFromYmd !== undefined) setCustomFromYmd(next.customFromYmd)
+                if (next.customToYmd !== undefined) setCustomToYmd(next.customToYmd)
+                if (next.monthMenuAnchorYmd !== undefined) setMonthMenuAnchorYmd(next.monthMenuAnchorYmd)
+              }}
+              preset={datePreset}
+              rangeMonthAnchorYmd={monthMenuAnchorYmd}
+            />
           </div>
 
           <div className="space-y-4">
