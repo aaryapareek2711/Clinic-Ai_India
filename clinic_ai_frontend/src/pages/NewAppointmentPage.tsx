@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getAppointmentDurationMap, setAppointmentDuration as persistAppointmentDuration } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import ProviderAvatar from '../components/ProviderAvatar'
@@ -211,8 +211,14 @@ function NewAppointmentPage() {
     d.setDate(1)
     return d
   })
-  const schedule = useMemo(() => getDoctorScheduleSettings(), [])
-  const [appointmentDuration] = useState<number>(schedule.defaultSlotMinutes || 15)
+  const [scheduleRev, setScheduleRev] = useState(0)
+  useEffect(() => {
+    const onScheduleUpdate = () => setScheduleRev((n) => n + 1)
+    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
+  }, [])
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
+  const appointmentDuration = schedule.defaultSlotMinutes || 15
   const [selectedStartIsos, setSelectedStartIsos] = useState<string[]>([])
   const minAppointmentDate = localDateInputMin()
   const [listLoading, setListLoading] = useState(true)

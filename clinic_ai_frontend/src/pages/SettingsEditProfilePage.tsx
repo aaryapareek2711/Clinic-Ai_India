@@ -3,6 +3,7 @@ import {
   DEFAULT_DOCTOR_SCHEDULE,
   getDoctorScheduleSettings,
   saveDoctorScheduleSettings,
+  syncDoctorScheduleFromServer,
 } from '../lib/doctorScheduleSettings'
 import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
@@ -113,13 +114,6 @@ function SettingsEditProfilePage() {
   const [phone, setPhone] = useState('')
   const [license, setLicense] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
-  const [initialProfile, setInitialProfile] = useState<{
-    fullName: string
-    jobTitle: string
-    phone: string
-    license: string
-    avatarUrl: string
-  } | null>(null)
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [opdStart, setOpdStart] = useState(DEFAULT_DOCTOR_SCHEDULE.opdStart)
@@ -156,13 +150,6 @@ function SettingsEditProfilePage() {
     setPhone('')
     setLicense('')
     setAvatarUrl('')
-    setInitialProfile({
-      fullName: cached.fullName || '',
-      jobTitle: cached.jobTitle || '',
-      phone: '',
-      license: '',
-      avatarUrl: '',
-    })
   }, [])
 
   const loadProfile = useCallback(async () => {
@@ -181,13 +168,14 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
-      setInitialProfile({
-        fullName: me.full_name ?? '',
-        jobTitle: me.job_title ?? '',
-        phone: readPhone(me),
-        license: me.medical_license_number ?? '',
-        avatarUrl: me.avatar_url ?? '',
-      })
+      syncDoctorScheduleFromServer(me)
+      const applied = getDoctorScheduleSettings()
+      setOpdStart(applied.opdStart)
+      setOpdEnd(applied.opdEnd)
+      setAddEveningShift(applied.addEveningShift)
+      setEveningStart(applied.eveningStart)
+      setEveningEnd(applied.eveningEnd)
+      setDefaultSlotMinutes(applied.defaultSlotMinutes)
     } catch {
       applyStoredFallbackProfile()
     } finally {
@@ -284,41 +272,44 @@ function SettingsEditProfilePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBanner(null)
-    saveDoctorScheduleSettings({
+    const schedulePayload = {
       opdStart,
       opdEnd,
       addEveningShift,
       eveningStart,
       eveningEnd,
       defaultSlotMinutes,
-    })
+    }
+    saveDoctorScheduleSettings(schedulePayload)
+    try {
+      localStorage.setItem(DAY_AVAILABILITY_LOCAL_KEY, JSON.stringify(dayAvailability))
+    } catch {
+      /* ignore */
+    }
     if (!fullName.trim()) {
       setBanner({ type: 'err', text: 'Full name is required.' })
       return
     }
     if (!hasAuthToken()) {
-      setBanner({ type: 'ok', text: 'OPD settings saved locally. Sign in to save profile fields to server.' })
-      return
-    }
-    const profileChanged =
-      !initialProfile ||
-      fullName.trim() !== initialProfile.fullName.trim() ||
-      jobTitle.trim() !== initialProfile.jobTitle.trim() ||
-      phone.trim() !== initialProfile.phone.trim() ||
-      license.trim() !== initialProfile.license.trim() ||
-      avatarUrl.trim() !== initialProfile.avatarUrl.trim()
-    if (!profileChanged) {
-      setBanner({ type: 'ok', text: 'OPD settings saved.' })
+      setBanner({
+        type: 'ok',
+        text: 'Saved on this device. Sign in to sync your profile and OPD hours to the server.',
+      })
       return
     }
     setSaving(true)
     try {
       const updated = await patchMyProfile({
         full_name: fullName.trim(),
-        phone: phone.trim(),
-        job_title: jobTitle.trim(),
-        medical_license_number: license.trim(),
-        avatar_url: avatarUrl.trim(),
+        phone: phone.trim() || undefined,
+        job_title: jobTitle.trim() || undefined,
+        medical_license_number: license.trim() || undefined,
+        avatar_url: avatarUrl.trim() || undefined,
+        opd_morning_start: opdStart,
+        opd_morning_end: opdEnd,
+        opd_evening_enabled: addEveningShift,
+        opd_evening_start: addEveningShift ? eveningStart : null,
+        opd_evening_end: addEveningShift ? eveningEnd : null,
       })
       setFullName(updated.full_name ?? '')
       setJobTitle(updated.job_title ?? '')
@@ -326,21 +317,14 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(updated))
       setLicense(updated.medical_license_number ?? '')
       setAvatarUrl(updated.avatar_url ?? '')
-      setInitialProfile({
-        fullName: updated.full_name ?? '',
-        jobTitle: updated.job_title ?? '',
-        phone: readPhone(updated),
-        license: updated.medical_license_number ?? '',
-        avatarUrl: updated.avatar_url ?? '',
-      })
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
-      setBanner({ type: 'ok', text: 'Profile updated successfully.' })
+      setBanner({ type: 'ok', text: 'Profile and availability saved.' })
       navigate('/settings')
     } catch (err) {
       setBanner({
         type: 'err',
-        text: `OPD settings saved. Profile fields could not be updated right now (${getApiErrorMessage(err)}).`,
+        text: `Local OPD settings were saved, but the server update failed (${getApiErrorMessage(err)}).`,
       })
     } finally {
       setSaving(false)

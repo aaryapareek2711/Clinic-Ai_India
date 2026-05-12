@@ -1,5 +1,7 @@
 import { apiClient } from '../lib/apiClient'
 
+import { invalidateMyProfileCache } from './profileApi'
+
 export type AuthUser = {
   id: string
   email: string
@@ -29,6 +31,7 @@ export type AuthResponse = {
 }
 
 export function persistAuthSession(res: AuthResponse): void {
+  invalidateMyProfileCache()
   try {
     localStorage.setItem('access_token', res.access_token)
     localStorage.setItem('refresh_token', res.refresh_token)
@@ -57,6 +60,8 @@ export type RegisterPayload = {
   full_name: string
   phone?: string | null
   role?: string
+  job_title?: string | null
+  medical_license_number?: string | null
   opd_morning_start?: string | null
   opd_morning_end?: string | null
   opd_evening_enabled?: boolean
@@ -73,6 +78,8 @@ export async function registerAccount(payload: RegisterPayload): Promise<AuthRes
     full_name: payload.full_name.trim(),
     phone: payload.phone?.trim() || null,
     role: (payload.role || 'doctor').trim() || 'doctor',
+    job_title: payload.job_title?.trim() || null,
+    medical_license_number: payload.medical_license_number?.trim() || null,
     opd_morning_start: payload.opd_morning_start?.trim() || null,
     opd_morning_end: payload.opd_morning_end?.trim() || null,
     opd_evening_enabled: Boolean(payload.opd_evening_enabled),

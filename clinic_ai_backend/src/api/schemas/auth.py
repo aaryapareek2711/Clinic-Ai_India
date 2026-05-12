@@ -13,6 +13,8 @@ class UserRegisterRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
     role: str = Field(default="doctor", min_length=1, max_length=40)
+    job_title: str | None = Field(default=None, max_length=160)
+    medical_license_number: str | None = Field(default=None, max_length=80)
     opd_morning_start: str | None = Field(default=None, max_length=20)
     opd_morning_end: str | None = Field(default=None, max_length=20)
     opd_evening_enabled: bool = Field(default=False)
@@ -37,6 +39,11 @@ class UserProfileUpdateRequest(BaseModel):
     job_title: str | None = Field(default=None, max_length=160)
     medical_license_number: str | None = Field(default=None, max_length=80)
     avatar_url: str | None = Field(default=None, max_length=2048)
+    opd_morning_start: str | None = Field(default=None, max_length=20)
+    opd_morning_end: str | None = Field(default=None, max_length=20)
+    opd_evening_enabled: bool | None = Field(default=None)
+    opd_evening_start: str | None = Field(default=None, max_length=20)
+    opd_evening_end: str | None = Field(default=None, max_length=20)
 
 
 class UserResponse(BaseModel):

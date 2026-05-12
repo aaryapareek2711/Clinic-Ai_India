@@ -13,6 +13,11 @@ export type ProviderProfile = {
   is_active: boolean
   is_verified: boolean
   tenant_id?: string | null
+  opd_morning_start?: string | null
+  opd_morning_end?: string | null
+  opd_evening_enabled?: boolean
+  opd_evening_start?: string | null
+  opd_evening_end?: string | null
 }
 
 function str(v: unknown): string {
@@ -85,6 +90,11 @@ export function coerceProviderProfile(raw: unknown): ProviderProfile {
     is_active: Boolean(r.is_active ?? true),
     is_verified: Boolean(r.is_verified ?? true),
     tenant_id: r.tenant_id != null ? str(r.tenant_id) : null,
+    opd_morning_start: str(r.opd_morning_start) || null,
+    opd_morning_end: str(r.opd_morning_end) || null,
+    opd_evening_enabled: Boolean(r.opd_evening_enabled ?? false),
+    opd_evening_start: str(r.opd_evening_start) || null,
+    opd_evening_end: str(r.opd_evening_end) || null,
   }
 }
 
@@ -94,6 +104,11 @@ export type ProviderProfilePatch = Partial<{
   job_title: string
   medical_license_number: string
   avatar_url: string
+  opd_morning_start: string | null
+  opd_morning_end: string | null
+  opd_evening_enabled: boolean
+  opd_evening_start: string | null
+  opd_evening_end: string | null
 }>
 
 const PROFILE_CACHE_TTL_MS = 60_000
@@ -157,7 +172,8 @@ export async function patchMyProfile(body: ProviderProfilePatch): Promise<Provid
   const { data } = await apiClient.patch<ProviderProfile>('/api/auth/me', body, {
     headers: authHeaders(),
   })
-  persistProfileToLocalStorage(data)
+  const normalized = coerceProviderProfile(data)
+  persistProfileToLocalStorage(normalized)
   invalidateMyProfileCache()
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(PROVIDER_PROFILE_UPDATED_EVENT))

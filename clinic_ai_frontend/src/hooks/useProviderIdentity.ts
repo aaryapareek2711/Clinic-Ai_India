@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 
 import { getStoredAuthProfile } from '../lib/authSession'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
+import { syncDoctorScheduleFromServer } from '../lib/doctorScheduleSettings'
 import { fetchMyProfile, PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 
 export function useProviderIdentity() {
@@ -25,6 +26,7 @@ export function useProviderIdentity() {
       setNameRaw(me.full_name?.trim() || me.username?.trim() || '')
       setTitle(me.job_title?.trim() || me.role?.replace(/_/g, ' ') || 'Clinical provider')
       setAvatarUrl(me.avatar_url?.trim() ? me.avatar_url.trim() : '')
+      syncDoctorScheduleFromServer(me)
     } catch {
       applyStoredProfile()
     }

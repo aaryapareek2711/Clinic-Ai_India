@@ -199,6 +199,8 @@ def register(payload: UserRegisterRequest) -> AuthResponse:
         "full_name": payload.full_name,
         "phone": payload.phone,
         "role": payload.role,
+        "job_title": str(payload.job_title).strip() if payload.job_title else None,
+        "medical_license_number": str(payload.medical_license_number).strip() if payload.medical_license_number else None,
         "opd_morning_start": payload.opd_morning_start,
         "opd_morning_end": payload.opd_morning_end,
         "opd_evening_enabled": bool(payload.opd_evening_enabled),
@@ -258,7 +260,17 @@ def update_my_profile(
 ) -> UserResponse:
     """Update editable fields on the authenticated user."""
     updates: dict = {}
-    for key in ("full_name", "phone", "job_title", "medical_license_number", "avatar_url"):
+    for key in (
+        "full_name",
+        "phone",
+        "job_title",
+        "medical_license_number",
+        "avatar_url",
+        "opd_morning_start",
+        "opd_morning_end",
+        "opd_evening_start",
+        "opd_evening_end",
+    ):
         val = getattr(payload, key)
         if val is None:
             continue
@@ -272,6 +284,9 @@ def update_my_profile(
             updates[key] = None  # clear optional strings in MongoDB
         else:
             updates[key] = cleaned
+
+    if payload.opd_evening_enabled is not None:
+        updates["opd_evening_enabled"] = bool(payload.opd_evening_enabled)
 
     if not updates:
         return _as_user_response(current_user)
