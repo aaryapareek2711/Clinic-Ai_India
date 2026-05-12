@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import { doctorNameLabel } from '../lib/doctorDisplayName'
 import { getStoredAuthProfile } from '../lib/authSession'
-import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { getDoctorScheduleSettings, type OpdDayKey } from '../lib/doctorScheduleSettings'
+import { effectiveDayRow } from '../lib/opdWeeklySchedule'
 import { fetchMyProfile, getApiErrorMessage, PROVIDER_PROFILE_UPDATED_EVENT, type ProviderProfile } from '../services/profileApi'
 import { DEFAULT_PROVIDER_ID, fetchProviderVisits, type ProviderVisitListItem } from '../services/visitWorkflowApi'
 import BackButton from '../components/BackButton'
@@ -13,8 +14,8 @@ import NotificationsDrawer from './NotificationsDrawer'
 type DayAvailability = {
   key: string
   closed: boolean
-  startLabel: string
-  endLabel: string
+  morningLabel: string
+  eveningLabel: string
 }
 
 function pad2(n: number): string {
@@ -31,18 +32,6 @@ function formatTimeLabel(hhmm: string): string {
   return `${hr12}:${pad2(m)} ${period}`
 }
 
-function split24hToClockAndMeridiem(hhmm24: string): { clock: string; meridiem: 'AM' | 'PM' } | null {
-  const [hRaw, mRaw] = hhmm24.split(':')
-  const h = Number(hRaw)
-  const m = Number(mRaw)
-  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
-  const meridiem: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return { clock: `${pad2(h12)}:${pad2(m)}`, meridiem }
-}
-
-const DAY_AVAILABILITY_LOCAL_KEY = 'doctor_day_availability_settings'
-
 function SettingsPage() {
   const navigate = useNavigate()
   const provider = useProviderIdentity()
@@ -50,12 +39,14 @@ function SettingsPage() {
   const [profile, setProfile] = useState<ProviderProfile | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [visits, setVisits] = useState<ProviderVisitListItem[]>([])
+  const [scheduleRefresh, setScheduleRefresh] = useState(0)
 
   const loadProfile = useCallback(async () => {
     try {
       const me = await fetchMyProfile()
       setProfile(me)
       setProfileError(null)
+      setScheduleRefresh((s) => s + 1)
     } catch (e) {
       const cached = getStoredAuthProfile()
       if (cached.fullName || cached.username || cached.jobTitle) {
@@ -75,6 +66,7 @@ function SettingsPage() {
         }
         setProfile(fallbackProfile)
         setProfileError(null)
+        setScheduleRefresh((s) => s + 1)
       } else {
         setProfileError(getApiErrorMessage(e))
       }
@@ -88,6 +80,7 @@ function SettingsPage() {
   useEffect(() => {
     const onProfileUpdated = () => {
       void loadProfile()
+      setScheduleRefresh((s) => s + 1)
     }
     window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
     return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, onProfileUpdated)
@@ -185,73 +178,20 @@ function SettingsPage() {
     { key: 'sunday', label: 'Sunday' },
   ]
 
-  const [dayAvailability, setDayAvailability] = useState<DayAvailability[]>(
-    DAY_OPTIONS.map((d) => ({
-      key: d.key,
-      closed: ['wednesday', 'sunday'].includes(d.key),
-      startLabel: formatTimeLabel('09:00'),
-      endLabel: formatTimeLabel('17:00'),
-    })),
-  )
+  const opdSchedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRefresh, profile?.id])
 
-  useEffect(() => {
+  const dayAvailability = useMemo<DayAvailability[]>(() => {
     const schedule = getDoctorScheduleSettings()
-    const defaultStart = split24hToClockAndMeridiem(schedule.opdStart) ?? { clock: '09:00', meridiem: 'AM' as const }
-    const defaultEnd = split24hToClockAndMeridiem(schedule.opdEnd) ?? { clock: '05:00', meridiem: 'PM' as const }
-    const defaultStartLabel = `${defaultStart.clock} ${defaultStart.meridiem}`
-    const defaultEndLabel = `${defaultEnd.clock} ${defaultEnd.meridiem}`
-
-    try {
-      const raw = localStorage.getItem(DAY_AVAILABILITY_LOCAL_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown
-        if (Array.isArray(parsed)) {
-          const rows: DayAvailability[] = DAY_OPTIONS.map((d) => {
-            const item = parsed.find((x) => (x as { key?: string }).key === d.key) as
-              | {
-                  key?: string
-                  closed?: unknown
-                  startClock?: unknown
-                  startMeridiem?: unknown
-                  endClock?: unknown
-                  endMeridiem?: unknown
-                  start?: unknown
-                  end?: unknown
-                }
-              | undefined
-            const closed = typeof item?.closed === 'boolean' ? item.closed : ['wednesday', 'sunday'].includes(d.key)
-            let startLabel = defaultStartLabel
-            let endLabel = defaultEndLabel
-
-            if (typeof item?.startClock === 'string' && typeof item?.startMeridiem === 'string') {
-              startLabel = `${item.startClock} ${item.startMeridiem.toUpperCase()}`
-            } else if (typeof item?.start === 'string') {
-              startLabel = formatTimeLabel(item.start)
-            }
-            if (typeof item?.endClock === 'string' && typeof item?.endMeridiem === 'string') {
-              endLabel = `${item.endClock} ${item.endMeridiem.toUpperCase()}`
-            } else if (typeof item?.end === 'string') {
-              endLabel = formatTimeLabel(item.end)
-            }
-            return { key: d.key, closed, startLabel, endLabel }
-          })
-          setDayAvailability(rows)
-          return
-        }
-      }
-    } catch {
-      // ignore parse errors and fall back to OPD defaults
-    }
-
-    setDayAvailability(
-      DAY_OPTIONS.map((d) => ({
+    return DAY_OPTIONS.map((d) => {
+      const row = effectiveDayRow(schedule, d.key as OpdDayKey)
+      return {
         key: d.key,
-        closed: ['wednesday', 'sunday'].includes(d.key),
-        startLabel: defaultStartLabel,
-        endLabel: defaultEndLabel,
-      })),
-    )
-  }, [])
+        closed: row.closed,
+        morningLabel: row.closed ? 'Closed' : `${formatTimeLabel(row.morningStart)} to ${formatTimeLabel(row.morningEnd)}`,
+        eveningLabel: row.closed ? '—' : row.eveningEnabled ? `${formatTimeLabel(row.eveningStart)} to ${formatTimeLabel(row.eveningEnd)}` : 'Not available',
+      }
+    })
+  }, [scheduleRefresh, profile?.id])
 
   return (
     <div className="text-[#171d16] antialiased min-h-screen font-manrope">
@@ -424,22 +364,59 @@ function SettingsPage() {
                 </h3>
                 <div className="space-y-5">
                   <div className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-4">
+                    <p className="mb-3 text-xs text-[#3e4a3d]">
+                      Signup OPD template: these global hours apply when no weekly override is saved. The per-day list uses your saved weekly
+                      schedule if present, otherwise this template and default closed days.
+                    </p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Morning (default)</span>
+                        <span className="text-sm font-medium text-[#171d16]">
+                          {formatTimeLabel(opdSchedule.opdStart)} to {formatTimeLabel(opdSchedule.opdEnd)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Evening (default)</span>
+                        {opdSchedule.addEveningShift ? (
+                          <span className="text-sm font-medium text-[#171d16]">
+                            {formatTimeLabel(opdSchedule.eveningStart)} to {formatTimeLabel(opdSchedule.eveningEnd)}
+                          </span>
+                        ) : (
+                          <span className="text-sm font-semibold text-[#ba1a1a]">Not available</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-4">
                     <div className="space-y-3">
                       {DAY_OPTIONS.map((d) => {
                         const row = dayAvailability.find((x) => x.key === d.key)
                         if (!row) return null
                         return (
-                          <div key={d.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div key={d.key} className="flex flex-col gap-2 border-b border-gray-100 pb-3 last:border-b-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-[120px]">
                               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">{d.label}</p>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              {row.closed ? (
-                                <span className="text-sm font-semibold text-[#ba1a1a]">Closed</span>
-                              ) : (
-                                <span className="text-sm font-medium text-[#171d16]">{row.startLabel} to {row.endLabel}</span>
-                              )}
+                            <div className="min-w-0 flex-1 space-y-1 text-sm sm:text-right">
+                              <div>
+                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Morning</span>
+                                <span className={`font-medium ${row.closed ? 'text-[#ba1a1a]' : 'text-[#171d16]'}`}>{row.morningLabel}</span>
+                              </div>
+                              <div>
+                                <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Evening</span>
+                                <span
+                                  className={`font-medium ${
+                                    row.closed
+                                      ? 'text-gray-400'
+                                      : row.eveningLabel === 'Not available'
+                                        ? 'text-[#ba1a1a]'
+                                        : 'text-[#171d16]'
+                                  }`}
+                                >
+                                  {row.eveningLabel}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         )

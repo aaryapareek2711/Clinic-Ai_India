@@ -6,7 +6,9 @@ import {
   setAppointmentDuration as persistAppointmentDuration,
 } from '../lib/appointmentDurations'
 import { getApiErrorMessage } from '../lib/apiClient'
-import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { getDoctorScheduleSettings } from '../lib/doctorScheduleSettings'
+import { getSlotWindowsForDate } from '../lib/opdWeeklySchedule'
+import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import BackButton from '../components/BackButton'
 import ProviderAvatar from '../components/ProviderAvatar'
@@ -141,15 +143,15 @@ function NewVisitPage() {
   const [upcoming, setUpcoming] = useState<ProviderUpcomingAppointment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [scheduleRev, setScheduleRev] = useState(0)
-  useEffect(() => {
-    const onScheduleUpdate = () => setScheduleRev((n) => n + 1)
-    window.addEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
-    return () => window.removeEventListener(DOCTOR_SCHEDULE_UPDATED_EVENT, onScheduleUpdate)
-  }, [])
-  const schedule = useMemo(() => getDoctorScheduleSettings(), [scheduleRev])
+  const schedule = useMemo(() => getDoctorScheduleSettings(), [])
   const durationMap = useMemo(() => getAppointmentDurationMap(), [])
   const minDate = localDateInputMin()
+
+  useEffect(() => {
+    const bump = () => setScheduleVersion((v) => v + 1)
+    window.addEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+    return () => window.removeEventListener(PROVIDER_PROFILE_UPDATED_EVENT, bump)
+  }, [])
 
   useEffect(() => {
     const dateStr = appointmentDate.trim()
@@ -178,15 +180,7 @@ function NewVisitPage() {
     const dateStr = appointmentDate.trim()
     if (!dateStr) return []
     const step = schedule.defaultSlotMinutes || 15
-    const windows: Array<{ startMin: number; endMin: number }> = []
-    const opdStartMin = minutesFromHHmm(schedule.opdStart)
-    const opdEndMin = minutesFromHHmm(schedule.opdEnd)
-    if (opdEndMin > opdStartMin) windows.push({ startMin: opdStartMin, endMin: opdEndMin })
-    if (schedule.addEveningShift) {
-      const evStart = minutesFromHHmm(schedule.eveningStart)
-      const evEnd = minutesFromHHmm(schedule.eveningEnd)
-      if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
-    }
+    const windows = getSlotWindowsForDate(schedule, dateStr)
     const selectedDateBooked = upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
     const bookedIntervals = selectedDateBooked
       .map((a) => {

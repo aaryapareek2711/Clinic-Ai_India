@@ -2,16 +2,26 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   DEFAULT_DOCTOR_SCHEDULE,
   getDoctorScheduleSettings,
+  OPD_DAY_KEYS,
   saveDoctorScheduleSettings,
-  syncDoctorScheduleFromServer,
+  type DoctorScheduleSettings,
+  type OpdDayKey,
+  type OpdDayScheduleRow,
 } from '../lib/doctorScheduleSettings'
+import { clockPartsFrom24h, effectiveDayRow, pad2, to24h } from '../lib/opdWeeklySchedule'
 import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
 import BackButton from '../components/BackButton'
 import ProviderAvatar from '../components/ProviderAvatar'
 import SettingsHeadingNav from '../components/SettingsHeadingNav'
 import NotificationsDrawer from './NotificationsDrawer'
-import { fetchMyProfile, getApiErrorMessage, patchMyProfile, type ProviderProfile } from '../services/profileApi'
+import {
+  fetchMyProfile,
+  getApiErrorMessage,
+  patchMyProfile,
+  type OpdWeeklyDayPayload,
+  type ProviderProfile,
+} from '../services/profileApi'
 
 function hasAuthToken(): boolean {
   if (typeof localStorage === 'undefined') return false
@@ -39,14 +49,20 @@ function profileStrengthPct(p: {
   return Math.round((n / checks.length) * 100)
 }
 
-type DayAvailability = {
-  key: string
+type ClockParts = { h12: number; mm: string; mer: 'AM' | 'PM' }
+
+type WeeklyDayUi = {
+  key: OpdDayKey
   closed: boolean
-  startClock: string // "09:00" in 12-hour format (leading zero)
-  startMeridiem: 'AM' | 'PM'
-  endClock: string // "17:00" in 12-hour format (leading zero)
-  endMeridiem: 'AM' | 'PM'
+  morningStart: ClockParts
+  morningEnd: ClockParts
+  eveningEnabled: boolean
+  eveningStart: ClockParts
+  eveningEnd: ClockParts
 }
+
+const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const
+const MINUTES_OPTS = Array.from({ length: 60 }, (_, i) => pad2(i))
 
 const DAY_OPTIONS = [
   { key: 'monday', label: 'Monday' },
@@ -58,45 +74,105 @@ const DAY_OPTIONS = [
   { key: 'sunday', label: 'Sunday' },
 ]
 
-const DAY_AVAILABILITY_LOCAL_KEY = 'doctor_day_availability_settings'
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0')
+function scheduleToWeeklyUi(schedule: DoctorScheduleSettings): WeeklyDayUi[] {
+  return OPD_DAY_KEYS.map((dayKey) => {
+    const eff = effectiveDayRow(schedule, dayKey)
+    return {
+      key: dayKey,
+      closed: eff.closed,
+      morningStart: clockPartsFrom24h(eff.morningStart),
+      morningEnd: clockPartsFrom24h(eff.morningEnd),
+      eveningEnabled: eff.eveningEnabled,
+      eveningStart: clockPartsFrom24h(eff.eveningStart),
+      eveningEnd: clockPartsFrom24h(eff.eveningEnd),
+    }
+  })
 }
 
-function split24hToClockAndMeridiem(hhmm24: string): { clock: string; meridiem: 'AM' | 'PM' } | null {
-  const [hRaw, mRaw] = hhmm24.split(':')
-  const h = Number(hRaw)
-  const m = Number(mRaw)
-  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
-  const meridiem: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return { clock: `${pad2(h12)}:${pad2(m)}`, meridiem }
+function weeklyUiToPayload(rows: WeeklyDayUi[]): OpdWeeklyDayPayload[] {
+  return rows.map((r) => ({
+    day: r.key,
+    closed: r.closed,
+    morning_start: r.closed ? null : to24h(r.morningStart.h12, r.morningStart.mm, r.morningStart.mer),
+    morning_end: r.closed ? null : to24h(r.morningEnd.h12, r.morningEnd.mm, r.morningEnd.mer),
+    evening_enabled: !r.closed && r.eveningEnabled,
+    evening_start: r.closed || !r.eveningEnabled ? null : to24h(r.eveningStart.h12, r.eveningStart.mm, r.eveningStart.mer),
+    evening_end: r.closed || !r.eveningEnabled ? null : to24h(r.eveningEnd.h12, r.eveningEnd.mm, r.eveningEnd.mer),
+  }))
 }
 
-function MeridiemToggle({
-  ariaLabel,
+function weeklyUiToStoredRows(rows: WeeklyDayUi[]): OpdDayScheduleRow[] {
+  return rows.map((r) => ({
+    day: r.key,
+    closed: r.closed,
+    morningStart: r.closed ? DEFAULT_DOCTOR_SCHEDULE.opdStart : to24h(r.morningStart.h12, r.morningStart.mm, r.morningStart.mer),
+    morningEnd: r.closed ? DEFAULT_DOCTOR_SCHEDULE.opdEnd : to24h(r.morningEnd.h12, r.morningEnd.mm, r.morningEnd.mer),
+    eveningEnabled: !r.closed && r.eveningEnabled,
+    eveningStart:
+      r.closed || !r.eveningEnabled
+        ? DEFAULT_DOCTOR_SCHEDULE.eveningStart
+        : to24h(r.eveningStart.h12, r.eveningStart.mm, r.eveningStart.mer),
+    eveningEnd:
+      r.closed || !r.eveningEnabled
+        ? DEFAULT_DOCTOR_SCHEDULE.eveningEnd
+        : to24h(r.eveningEnd.h12, r.eveningEnd.mm, r.eveningEnd.mer),
+  }))
+}
+
+function TimeTripleSelect({
   disabled,
+  idPrefix,
   onChange,
   value,
 }: {
-  ariaLabel: string
   disabled?: boolean
-  onChange: (next: 'AM' | 'PM') => void
-  value: 'AM' | 'PM'
+  idPrefix: string
+  onChange: (next: ClockParts) => void
+  value: ClockParts
 }) {
-  const btn = (period: 'AM' | 'PM') =>
-    `min-w-[36px] px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-      value === period ? 'bg-[#e9f0e5] text-[#006b2c]' : 'bg-white text-[#171d16] hover:bg-gray-50'
-    }`
+  const sel =
+    'rounded-md border border-gray-200 bg-white px-1.5 py-1.5 text-sm text-[#171d16] disabled:cursor-not-allowed disabled:opacity-60'
   return (
-    <div aria-label={ariaLabel} className="inline-flex divide-x divide-gray-200 overflow-hidden rounded-md border border-gray-200" role="group">
-      <button aria-pressed={value === 'AM'} className={btn('AM')} disabled={disabled} onClick={() => onChange('AM')} type="button">
-        AM
-      </button>
-      <button aria-pressed={value === 'PM'} className={btn('PM')} disabled={disabled} onClick={() => onChange('PM')} type="button">
-        PM
-      </button>
+    <div className="flex flex-wrap items-center gap-1">
+      <select
+        aria-label={`${idPrefix} hour`}
+        className={sel}
+        disabled={disabled}
+        id={`${idPrefix}-h`}
+        onChange={(ev) => onChange({ ...value, h12: Number(ev.target.value) })}
+        value={value.h12}
+      >
+        {HOURS_12.map((h) => (
+          <option key={h} value={h}>
+            {String(h).padStart(2, '0')}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label={`${idPrefix} minute`}
+        className={sel}
+        disabled={disabled}
+        id={`${idPrefix}-m`}
+        onChange={(ev) => onChange({ ...value, mm: ev.target.value })}
+        value={value.mm}
+      >
+        {MINUTES_OPTS.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label={`${idPrefix} AM or PM`}
+        className={`${sel} min-w-[68px]`}
+        disabled={disabled}
+        id={`${idPrefix}-p`}
+        onChange={(ev) => onChange({ ...value, mer: ev.target.value as 'AM' | 'PM' })}
+        value={value.mer}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
     </div>
   )
 }
@@ -116,23 +192,9 @@ function SettingsEditProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState('')
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [opdStart, setOpdStart] = useState(DEFAULT_DOCTOR_SCHEDULE.opdStart)
-  const [opdEnd, setOpdEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.opdEnd)
-  const [addEveningShift, setAddEveningShift] = useState(DEFAULT_DOCTOR_SCHEDULE.addEveningShift)
-  const [eveningStart, setEveningStart] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningStart)
-  const [eveningEnd, setEveningEnd] = useState(DEFAULT_DOCTOR_SCHEDULE.eveningEnd)
-  const [defaultSlotMinutes, setDefaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
-
-  const [dayAvailability, setDayAvailability] = useState<DayAvailability[]>(
-    DAY_OPTIONS.map((d) => ({
-      key: d.key,
-      closed: ['wednesday', 'sunday'].includes(d.key),
-      startClock: split24hToClockAndMeridiem(DEFAULT_DOCTOR_SCHEDULE.opdStart)?.clock ?? '09:00',
-      startMeridiem: split24hToClockAndMeridiem(DEFAULT_DOCTOR_SCHEDULE.opdStart)?.meridiem ?? 'AM',
-      endClock: split24hToClockAndMeridiem(DEFAULT_DOCTOR_SCHEDULE.opdEnd)?.clock ?? '06:00',
-      endMeridiem: split24hToClockAndMeridiem(DEFAULT_DOCTOR_SCHEDULE.opdEnd)?.meridiem ?? 'PM',
-    })),
-  )
+  const [weeklyUi, setWeeklyUi] = useState<WeeklyDayUi[]>(() => scheduleToWeeklyUi(getDoctorScheduleSettings()))
+  const initialWeeklyJsonRef = useRef<string | null>(null)
+  const [defaultSlotMinutes] = useState<number>(DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes)
 
   const readPhone = (profile: ProviderProfile) => {
     const phoneNumber =
@@ -150,6 +212,13 @@ function SettingsEditProfilePage() {
     setPhone('')
     setLicense('')
     setAvatarUrl('')
+    setInitialProfile({
+      fullName: cached.fullName || '',
+      jobTitle: cached.jobTitle || '',
+      phone: '',
+      license: '',
+      avatarUrl: '',
+    })
   }, [])
 
   const loadProfile = useCallback(async () => {
@@ -168,14 +237,13 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
-      syncDoctorScheduleFromServer(me)
-      const applied = getDoctorScheduleSettings()
-      setOpdStart(applied.opdStart)
-      setOpdEnd(applied.opdEnd)
-      setAddEveningShift(applied.addEveningShift)
-      setEveningStart(applied.eveningStart)
-      setEveningEnd(applied.eveningEnd)
-      setDefaultSlotMinutes(applied.defaultSlotMinutes)
+      setInitialProfile({
+        fullName: me.full_name ?? '',
+        jobTitle: me.job_title ?? '',
+        phone: readPhone(me),
+        license: me.medical_license_number ?? '',
+        avatarUrl: me.avatar_url ?? '',
+      })
     } catch {
       applyStoredFallbackProfile()
     } finally {
@@ -186,75 +254,6 @@ function SettingsEditProfilePage() {
   useEffect(() => {
     loadProfile()
   }, [loadProfile])
-
-  useEffect(() => {
-    const s = getDoctorScheduleSettings()
-    setOpdStart(s.opdStart)
-    setOpdEnd(s.opdEnd)
-    setAddEveningShift(s.addEveningShift)
-    setEveningStart(s.eveningStart)
-    setEveningEnd(s.eveningEnd)
-    setDefaultSlotMinutes(s.defaultSlotMinutes)
-
-    // Load per-day availability UI settings (stored separately from OPD schedule).
-    try {
-      const raw = localStorage.getItem(DAY_AVAILABILITY_LOCAL_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown
-        if (Array.isArray(parsed)) {
-          const normalized: DayAvailability[] = DAY_OPTIONS.map((d) => {
-            const candidate = parsed.find((x) => (x as { key?: string }).key === d.key) as
-              | {
-                  key?: string
-                  closed?: unknown
-                  start?: unknown
-                  end?: unknown
-                  startClock?: unknown
-                  startMeridiem?: unknown
-                  endClock?: unknown
-                  endMeridiem?: unknown
-                }
-              | undefined
-
-            const closed = typeof candidate?.closed === 'boolean' ? candidate.closed : ['wednesday', 'sunday'].includes(d.key)
-
-            const defaultStartSplit = split24hToClockAndMeridiem(s.opdStart) ?? { clock: '09:00', meridiem: 'AM' as const }
-            const defaultEndSplit = split24hToClockAndMeridiem(s.opdEnd) ?? { clock: '06:00', meridiem: 'PM' as const }
-
-            // Migrate old stored shape: { start: '09:00', end: '17:00' } (24h).
-            const startSplit =
-              typeof candidate?.start === 'string' ? split24hToClockAndMeridiem(candidate.start) : (null as ReturnType<typeof split24hToClockAndMeridiem>)
-            const endSplit = typeof candidate?.end === 'string' ? split24hToClockAndMeridiem(candidate.end) : (null as ReturnType<typeof split24hToClockAndMeridiem>)
-
-            const startClock = typeof candidate?.startClock === 'string' ? candidate.startClock : startSplit?.clock ?? defaultStartSplit.clock
-            const startMeridiemRaw = typeof candidate?.startMeridiem === 'string' ? candidate.startMeridiem.toUpperCase() : null
-            const startMeridiem: 'AM' | 'PM' = startMeridiemRaw === 'AM' || startMeridiemRaw === 'PM' ? startMeridiemRaw : startSplit?.meridiem ?? defaultStartSplit.meridiem
-
-            const endClock = typeof candidate?.endClock === 'string' ? candidate.endClock : endSplit?.clock ?? defaultEndSplit.clock
-            const endMeridiemRaw = typeof candidate?.endMeridiem === 'string' ? candidate.endMeridiem.toUpperCase() : null
-            const endMeridiem: 'AM' | 'PM' = endMeridiemRaw === 'AM' || endMeridiemRaw === 'PM' ? endMeridiemRaw : endSplit?.meridiem ?? defaultEndSplit.meridiem
-
-            return { key: d.key, closed, startClock, startMeridiem, endClock, endMeridiem }
-          })
-          setDayAvailability(normalized)
-          return
-        }
-      }
-    } catch {
-      // fallthrough to defaults
-    }
-
-    setDayAvailability(
-      DAY_OPTIONS.map((d) => ({
-        key: d.key,
-        closed: ['wednesday', 'sunday'].includes(d.key),
-        startClock: split24hToClockAndMeridiem(s.opdStart)?.clock ?? '09:00',
-        startMeridiem: split24hToClockAndMeridiem(s.opdStart)?.meridiem ?? 'AM',
-        endClock: split24hToClockAndMeridiem(s.opdEnd)?.clock ?? '06:00',
-        endMeridiem: split24hToClockAndMeridiem(s.opdEnd)?.meridiem ?? 'PM',
-      })),
-    )
-  }, [])
 
   useEffect(() => {
     return () => {
@@ -272,7 +271,7 @@ function SettingsEditProfilePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBanner(null)
-    const schedulePayload = {
+    saveDoctorScheduleSettings({
       opdStart,
       opdEnd,
       addEveningShift,
@@ -290,26 +289,37 @@ function SettingsEditProfilePage() {
       setBanner({ type: 'err', text: 'Full name is required.' })
       return
     }
+    const scheduleChanged = initialWeeklyJsonRef.current !== scheduleSnap
     if (!hasAuthToken()) {
-      setBanner({
-        type: 'ok',
-        text: 'Saved on this device. Sign in to sync your profile and OPD hours to the server.',
-      })
+      setBanner({ type: 'ok', text: 'OPD settings saved locally. Sign in to save profile fields to server.' })
+      return
+    }
+    const profileChanged =
+      !initialProfile ||
+      fullName.trim() !== initialProfile.fullName.trim() ||
+      jobTitle.trim() !== initialProfile.jobTitle.trim() ||
+      phone.trim() !== initialProfile.phone.trim() ||
+      license.trim() !== initialProfile.license.trim() ||
+      avatarUrl.trim() !== initialProfile.avatarUrl.trim()
+    if (!profileChanged) {
+      setBanner({ type: 'ok', text: 'OPD settings saved.' })
       return
     }
     setSaving(true)
     try {
-      const updated = await patchMyProfile({
+      const patch: {
+        full_name: string
+        phone: string
+        job_title: string
+        medical_license_number: string
+        avatar_url: string
+        opd_weekly_schedule?: OpdWeeklyDayPayload[]
+      } = {
         full_name: fullName.trim(),
-        phone: phone.trim() || undefined,
-        job_title: jobTitle.trim() || undefined,
-        medical_license_number: license.trim() || undefined,
-        avatar_url: avatarUrl.trim() || undefined,
-        opd_morning_start: opdStart,
-        opd_morning_end: opdEnd,
-        opd_evening_enabled: addEveningShift,
-        opd_evening_start: addEveningShift ? eveningStart : null,
-        opd_evening_end: addEveningShift ? eveningEnd : null,
+        phone: phone.trim(),
+        job_title: jobTitle.trim(),
+        medical_license_number: license.trim(),
+        avatar_url: avatarUrl.trim(),
       })
       setFullName(updated.full_name ?? '')
       setJobTitle(updated.job_title ?? '')
@@ -317,6 +327,13 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(updated))
       setLicense(updated.medical_license_number ?? '')
       setAvatarUrl(updated.avatar_url ?? '')
+      setInitialProfile({
+        fullName: updated.full_name ?? '',
+        jobTitle: updated.job_title ?? '',
+        phone: readPhone(updated),
+        license: updated.medical_license_number ?? '',
+        avatarUrl: updated.avatar_url ?? '',
+      })
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
       setBanner({ type: 'ok', text: 'Profile and availability saved.' })
@@ -324,7 +341,7 @@ function SettingsEditProfilePage() {
     } catch (err) {
       setBanner({
         type: 'err',
-        text: `Local OPD settings were saved, but the server update failed (${getApiErrorMessage(err)}).`,
+        text: `OPD settings saved. Profile fields could not be updated right now (${getApiErrorMessage(err)}).`,
       })
     } finally {
       setSaving(false)
@@ -516,84 +533,113 @@ function SettingsEditProfilePage() {
                 </div>
 
                 <div className="mt-8 rounded-xl border border-[#bdcaba] bg-[#f7faf4] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-4">
+                  <div className="mb-3">
                     <p className="text-sm font-semibold text-[#171d16]">Availability Settings</p>
+                    <p className="mt-1 text-xs text-[#3e4a3d]">
+                      Defaults match the hours you chose when your profile was created until you save changes here. Appointment slots follow these
+                      timings once saved.
+                    </p>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {DAY_OPTIONS.map((d) => {
-                      const row = dayAvailability.find((x) => x.key === d.key)
+                      const row = weeklyUi.find((x) => x.key === d.key)
                       if (!row) return null
+                      const dk = d.key as OpdDayKey
                       return (
-                        <div key={d.key} className="rounded-lg border border-gray-100 bg-[#f8fbf7] p-3">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-[110px]">
-                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">{d.label}</p>
-                            </div>
+                        <div key={d.key} className="rounded-lg border border-gray-200 bg-white p-4">
+                          <div className="flex flex-col gap-3 border-b border-gray-100 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">{d.label}</p>
+                            <label className="flex cursor-pointer items-center gap-2">
+                              <input
+                                checked={row.closed}
+                                className="h-4 w-4 rounded border-gray-300 text-[#16a34a]"
+                                onChange={(ev) => {
+                                  const closed = ev.target.checked
+                                  setWeeklyUi((prev) =>
+                                    prev.map((x) =>
+                                      x.key === dk
+                                        ? {
+                                            ...x,
+                                            closed,
+                                            eveningEnabled: closed ? false : x.eveningEnabled,
+                                          }
+                                        : x,
+                                    ),
+                                  )
+                                }}
+                                type="checkbox"
+                              />
+                              <span className={row.closed ? 'text-sm font-semibold text-[#ba1a1a]' : 'text-sm font-semibold text-[#171d16]'}>
+                                Closed
+                              </span>
+                            </label>
+                          </div>
 
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                              <label className="flex items-center gap-2">
-                                <input
-                                  checked={row.closed}
-                                  className="h-4 w-4 rounded border-gray-300 text-[#16a34a]"
-                                  onChange={(ev) =>
-                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, closed: ev.target.checked } : x)))
-                                  }
-                                  type="checkbox"
-                                />
-                                <span className={row.closed ? 'font-semibold text-[#ba1a1a]' : 'font-semibold text-[#171d16]'}>Closed</span>
-                              </label>
+                          <p className="mt-3 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Morning shift</p>
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <TimeTripleSelect
+                              disabled={row.closed}
+                              idPrefix={`${d.key}-morning-start`}
+                              onChange={(next) =>
+                                setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningStart: next } : x)))
+                              }
+                              value={row.morningStart}
+                            />
+                            <span className="text-sm text-gray-500">to</span>
+                            <TimeTripleSelect
+                              disabled={row.closed}
+                              idPrefix={`${d.key}-morning-end`}
+                              onChange={(next) =>
+                                setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningEnd: next } : x)))
+                              }
+                              value={row.morningEnd}
+                            />
+                          </div>
 
-                              <div className="flex items-center gap-2">
-                                <input
-                                  aria-label={`${d.label} start time`}
-                                  className="w-[92px] rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[#171d16] disabled:opacity-60"
-                                  disabled={row.closed}
-                                  onChange={(ev) =>
-                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, startClock: ev.target.value } : x)))
-                                  }
-                                  placeholder="09:00"
-                                  value={row.startClock}
-                                />
+                          <label className="mt-4 flex items-center gap-2">
+                            <input
+                              checked={row.eveningEnabled}
+                              className="h-4 w-4 rounded border-gray-300 text-[#16a34a]"
+                              disabled={row.closed}
+                              onChange={(ev) =>
+                                setWeeklyUi((prev) =>
+                                  prev.map((x) => (x.key === dk ? { ...x, eveningEnabled: ev.target.checked } : x)),
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span className={`text-sm font-medium ${row.closed ? 'text-gray-400' : 'text-[#171d16]'}`}>
+                              Evening shift available
+                            </span>
+                          </label>
 
-                                <MeridiemToggle
-                                  ariaLabel={`${d.label} start AM or PM`}
-                                  disabled={row.closed}
+                          {row.eveningEnabled && !row.closed ? (
+                            <div className="mt-3">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Evening shift</p>
+                              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <TimeTripleSelect
+                                  idPrefix={`${d.key}-evening-start`}
                                   onChange={(next) =>
-                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, startMeridiem: next } : x)))
+                                    setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningStart: next } : x)))
                                   }
-                                  value={row.startMeridiem}
+                                  value={row.eveningStart}
                                 />
-
                                 <span className="text-sm text-gray-500">to</span>
-
-                                <input
-                                  aria-label={`${d.label} end time`}
-                                  className="w-[92px] rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[#171d16] disabled:opacity-60"
-                                  disabled={row.closed}
-                                  onChange={(ev) =>
-                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, endClock: ev.target.value } : x)))
-                                  }
-                                  placeholder="05:00"
-                                  value={row.endClock}
-                                />
-
-                                <MeridiemToggle
-                                  ariaLabel={`${d.label} end AM or PM`}
-                                  disabled={row.closed}
+                                <TimeTripleSelect
+                                  idPrefix={`${d.key}-evening-end`}
                                   onChange={(next) =>
-                                    setDayAvailability((prev) => prev.map((x) => (x.key === d.key ? { ...x, endMeridiem: next } : x)))
+                                    setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningEnd: next } : x)))
                                   }
-                                  value={row.endMeridiem}
+                                  value={row.eveningEnd}
                                 />
                               </div>
                             </div>
-                          </div>
+                          ) : null}
                         </div>
                       )
                     })}
                   </div>
-
                 </div>
 
                 <div className="mt-8 flex justify-end border-t border-gray-100 pt-6">

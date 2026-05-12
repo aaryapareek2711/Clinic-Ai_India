@@ -14,10 +14,6 @@ import NotificationsDrawer from './NotificationsDrawer'
 type CarePrepSort =
   | 'patient_newest'
   | 'patient_oldest'
-  | 'visit_latest'
-  | 'visit_oldest'
-  | 'time_newest'
-  | 'time_oldest'
   | 'name_az'
   | 'name_za'
   | 'visit_id'
@@ -276,10 +272,6 @@ export default function CarePrepPage() {
                   >
                     <option value="patient_newest">New patient: newest first</option>
                     <option value="patient_oldest">New patient: oldest first</option>
-                    <option value="visit_latest">Latest visit: newest first</option>
-                    <option value="visit_oldest">Latest visit: oldest first</option>
-                    <option value="time_newest">Time: newest first</option>
-                    <option value="time_oldest">Time: oldest first</option>
                     <option value="name_az">Name: A → Z</option>
                     <option value="name_za">Name: Z → A</option>
                   </select>

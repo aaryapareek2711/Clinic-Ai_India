@@ -734,6 +734,7 @@ def list_provider_careprep(
     page_size: int = Query(default=50, ge=1, le=200),
     filter: str = Query(default="all", description="all|ready|in_progress"),
     search: str | None = Query(default=None),
+    sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|name_az|name_za"),
 ) -> dict:
     """
     CarePrep read-model: return only fields needed by CarePrep UI.
@@ -768,7 +769,6 @@ def list_provider_careprep(
                 ]
             }
         ]
-    skip = (page - 1) * page_size
     records = list(
         db.visits.find(
             query,
@@ -787,8 +787,6 @@ def list_provider_careprep(
             },
         )
         .sort([("updated_at", -1), ("created_at", -1)])
-        .skip(skip)
-        .limit(page_size)
     )
     patient_ids = sorted({str(v.get("patient_id") or "").strip() for v in records if str(v.get("patient_id") or "").strip()})
     visit_ids = sorted({str(v.get("visit_id") or v.get("id") or "").strip() for v in records if str(v.get("visit_id") or v.get("id") or "").strip()})
@@ -859,8 +857,20 @@ def list_provider_careprep(
                 "status_kind": status_kind,
             }
         )
-    total = len(items) if s or filter != "all" else int(db.visits.count_documents(query))
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    if sort == "patient_oldest":
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""))
+    elif sort == "name_az":
+        items.sort(key=lambda row: str(row.get("patient_name") or "").lower())
+    elif sort == "name_za":
+        items.sort(key=lambda row: str(row.get("patient_name") or "").lower(), reverse=True)
+    else:
+        # Default: newest patients first (most recently created patient first).
+        items.sort(key=lambda row: str(row.get("patient_created_at") or ""), reverse=True)
+
+    total = len(items)
+    skip = (page - 1) * page_size
+    paged_items = items[skip : skip + page_size]
+    return {"items": paged_items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/patient/{patient_id}")

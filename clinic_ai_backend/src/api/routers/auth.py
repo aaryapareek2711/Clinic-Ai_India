@@ -11,6 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
     AuthResponse,
+    OpdWeeklyDay,
     UserLoginRequest,
     UserProfileUpdateRequest,
     UserRegisterRequest,
@@ -24,6 +25,10 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 DOCTOR_ID_RE = re.compile(r"^DOC(\d{3})$")
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_WEEKLY_DAY_KEYS = frozenset(
+    {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+)
 
 
 def _next_doctor_id(db) -> str:
@@ -120,8 +125,70 @@ def _normalize_user_doc_for_api(user_doc: dict) -> dict:
     return merged
 
 
+def _weekly_schedule_to_mongo(rows: list[OpdWeeklyDay]) -> list[dict]:
+    if len(rows) != 7:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="opd_weekly_schedule must contain exactly 7 days",
+        )
+    seen = {r.day for r in rows}
+    if seen != _WEEKLY_DAY_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="opd_weekly_schedule must include each weekday once",
+        )
+    out: list[dict] = []
+    for r in rows:
+        ms = str(r.morning_start or "").strip()
+        me = str(r.morning_end or "").strip()
+        if not r.closed:
+            if not _HHMM_RE.match(ms) or not _HHMM_RE.match(me):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Morning shift requires valid HH:MM (24h) start and end when the day is open",
+                )
+        es = str(r.evening_start or "").strip() if r.evening_enabled else ""
+        ee = str(r.evening_end or "").strip() if r.evening_enabled else ""
+        if r.evening_enabled:
+            if not _HHMM_RE.match(es) or not _HHMM_RE.match(ee):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Evening shift requires valid HH:MM (24h) start and end when enabled",
+                )
+        out.append(
+            {
+                "day": r.day,
+                "closed": bool(r.closed),
+                "morning_start": ms if ms else None,
+                "morning_end": me if me else None,
+                "evening_enabled": bool(r.evening_enabled),
+                "evening_start": es if r.evening_enabled else None,
+                "evening_end": ee if r.evening_enabled else None,
+            }
+        )
+    return out
+
+
+def _weekly_from_doc(doc: dict) -> list[OpdWeeklyDay] | None:
+    raw = doc.get("opd_weekly_schedule")
+    if not isinstance(raw, list) or len(raw) != 7:
+        return None
+    out: list[OpdWeeklyDay] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            return None
+        try:
+            out.append(OpdWeeklyDay.model_validate(item))
+        except Exception:
+            return None
+    if {r.day for r in out} != _WEEKLY_DAY_KEYS:
+        return None
+    return out
+
+
 def _as_user_response(user_doc: dict) -> UserResponse:
     doc = _normalize_user_doc_for_api(user_doc)
+    weekly = _weekly_from_doc(doc)
     return UserResponse(
         id=str(doc["id"]),
         doctor_id=str(doc.get("doctor_id") or "") or None,
@@ -141,6 +208,7 @@ def _as_user_response(user_doc: dict) -> UserResponse:
         opd_evening_enabled=bool(doc.get("opd_evening_enabled", False)),
         opd_evening_start=doc.get("opd_evening_start"),
         opd_evening_end=doc.get("opd_evening_end"),
+        opd_weekly_schedule=weekly,
     )
 
 
@@ -284,6 +352,14 @@ def update_my_profile(
             updates[key] = None  # clear optional strings in MongoDB
         else:
             updates[key] = cleaned
+    if payload.opd_evening_enabled is not None:
+        updates["opd_evening_enabled"] = bool(payload.opd_evening_enabled)
+        if not payload.opd_evening_enabled:
+            updates["opd_evening_start"] = None
+            updates["opd_evening_end"] = None
+
+    if payload.opd_weekly_schedule is not None:
+        updates["opd_weekly_schedule"] = _weekly_schedule_to_mongo(payload.opd_weekly_schedule)
 
     if payload.opd_evening_enabled is not None:
         updates["opd_evening_enabled"] = bool(payload.opd_evening_enabled)

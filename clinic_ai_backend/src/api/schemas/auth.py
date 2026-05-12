@@ -6,6 +6,21 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+DayOfWeek = Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+class OpdWeeklyDay(BaseModel):
+    """Per-weekday OPD windows; times are HH:MM 24h strings."""
+
+    day: DayOfWeek
+    closed: bool = False
+    morning_start: str | None = Field(default=None, max_length=20)
+    morning_end: str | None = Field(default=None, max_length=20)
+    evening_enabled: bool = False
+    evening_start: str | None = Field(default=None, max_length=20)
+    evening_end: str | None = Field(default=None, max_length=20)
+
+
 class UserRegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     username: str = Field(min_length=3, max_length=64)
@@ -44,6 +59,7 @@ class UserProfileUpdateRequest(BaseModel):
     opd_evening_enabled: bool | None = Field(default=None)
     opd_evening_start: str | None = Field(default=None, max_length=20)
     opd_evening_end: str | None = Field(default=None, max_length=20)
+    opd_weekly_schedule: list[OpdWeeklyDay] | None = Field(default=None)
 
 
 class UserResponse(BaseModel):
@@ -65,6 +81,7 @@ class UserResponse(BaseModel):
     opd_evening_enabled: bool = False
     opd_evening_start: str | None = None
     opd_evening_end: str | None = None
+    opd_weekly_schedule: list[OpdWeeklyDay] | None = None
 
 
 class AuthResponse(BaseModel):

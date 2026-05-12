@@ -134,15 +134,7 @@ function computeSlotsForDate(params: {
   const { dateStr, appointmentDuration, schedule, upcoming, durationMap } = params
   if (!dateStr) return []
   const selectedDateBooked = upcoming.filter((a) => dateKeyLocal(a.scheduled_start) === dateStr)
-  const windows: Array<{ startMin: number; endMin: number }> = []
-  const opdStartMin = minutesFromHHmm(schedule.opdStart)
-  const opdEndMin = minutesFromHHmm(schedule.opdEnd)
-  if (opdEndMin > opdStartMin) windows.push({ startMin: opdStartMin, endMin: opdEndMin })
-  if (schedule.addEveningShift) {
-    const evStart = minutesFromHHmm(schedule.eveningStart)
-    const evEnd = minutesFromHHmm(schedule.eveningEnd)
-    if (evEnd > evStart) windows.push({ startMin: evStart, endMin: evEnd })
-  }
+  const windows = getSlotWindowsForDate(schedule, dateStr)
 
   const bookedIntervals = selectedDateBooked
     .map((a) => {
