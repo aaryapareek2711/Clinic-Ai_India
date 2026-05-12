@@ -386,11 +386,14 @@ def list_provider_upcoming_visits(
                 patient_map[pid] = patient
     appointments: list[dict] = []
     for visit in records:
-        patient_id = str(visit.get("patient_id") or "")
+        patient_id = str(visit.get("patient_id") or "").strip()
         resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
         if not resolved_visit_id:
             continue
-        patient = patient_map.get(patient_id, {})
+        # Orphan visit after patient deletion — omit so calendar slots show as free.
+        if not patient_id or patient_id not in patient_map:
+            continue
+        patient = patient_map[patient_id]
         patient_name = (patient.get("name") or "").strip() or "Unknown Patient"
         scheduled_start = visit.get("scheduled_start")
         chief_complaint = (
@@ -489,8 +492,10 @@ def list_provider_visits(
         resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
         if not resolved_visit_id:
             continue
-        internal_patient_id = str(visit.get("patient_id") or "")
-        patient = patient_map.get(internal_patient_id, {})
+        internal_patient_id = str(visit.get("patient_id") or "").strip()
+        if not internal_patient_id or internal_patient_id not in patient_map:
+            continue
+        patient = patient_map[internal_patient_id]
         patient_name = str(patient.get("name") or "").strip() or "Unknown patient"
         patient_phone_number = str(patient.get("phone_number") or "").strip()
         scheduled_start = visit.get("scheduled_start")
