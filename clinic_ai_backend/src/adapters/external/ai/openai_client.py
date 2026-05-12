@@ -1010,6 +1010,25 @@ class OpenAIQuestionClient:
             topic = cls._infer_topic_from_qa(qa)
             if topic and topic not in covered:
                 covered.append(topic)
+        # Intake passes `chief_complaint` from the stored session illness. If `answers` is missing,
+        # null, or not yet aligned with `illness`, QA-only inference can miss `reason_for_visit` and
+        # the planner keeps re-asking the chief complaint (same symptom in any language).
+        chief_compact = _normalize_text(str(context.get("chief_complaint", "") or ""))
+        if chief_compact and chief_compact not in {
+            "hi",
+            "hii",
+            "hiii",
+            "hello",
+            "hey",
+            "namaste",
+            "namaskar",
+            "ok",
+            "okay",
+            "yes",
+            "no",
+        }:
+            if "reason_for_visit" not in covered:
+                covered.append("reason_for_visit")
         for topic in cls._infer_topics_from_narrative_context(context):
             if topic not in covered:
                 covered.append(topic)

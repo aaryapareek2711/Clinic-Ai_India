@@ -16,7 +16,6 @@ import {
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
   scheduleVisitIntake,
-  type PostVisitPatientLanguage,
   submitVitals,
   createLabRecordText,
   uploadLabRecordWithImages,
@@ -170,13 +169,6 @@ function pickPostVisitWhatsAppPreviewText(
     if (by[k]) return String(by[k]).trim()
   }
   return String(by.en ?? summary.whatsapp_payload ?? '').trim()
-}
-
-function toPostVisitPatientLanguage(languageCode: string): PostVisitPatientLanguage {
-  const c = (languageCode || '').trim().toLowerCase().replace(/_/g, '-')
-  if (c === 'hi-eng') return 'hi-eng'
-  if (c.startsWith('hi')) return 'hi'
-  return 'en'
 }
 
 function toTranscriptionLanguageMix(languageCode: string): string {
@@ -611,15 +603,15 @@ export default function VisitDetailPage() {
     if (Number.isNaN(dt.getTime())) return raw
     return dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   }, [visit?.scheduled_start])
-  const postVisitLanguage = toPostVisitPatientLanguage(
-    effectiveLanguageMode === 'english' ? 'en' : preferredLanguageCode,
-  )
   const transcriptionLanguageMix = toTranscriptionLanguageMix(preferredLanguageCode)
   const activeLanguageLabel = effectiveLanguageMode === 'english' ? 'English' : langBadge
   const visitStatus = visitStatusChip(visit?.status)
 
   const patientId = visit?.patient_id ?? ''
   const rawPreferredLanguageForApi = normalizeBcp47ForPayloadKey(preferredLanguageCode) || 'en'
+  /** Generate + WhatsApp send use the same language as the English / Patient toggle. */
+  const postVisitTargetLanguageForApi =
+    effectiveLanguageMode === 'english' ? 'en' : rawPreferredLanguageForApi || 'en'
   useEffect(() => {
     let cancelled = false
     const pref = (preferredLanguageCode || '').trim().toLowerCase()
@@ -2104,7 +2096,7 @@ export default function VisitDetailPage() {
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const res = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: rawPreferredLanguageForApi,
+                              preferred_language: postVisitTargetLanguageForApi,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                             })
@@ -2139,7 +2131,7 @@ export default function VisitDetailPage() {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
                             const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const refreshedSummary = await generatePostVisitSummary(patientId, visitId, {
-                              preferred_language: rawPreferredLanguageForApi,
+                              preferred_language: postVisitTargetLanguageForApi,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
                               follow_up_time: nextVisitTime || undefined,
@@ -2147,7 +2139,7 @@ export default function VisitDetailPage() {
                             setPostVisitSummary(refreshedSummary)
                             const res = await sendPostVisitSummaryWhatsApp(patientId, visitId, {
                               phone_number: recapContactMode === 'patient' ? undefined : overrideDigits,
-                              preferred_language: postVisitLanguage,
+                              preferred_language: postVisitTargetLanguageForApi,
                             })
                             setPostVisitMessage(res.message)
                             const phoneDisplay =
@@ -2156,7 +2148,7 @@ export default function VisitDetailPage() {
                                 : formatIndiaWhatsAppDisplay(overrideDigits)
                             setPostVisitSendInfo({
                               phoneDisplay,
-                              languageDisplay: languageLabel(postVisitLanguage),
+                              languageDisplay: activeLanguageLabel,
                             })
                           } catch (e) {
                             setPostVisitSendInfo(null)

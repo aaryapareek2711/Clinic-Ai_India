@@ -679,7 +679,7 @@ export async function fetchLatestPostVisitSummary(
 export async function sendPostVisitSummaryWhatsApp(
   patientId: string,
   visitId: string,
-  options?: { phone_number?: string; preferred_language?: PostVisitPatientLanguage },
+  options?: { phone_number?: string; preferred_language?: PostVisitPatientLanguage | string },
 ): Promise<PostVisitWhatsAppSendResponse> {
   const body: Record<string, string> = {
     patient_id: patientId,

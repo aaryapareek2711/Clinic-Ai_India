@@ -99,7 +99,7 @@ def test_uses_pain_assessment_branch_for_pain_cases() -> None:
 
 def test_infers_covered_topic_from_question_text_without_topic_field() -> None:
     context = {
-        "chief_complaint": "I have fever and chills for two days",
+        "chief_complaint": "",
         "language": "en",
         "question_number": 3,
         "previous_qa_json": [
@@ -115,9 +115,26 @@ def test_infers_covered_topic_from_question_text_without_topic_field() -> None:
     assert covered == ["onset_duration"]
 
 
+def test_chief_complaint_covers_reason_when_answers_missing() -> None:
+    """WhatsApp intake stores illness on the session; if answers are empty, do not re-ask chief."""
+    context = {
+        "chief_complaint": "fever",
+        "language": "en",
+        "question_number": 2,
+        "previous_qa_json": [],
+    }
+    guidance = OpenAIQuestionClient._build_condition_guidance(context)
+    result = OpenAIQuestionClient._enforce_condition_guidance(
+        result={"agent1": {}, "agent2": {}, "agent4": {}, "message": "", "question_number": 2},
+        context=context,
+        guidance=guidance,
+    )
+    assert result["topic"] == "onset_duration"
+
+
 def test_merges_model_covered_topics_with_history_topics() -> None:
     context = {
-        "chief_complaint": "I have fever and chills for two days",
+        "chief_complaint": "",
         "language": "en",
         "question_number": 3,
         "previous_qa_json": [

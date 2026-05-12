@@ -64,10 +64,27 @@ function localDateInputMin(d = new Date()): string {
   return `${y}-${m}-${day}`
 }
 
-function isUpcomingSidebarStatus(raw: string | undefined): boolean {
+function localDayStartMs(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+/** True if this slot counts as "upcoming" for the sidebar: today only if start time not passed; any time on a future calendar day. */
+function isUpcomingSidebarSlot(slot: Date, now: Date = new Date()): boolean {
+  const slotMs = slot.getTime()
+  if (Number.isNaN(slotMs)) return false
+  const nowMs = now.getTime()
+  const slotDayStart = localDayStartMs(slot)
+  const todayStart = localDayStartMs(now)
+  if (slotDayStart < todayStart) return false
+  if (slotDayStart > todayStart) return true
+  return slotMs >= nowMs
+}
+
+/** Hide finished/cancelled visits from the sidebar; keep active workflow states (including in_progress). */
+function isSidebarActiveVisitStatus(raw: string | undefined): boolean {
   const status = (raw || '').trim().toLowerCase()
   if (!status) return true
-  return status === 'scheduled' || status === 'queued' || status === 'in_queue' || status === 'open'
+  return !['completed', 'cancelled', 'canceled', 'closed', 'ended'].includes(status)
 }
 
 function CalendarPage() {
@@ -195,17 +212,37 @@ function CalendarPage() {
   const totalCells = Math.ceil((blanks + daysInMonth) / 7) * 7
 
   const sidebarItems = useMemo(() => {
-    const nowMs = Date.now()
-    return [...appointments]
+    const base = [...appointments]
+    if (viewMode === 'day') {
+      const y = focusDate.getFullYear()
+      const m = focusDate.getMonth()
+      const d = focusDate.getDate()
+      const focusDayStart = localDayStartMs(focusDate)
+      const todayStart = localDayStartMs(new Date())
+      const now = new Date()
+      return appointmentsOnDay(base, y, m, d)
+        .filter((a) => {
+          if (!isSidebarActiveVisitStatus(a.status)) return false
+          if (!a.scheduled_start) return false
+          const slot = new Date(a.scheduled_start)
+          if (Number.isNaN(slot.getTime())) return false
+          if (focusDayStart === todayStart) return isUpcomingSidebarSlot(slot, now)
+          return true
+        })
+        .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
+        .slice(0, 12)
+    }
+    const now = new Date()
+    return base
       .filter((a) => {
         if (!a.scheduled_start) return false
-        const slotMs = new Date(a.scheduled_start).getTime()
-        if (Number.isNaN(slotMs) || slotMs < nowMs) return false
-        return isUpcomingSidebarStatus(a.status)
+        const slot = new Date(a.scheduled_start)
+        if (!isUpcomingSidebarSlot(slot, now)) return false
+        return isSidebarActiveVisitStatus(a.status)
       })
       .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
       .slice(0, 12)
-  }, [appointments])
+  }, [appointments, focusDate, viewMode])
 
   function prevMonth(): void {
     if (viewMode === 'month') {
@@ -522,7 +559,17 @@ function CalendarPage() {
               </div>
               <div className="divide-y divide-gray-50">
                 {!loading && sidebarItems.length === 0 && (
-                  <div className="p-6 text-sm text-[#575e70]">No upcoming appointments in the backend response.</div>
+                  <div className="p-6 text-sm text-[#575e70]">
+                    {appointments.length === 0 ? (
+                      <p>No visits scheduled for {monthTitle}.</p>
+                    ) : (
+                      <p>
+                        No upcoming visits in this list: for today, only times that have not started yet are shown; past
+                        times and completed visits are hidden. Future days show all slots in range. Use the calendar or View
+                        All for the full schedule.
+                      </p>
+                    )}
+                  </div>
                 )}
                 {sidebarItems.map((a) => {
                   const dt = new Date(a.scheduled_start)
@@ -551,7 +598,9 @@ function CalendarPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-semibold">{toDisplayName(a.patient_name)}</p>
-                          <p className="truncate text-sm text-[#3e4a3d]">{formatShortTime(a.scheduled_start)} · {a.appointment_type || 'Visit'}</p>
+                          <p className="truncate text-sm text-[#3e4a3d]">
+                            {formatShortTime(a.scheduled_start) || '—'} · {(a.appointment_type || 'Visit').trim() || 'Visit'}
+                          </p>
                         </div>
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
                           {(a.status || '').replace(/_/g, ' ') || 'Scheduled'}
