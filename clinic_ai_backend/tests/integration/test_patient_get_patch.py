@@ -24,7 +24,7 @@ def test_get_patient_returns_summary(app_client) -> None:
     assert res.status_code == 200
     body = res.json()
     assert body["full_name"] == "Profile View"
-    assert body["phone_number"] == "9000000001"
+    assert body["phone_number"] == "919000000001"
     assert body["age"] == 36
     assert decode_patient_id(body["patient_id"]) == decode_patient_id(opaque)
 
@@ -86,7 +86,36 @@ def test_patch_identity_rewires_visits(app_client) -> None:
     new_opaque = patched.json()["patient_id"]
     internal_after = decode_patient_id(new_opaque)
     assert internal_before != internal_after
+    assert internal_after == "visitcarryjr_919000000003"
 
     visit_res = app_client.get(f"/api/patients/{new_opaque}/latest-visit")
     assert visit_res.status_code == 200
     assert visit_res.json()["visit_id"] == visit_id
+
+
+def test_patch_patient_accepts_india_mobile_formats_and_stores_canonical(app_client) -> None:
+    reg = app_client.post(
+        "/api/patients/register",
+        json={
+            "name": "Format Test",
+            "phone_number": "9000000004",
+            "age": 30,
+            "gender": "male",
+            "preferred_language": "en",
+            "travelled_recently": False,
+            "consent": True,
+        },
+    )
+    assert reg.status_code == 200
+    opaque = reg.json()["patient_id"]
+
+    patched = app_client.patch(
+        f"/api/patients/{opaque}",
+        json={"phone_number": "+91 900 0000 004"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["phone_number"] == "919000000004"
+
+    alt = app_client.patch(f"/api/patients/{opaque}", json={"phone_number": "919000000004"})
+    assert alt.status_code == 200
+    assert alt.json()["phone_number"] == "919000000004"

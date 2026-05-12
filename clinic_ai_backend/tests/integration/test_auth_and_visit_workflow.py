@@ -247,3 +247,73 @@ def test_follow_through_extract_uses_ocr_text_when_raw_text_empty(app_client, pa
     payload = extracted.json()
     assert payload["status"] == "extracted"
     assert len(payload["extracted_values"]) >= 2
+
+
+def test_patch_me_succeeds_with_numeric_phone_dict_tenant_and_weekly(app_client, patched_db) -> None:
+    """Regression: UserResponse must not 500 when Mongo has non-string scalars (Compass drift)."""
+    from src.core.auth import hash_password
+
+    now = datetime.now(timezone.utc)
+    patched_db.users.insert_one(
+        {
+            "id": "user-pme-1",
+            "email": "pme@example.com",
+            "username": "pme",
+            "hashed_password": hash_password("password-strong-1"),
+            "full_name": "PME Doc",
+            "role": "doctor",
+            "doctor_id": "DOC005",
+            "phone": 919876543210,
+            "tenant_id": {"unexpected": "object"},
+            "is_active": True,
+            "is_verified": True,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    login = app_client.post("/api/auth/login", json={"username": "pme", "password": "password-strong-1"})
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    weekly: list[dict] = []
+    for d in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
+        if d == "wednesday":
+            weekly.append(
+                {
+                    "day": d,
+                    "closed": True,
+                    "morning_start": None,
+                    "morning_end": None,
+                    "evening_enabled": False,
+                    "evening_start": None,
+                    "evening_end": None,
+                }
+            )
+        else:
+            weekly.append(
+                {
+                    "day": d,
+                    "closed": False,
+                    "morning_start": "09:00",
+                    "morning_end": "18:00",
+                    "evening_enabled": False,
+                    "evening_start": None,
+                    "evening_end": None,
+                }
+            )
+    r = app_client.patch(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "full_name": "PME Doc Updated",
+            "job_title": "Cardiology",
+            "opd_weekly_schedule": weekly,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["full_name"] == "PME Doc Updated"
+    assert body["phone"] == "919876543210"
+    assert body["tenant_id"] is None
+    assert body["opd_weekly_schedule"] is not None
+    assert len(body["opd_weekly_schedule"]) == 7
+

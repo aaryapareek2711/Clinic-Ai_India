@@ -11,6 +11,7 @@ from src.adapters.db.mongo.client import get_database
 from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuestionClient
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
 from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
+from src.application.utils.india_phone import normalize_india_mobile_storage
 from src.core.config import get_settings
 from src.core.language_support import normalize_intake_language
 
@@ -1502,8 +1503,11 @@ class IntakeChatService:
 
     @staticmethod
     def _normalize_phone_number(phone_number: str) -> str:
-        """Normalize phone number for reliable matching across webhook/provider formats."""
-        return "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+        """Normalize for matching and WhatsApp: Indian mobiles as ``91`` + 10 digits; otherwise digits-only."""
+        try:
+            return normalize_india_mobile_storage(str(phone_number or "").strip())
+        except ValueError:
+            return "".join(ch for ch in str(phone_number or "") if ch.isdigit())
 
     @classmethod
     def _phone_numbers_match(cls, stored_number: str, incoming_number: str) -> bool:

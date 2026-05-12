@@ -23,8 +23,8 @@ def test_register_returns_opaque_patient_id_and_consult_visit_id(app_client) -> 
     opaque_patient_id = data["patient_id"]
     internal = decode_patient_id(opaque_patient_id)
     assert internal == "john_15551234567"
-    assert re.fullmatch(r"^CONSULT-\d{8}-\d{3}$", data["visit_id"]) is not None
     assert data.get("pending_schedule_for_intake") is True
+    assert data.get("visit_id") is None
     assert data.get("whatsapp_triggered") is False
 
 
@@ -50,7 +50,7 @@ def test_create_visit_accepts_opaque_patient_id(app_client, monkeypatch) -> None
     assert res.status_code == 200
     body = res.json()
     assert re.fullmatch(r"^CONSULT-\d{8}-\d{3}$", body["visit_id"]) is not None
-    assert decode_patient_id(body["patient_id"]) == "asha_9876543210"
+    assert decode_patient_id(body["patient_id"]) == "asha_919876543210"
     assert body.get("pending_schedule_for_intake") is True
     assert body.get("intake_triggered") is False
 
@@ -80,8 +80,12 @@ def test_register_without_appointment_defers_intake(app_client, monkeypatch) -> 
     assert data.get("whatsapp_triggered") is False
     assert data.get("pending_schedule_for_intake") is True
     assert calls == []
+    assert data.get("visit_id") is None
 
-    visit_id = data["visit_id"]
+    opaque = data["patient_id"]
+    vis = app_client.post(f"/api/patients/{opaque}/visits", json={})
+    assert vis.status_code == 200
+    visit_id = vis.json()["visit_id"]
     schedule = app_client.post(
         f"/api/visits/{visit_id}/schedule-intake",
         json={"appointment_date": "2099-01-01", "appointment_time": "10:30"},

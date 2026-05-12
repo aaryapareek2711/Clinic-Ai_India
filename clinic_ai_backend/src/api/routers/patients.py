@@ -1,12 +1,12 @@
 """Patient routes module."""
-import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
-from src.application.services.intake_chat_service import ACTIVE_SESSION_STATUSES, IntakeChatService
+from src.application.services.intake_chat_service import IntakeChatService
+from src.application.utils.india_phone import normalize_india_mobile_storage
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.domain.value_objects.patient_id import PatientId
 from src.domain.value_objects.visit_id import VisitId
@@ -22,7 +22,6 @@ from src.api.schemas.patient import (
 router = APIRouter(prefix="/api/patients", tags=["Patients"])
 TERMINAL_VISIT_STATUSES = {"completed", "complete", "closed", "ended", "cancelled", "no_show"}
 _INDEXES_READY = False
-logger = logging.getLogger(__name__)
 
 # Collections that store internal `patient_id` (deterministic key) and must move with identity edits.
 _PATIENT_ID_COLLECTIONS = (
@@ -40,34 +39,12 @@ _PATIENT_ID_COLLECTIONS = (
 )
 
 
-def _resend_intake_after_phone_patch(db, internal_patient_id: str) -> None:
-    """Re-open WhatsApp intake on the updated number when sessions were still active on an old/wrong destination."""
-    patient = db.patients.find_one({"patient_id": internal_patient_id}) or {}
-    phone = str(patient.get("phone_number") or "").strip()
-    if not phone:
+def _sync_intake_sessions_to_number(db, patient_id: str, to_number: str, now: datetime) -> None:
+    """Keep WhatsApp intake destination aligned after staff edits the stored mobile."""
+    coll = getattr(db, "intake_sessions", None)
+    if coll is None or not patient_id or not to_number:
         return
-    lang = str(patient.get("preferred_language") or "en")
-    service = IntakeChatService()
-    seen_visit_ids: set[str] = set()
-    try:
-        cursor = db.intake_sessions.find(
-            {"patient_id": internal_patient_id, "status": {"$in": list(ACTIVE_SESSION_STATUSES)}},
-        )
-        for sess in cursor:
-            vid = str(sess.get("visit_id") or "").strip()
-            if not vid or vid in seen_visit_ids:
-                continue
-            seen_visit_ids.add(vid)
-            try:
-                service.start_intake(internal_patient_id, vid, phone, lang)
-            except Exception:
-                logger.exception(
-                    "intake_resend_after_phone_patch visit_id=%s patient_id=%s",
-                    vid,
-                    internal_patient_id,
-                )
-    except Exception:
-        logger.exception("intake_resend_after_phone_patch query failed patient_id=%s", internal_patient_id)
+    coll.update_many({"patient_id": patient_id}, {"$set": {"to_number": to_number, "updated_at": now}})
 
 
 def _rewire_internal_patient_id(db, old_id: str, new_id: str) -> None:
@@ -449,6 +426,10 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
         merged_name = str(raw_updates["name"]).strip()
     if "phone_number" in raw_updates:
         merged_phone = str(raw_updates["phone_number"]).strip()
+        try:
+            merged_phone = normalize_india_mobile_storage(merged_phone)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
         internal_new = PatientId.generate(merged_name, merged_phone)
@@ -480,9 +461,9 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
     if internal_new == internal_old:
         set_doc["updated_at"] = now
         db.patients.update_one({"patient_id": internal_old}, {"$set": set_doc})
+        if "phone_number" in raw_updates and merged_phone:
+            _sync_intake_sessions_to_number(db, internal_new, merged_phone, now)
         updated = db.patients.find_one({"patient_id": internal_old})
-        if "phone_number" in raw_updates:
-            _resend_intake_after_phone_patch(db, internal_old)
         return _summarize_patient_record(db, updated or existing)
 
     if db.patients.find_one({"patient_id": internal_new}):
@@ -499,9 +480,9 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
     db.patients.insert_one(new_doc)
     _rewire_internal_patient_id(db, internal_old, internal_new)
     db.patients.delete_one({"patient_id": internal_old})
+    if "phone_number" in raw_updates and merged_phone:
+        _sync_intake_sessions_to_number(db, internal_new, merged_phone, now)
     fresh = db.patients.find_one({"patient_id": internal_new})
-    if "phone_number" in raw_updates:
-        _resend_intake_after_phone_patch(db, internal_new)
     return _summarize_patient_record(db, fresh or new_doc)
 
 
@@ -533,8 +514,12 @@ def get_latest_visit_for_patient(patient_id: str) -> dict:
 def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse:
     """Register patient by hospital staff (visit workflow starts on New Visit creation)."""
     try:
+        phone_norm = normalize_india_mobile_storage(str(payload.phone_number or "").strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
         # Reuse patient only when both name and phone map to same deterministic id.
-        internal_patient_id = PatientId.generate(payload.name, payload.phone_number)
+        internal_patient_id = PatientId.generate(payload.name, phone_norm)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     visit_id = VisitId.validate(VisitId.generate())
@@ -551,7 +536,7 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
             "$set": {
                 "patient_id": internal_patient_id,
                 "name": payload.name,
-                "phone_number": payload.phone_number.strip(),
+                "phone_number": phone_norm,
                 "age": payload.age,
                 "gender": payload.gender,
                 "preferred_language": payload.preferred_language,
@@ -613,13 +598,12 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
             }
         )
     whatsapp_triggered = False
-    phone_number = str(payload.phone_number or "").strip()
-    if scheduled_start and phone_number and not is_walk_in:
+    if scheduled_start and phone_norm and not is_walk_in:
         try:
             IntakeChatService().start_intake(
                 patient_id=internal_patient_id,
                 visit_id=visit_id,
-                to_number=phone_number,
+                to_number=phone_norm,
                 language=str(payload.preferred_language or "en"),
             )
             whatsapp_triggered = True

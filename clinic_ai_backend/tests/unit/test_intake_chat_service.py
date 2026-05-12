@@ -394,7 +394,7 @@ def test_start_intake_falls_back_to_text_when_template_fails() -> None:
 
     assert service.whatsapp.sent
     assert service.whatsapp.sent[0][0] == "text"
-    assert service.whatsapp.sent[0][1] == "9876543210"
+    assert service.whatsapp.sent[0][1] == "919876543210"
 
 
 def test_first_substantive_reply_after_template_is_used_as_illness() -> None:

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import ValidationError
 
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
@@ -29,6 +30,83 @@ _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _WEEKLY_DAY_KEYS = frozenset(
     {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 )
+
+
+def _user_lookup_filter(user_doc: dict) -> dict:
+    """Match the user row for Mongo updates — tolerate legacy docs missing `id` if `email` is present."""
+    uid = str(user_doc.get("id") or "").strip()
+    if uid:
+        return {"id": uid}
+    email = str(user_doc.get("email") or "").strip()
+    if email:
+        return {"email": email}
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="User record is missing both id and email; cannot update this profile.",
+    )
+
+
+def _scalar_str_opt(value: object) -> str | None:
+    """Coerce Mongo / Compass values into optional plain strings for API models."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return None
+    text = value.strip() if isinstance(value, str) else str(value).strip()
+    return text or None
+
+
+def _opd_time_str_opt(value: object) -> str | None:
+    """Normalize OPD clock fields to HH:MM or None (avoids UserResponse validation 500 on odd BSON types)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%H:%M")
+    text = str(value).strip()
+    return text if _HHMM_RE.match(text) else None
+
+
+def _bounded_optional_str(value: object, max_len: int) -> str | None:
+    s = _scalar_str_opt(value)
+    if s is None:
+        return None
+    return s if len(s) <= max_len else s[:max_len]
+
+
+def _bounded_required_str(value: object, max_len: int, *, default: str = "") -> str:
+    s = _scalar_str_opt(value)
+    if not s:
+        return default
+    return s if len(s) <= max_len else s[:max_len]
+
+
+def _soften_opd_weekly_row(item: dict) -> dict:
+    """Coerce Mongo/Compass drift so OpdWeeklyDay.model_validate rarely fails."""
+    day_raw = item.get("day")
+    day = str(day_raw or "").strip().lower()
+    cleaned: dict[str, object] = {"day": day}
+    for bool_key in ("closed", "evening_enabled"):
+        raw = item.get(bool_key)
+        if isinstance(raw, bool):
+            cleaned[bool_key] = raw
+        elif isinstance(raw, (int, float)):
+            cleaned[bool_key] = bool(int(raw))
+        elif isinstance(raw, str):
+            cleaned[bool_key] = raw.strip().lower() in ("true", "1", "yes", "y")
+        else:
+            cleaned[bool_key] = False
+    for str_key in ("morning_start", "morning_end", "evening_start", "evening_end"):
+        raw = item.get(str_key)
+        if raw is None:
+            cleaned[str_key] = None
+        elif isinstance(raw, datetime):
+            cleaned[str_key] = raw.strftime("%H:%M")
+        elif isinstance(raw, (dict, list, bytes)):
+            cleaned[str_key] = None
+        else:
+            s = str(raw).strip()
+            cleaned[str_key] = s or None
+    return cleaned
 
 
 def _next_doctor_id(db) -> str:
@@ -57,11 +135,12 @@ def _ensure_doctor_id(db, user_doc: dict) -> dict:
     if DOCTOR_ID_RE.match(existing):
         return user_doc
     doctor_id = _next_doctor_id(db)
+    flt = _user_lookup_filter(user_doc)
     db.users.update_one(
-        {"id": user_doc["id"]},
+        flt,
         {"$set": {"doctor_id": doctor_id, "updated_at": datetime.now(timezone.utc)}},
     )
-    refreshed = db.users.find_one({"id": user_doc["id"]})
+    refreshed = db.users.find_one(flt)
     return refreshed or user_doc
 
 
@@ -177,9 +256,10 @@ def _weekly_from_doc(doc: dict) -> list[OpdWeeklyDay] | None:
     for item in raw:
         if not isinstance(item, dict):
             return None
+        soft = _soften_opd_weekly_row(item)
         try:
-            out.append(OpdWeeklyDay.model_validate(item))
-        except Exception:
+            out.append(OpdWeeklyDay.model_validate(soft))
+        except ValidationError:
             return None
     if {r.day for r in out} != _WEEKLY_DAY_KEYS:
         return None
@@ -189,27 +269,39 @@ def _weekly_from_doc(doc: dict) -> list[OpdWeeklyDay] | None:
 def _as_user_response(user_doc: dict) -> UserResponse:
     doc = _normalize_user_doc_for_api(user_doc)
     weekly = _weekly_from_doc(doc)
-    return UserResponse(
-        id=str(doc["id"]),
-        doctor_id=str(doc.get("doctor_id") or "") or None,
-        email=str(doc.get("email") or ""),
-        username=str(doc.get("username") or ""),
-        full_name=str(doc.get("full_name") or ""),
-        phone=doc.get("phone"),
-        role=str(doc.get("role") or "doctor"),
-        job_title=doc.get("job_title"),
-        medical_license_number=doc.get("medical_license_number"),
-        avatar_url=doc.get("avatar_url"),
-        is_active=bool(doc.get("is_active", True)),
-        is_verified=bool(doc.get("is_verified", True)),
-        tenant_id=doc.get("tenant_id"),
-        opd_morning_start=doc.get("opd_morning_start"),
-        opd_morning_end=doc.get("opd_morning_end"),
-        opd_evening_enabled=bool(doc.get("opd_evening_enabled", False)),
-        opd_evening_start=doc.get("opd_evening_start"),
-        opd_evening_end=doc.get("opd_evening_end"),
-        opd_weekly_schedule=weekly,
-    )
+    payload: dict = {
+        "id": _bounded_required_str(doc.get("id"), 80),
+        "doctor_id": _bounded_optional_str(doc.get("doctor_id"), 24),
+        "email": _bounded_required_str(doc.get("email"), 254),
+        "username": _bounded_required_str(doc.get("username"), 64),
+        "full_name": _bounded_required_str(doc.get("full_name"), 120),
+        "phone": _bounded_optional_str(doc.get("phone"), 30),
+        "role": _bounded_required_str(doc.get("role"), 40, default="doctor"),
+        "job_title": _bounded_optional_str(doc.get("job_title"), 160),
+        "medical_license_number": _bounded_optional_str(doc.get("medical_license_number"), 80),
+        "avatar_url": _bounded_optional_str(doc.get("avatar_url"), 2048),
+        "is_active": bool(doc.get("is_active", True)),
+        "is_verified": bool(doc.get("is_verified", True)),
+        "tenant_id": _bounded_optional_str(doc.get("tenant_id"), 120),
+        "opd_morning_start": _opd_time_str_opt(doc.get("opd_morning_start")),
+        "opd_morning_end": _opd_time_str_opt(doc.get("opd_morning_end")),
+        "opd_evening_enabled": bool(doc.get("opd_evening_enabled", False)),
+        "opd_evening_start": _opd_time_str_opt(doc.get("opd_evening_start")),
+        "opd_evening_end": _opd_time_str_opt(doc.get("opd_evening_end")),
+        "opd_weekly_schedule": weekly,
+    }
+    try:
+        return UserResponse.model_validate(payload)
+    except ValidationError:
+        payload["opd_weekly_schedule"] = None
+        try:
+            return UserResponse.model_validate(payload)
+        except ValidationError:
+            payload["avatar_url"] = None
+            payload["job_title"] = None
+            payload["medical_license_number"] = None
+            payload["phone"] = None
+            return UserResponse.model_validate(payload)
 
 
 def _build_auth_response(user_doc: dict) -> AuthResponse:
@@ -369,8 +461,9 @@ def update_my_profile(
 
     db = get_database()
     updates["updated_at"] = datetime.now(timezone.utc)
-    db.users.update_one({"id": current_user["id"]}, {"$set": updates})
-    refreshed = db.users.find_one({"id": current_user["id"]})
+    user_filter = _user_lookup_filter(current_user)
+    db.users.update_one(user_filter, {"$set": updates})
+    refreshed = db.users.find_one(user_filter)
     if not refreshed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _as_user_response(refreshed)

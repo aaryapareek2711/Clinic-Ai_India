@@ -157,6 +157,7 @@ class InMemoryDatabase:
         self.follow_up_reminders = InMemoryCollection()
         self.follow_through_lab_records = InMemoryCollection()
         self.visit_transcription_sessions = InMemoryCollection()
+        self.users = InMemoryCollection()
 
 
 @pytest.fixture
@@ -176,6 +177,7 @@ def force_azure_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> InMemoryDatabase:
     monkeypatch.setattr("src.adapters.db.mongo.client.get_database", lambda: fake_db)
+    monkeypatch.setattr("src.api.routers.auth.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.workflow.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.transcription.get_database", lambda: fake_db)
     monkeypatch.setattr("src.api.routers.followthrough.get_database", lambda: fake_db)
