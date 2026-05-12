@@ -575,6 +575,7 @@ function CalendarPage() {
                   const dt = new Date(a.scheduled_start)
                   const mon = Number.isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { month: 'short' })
                   const day = Number.isNaN(dt.getTime()) ? '—' : String(dt.getDate())
+                  const patientDisplay = toDisplayName(a.patient_name)
                   const goToVisit = () =>
                     navigate(`/visits/detail?visitId=${encodeURIComponent(a.visit_id)}&tab=pre-visit`)
                   return (
@@ -597,13 +598,20 @@ function CalendarPage() {
                           <span className="text-lg leading-none">{day}</span>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold">{toDisplayName(a.patient_name)}</p>
-                          <p className="truncate text-sm text-[#3e4a3d]">
+                          <p className="truncate text-sm font-semibold text-[#171d16]">
                             {formatShortTime(a.scheduled_start) || '—'} · {(a.appointment_type || 'Visit').trim() || 'Visit'}
                           </p>
+                          {(a.status || '').trim() && (
+                            <p className="mt-0.5 truncate text-xs capitalize text-[#7a828f]">
+                              {(a.status || '').replace(/_/g, ' ')}
+                            </p>
+                          )}
                         </div>
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
-                          {(a.status || '').replace(/_/g, ' ') || 'Scheduled'}
+                        <span
+                          className="max-w-[10rem] shrink-0 truncate rounded-full bg-green-100 px-3 py-1.5 text-center text-xs font-semibold normal-case tracking-normal text-green-800"
+                          title={patientDisplay}
+                        >
+                          {patientDisplay}
                         </span>
                         {canEditAppointment(a.scheduled_start) && (
                           <button
