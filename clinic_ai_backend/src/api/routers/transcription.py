@@ -207,6 +207,10 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
 
     session.pop("_id", None)
     transcription_status = str(session.get("transcription_status") or "pending").lower()
+    # Worker bundle uses success/partial_success; visit embed uses completed after mark_completed.
+    # Normalize so polling UIs keep transcript when status is terminal.
+    if transcription_status in ("success", "partial_success"):
+        transcription_status = "completed"
     now = datetime.now(timezone.utc)
 
     started_at = session.get("started_at")
