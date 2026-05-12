@@ -158,6 +158,8 @@ export async function fetchProviderVisitsPaged(
     pageSize: number
     statusFilter?: string
     search?: string
+    rangeStartIso?: string
+    rangeEndExclusiveIso?: string
     sort?:
       | 'patient_newest'
       | 'patient_oldest'
@@ -179,6 +181,8 @@ export async function fetchProviderVisitsPaged(
         status_filter: opts.statusFilter || undefined,
         search: opts.search || undefined,
         sort: opts.sort || 'patient_newest',
+        range_start: opts.rangeStartIso || undefined,
+        range_end: opts.rangeEndExclusiveIso || undefined,
       },
     },
   )

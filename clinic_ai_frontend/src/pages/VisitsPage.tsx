@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import BackButton from '../components/BackButton'
 import { getApiErrorMessage } from '../lib/apiClient'
+import { computeVisitDateRange, ymdFromLocalDate, type VisitDatePresetId } from '../lib/visitDateRangePresets'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   DEFAULT_PROVIDER_ID,
@@ -11,6 +12,7 @@ import {
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import VisitKanbanBoard from './visit/VisitKanbanBoard'
+import VisitDateRangeFilter from './visit/VisitDateRangeFilter'
 import type { VisitKanbanCardModel } from './visit/visit-kanban-utils'
 import { KANBAN_STAGES, type VisitKanbanSortKey, type VisitKanbanSortScope } from './visit/visit-kanban-utils'
 
@@ -28,8 +30,15 @@ function VisitsPage() {
   const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
   const [sortScope, setSortScope] = useState<VisitKanbanSortScope>('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const [datePreset, setDatePreset] = useState<VisitDatePresetId>('today')
+  const [customFromYmd, setCustomFromYmd] = useState(() => ymdFromLocalDate(new Date()))
+  const [customToYmd, setCustomToYmd] = useState(() => ymdFromLocalDate(new Date()))
   const lastFocusRefetchAtRef = useRef(0)
   const search = useMemo(() => searchQuery.trim() || undefined, [searchQuery])
+  const { rangeStartIso, rangeEndExclusiveIso } = useMemo(
+    () => computeVisitDateRange(datePreset, new Date(), customFromYmd, customToYmd),
+    [datePreset, customFromYmd, customToYmd],
+  )
   /** When sorting one column only, keep a fixed server order so changing sort does not reorder every bucket via the API response. */
   const serverSort = useMemo(
     (): VisitKanbanSortKey => (sortScope === 'all' ? sortBy : 'patient_newest'),
@@ -41,7 +50,7 @@ function VisitsPage() {
       'provider',
       DEFAULT_PROVIDER_ID,
       'paged',
-      { page: currentPage, pageSize: PAGE_SIZE, search, sort: serverSort },
+      { page: currentPage, pageSize: PAGE_SIZE, search, sort: serverSort, rangeStartIso, rangeEndExclusiveIso },
     ],
     queryFn: () =>
       fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
@@ -49,6 +58,8 @@ function VisitsPage() {
         pageSize: PAGE_SIZE,
         search,
         sort: serverSort,
+        rangeStartIso,
+        rangeEndExclusiveIso,
       }),
     placeholderData: keepPreviousData,
     refetchInterval: AUTO_REFRESH_MS,
@@ -85,7 +96,7 @@ function VisitsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, serverSort, sortScope])
+  }, [searchQuery, serverSort, sortScope, rangeStartIso, rangeEndExclusiveIso])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -150,7 +161,17 @@ function VisitsPage() {
             </div>
           )}
 
-          <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 mb-8">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <VisitDateRangeFilter
+              customFromYmd={customFromYmd}
+              customToYmd={customToYmd}
+              onChange={(next) => {
+                setDatePreset(next.preset)
+                if (next.customFromYmd !== undefined) setCustomFromYmd(next.customFromYmd)
+                if (next.customToYmd !== undefined) setCustomToYmd(next.customToYmd)
+              }}
+              preset={datePreset}
+            />
             <button
               className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
               onClick={() => navigate('/start-visit')}
