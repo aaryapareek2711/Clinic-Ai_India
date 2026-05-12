@@ -58,6 +58,14 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
+function hasRenderablePatientName(value: string | null | undefined): boolean {
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized === 'unknown patient') return false
+  if (normalized === 'patient') return false
+  return true
+}
+
 function localDateInputMin(d = new Date()): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -209,11 +217,15 @@ function CalendarPage() {
     const end = weekDays[6]
     return `${weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
   }, [weekDays, weekStart])
+  const visibleAppointments = useMemo(
+    () => appointments.filter((item) => hasRenderablePatientName(item.patient_name)),
+    [appointments],
+  )
 
   const totalCells = Math.ceil((blanks + daysInMonth) / 7) * 7
 
   const sidebarItems = useMemo(() => {
-    const base = [...appointments]
+    const base = [...visibleAppointments]
     if (viewMode === 'day') {
       const y = focusDate.getFullYear()
       const m = focusDate.getMonth()
@@ -243,7 +255,7 @@ function CalendarPage() {
       })
       .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
       .slice(0, 12)
-  }, [appointments, focusDate, viewMode])
+  }, [focusDate, viewMode, visibleAppointments])
 
   function prevMonth(): void {
     if (viewMode === 'month') {
@@ -390,7 +402,7 @@ function CalendarPage() {
                 {Array.from({ length: totalCells }).map((_, i) => {
                   const dayNum = i - blanks + 1
                   const isBlank = dayNum < 1 || dayNum > daysInMonth
-                  const dayAppts = isBlank ? [] : appointmentsOnDay(appointments, year, month, dayNum)
+                  const dayAppts = isBlank ? [] : appointmentsOnDay(visibleAppointments, year, month, dayNum)
                   const dayKey = isBlank ? '' : `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
                   const isSelectedDay = !isBlank && selectedDayKey === dayKey && selectedVisitId === null
 
@@ -476,7 +488,7 @@ function CalendarPage() {
             {viewMode === 'week' && (
               <div className="grid grid-cols-7 auto-rows-[minmax(10rem,auto)]">
                 {weekDays.map((d) => {
-                  const dayAppts = appointmentsOnDay(appointments, d.getFullYear(), d.getMonth(), d.getDate())
+                  const dayAppts = appointmentsOnDay(visibleAppointments, d.getFullYear(), d.getMonth(), d.getDate())
                   const isToday =
                     new Date().getFullYear() === d.getFullYear() && new Date().getMonth() === d.getMonth() && new Date().getDate() === d.getDate()
                   return (
@@ -512,10 +524,10 @@ function CalendarPage() {
 
             {viewMode === 'day' && (
               <div className="divide-y divide-gray-100">
-                {appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).length === 0 ? (
+                {appointmentsOnDay(visibleAppointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).length === 0 ? (
                   <p className="px-6 py-10 text-sm text-[#575e70]">No appointments for this day.</p>
                 ) : (
-                  appointmentsOnDay(appointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).map((a) => (
+                  appointmentsOnDay(visibleAppointments, focusDate.getFullYear(), focusDate.getMonth(), focusDate.getDate()).map((a) => (
                     <div
                       key={a.visit_id}
                       className="flex cursor-pointer items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[#eff6ea]"
@@ -567,7 +579,7 @@ function CalendarPage() {
               <div className="divide-y divide-gray-50">
                 {!loading && sidebarItems.length === 0 && (
                   <div className="p-6 text-sm text-[#575e70]">
-                    {appointments.length === 0 ? (
+                    {visibleAppointments.length === 0 ? (
                       <p>No visits scheduled for {monthTitle}.</p>
                     ) : (
                       <p>

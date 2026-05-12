@@ -56,6 +56,14 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
+function hasRenderablePatientName(value: string | null | undefined): boolean {
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized === 'unknown patient') return false
+  if (normalized === 'patient') return false
+  return true
+}
+
 function isNotVisitedYet(status: string | undefined): boolean {
   const s = normalizeVisitStatus(status)
   if (!s) return true
@@ -143,6 +151,14 @@ function DashboardSlotsPage() {
 
   const appointments: ProviderUpcomingAppointment[] = upcomingQuery.data ?? []
   const visits: ProviderVisitListItem[] = visitsQuery.data ?? []
+  const visibleAppointments = useMemo(
+    () => appointments.filter((item) => hasRenderablePatientName(item.patient_name)),
+    [appointments],
+  )
+  const visibleVisits = useMemo(
+    () => visits.filter((item) => hasRenderablePatientName(item.patient_name)),
+    [visits],
+  )
   const loading = (upcomingQuery.isFetching && !upcomingQuery.data) || (visitsQuery.isFetching && !visitsQuery.data)
   const error = useMemo(() => {
     const errs: string[] = []
@@ -170,14 +186,14 @@ function DashboardSlotsPage() {
 
   const mergedUpcoming = useMemo(() => {
     const visitById = new Map<string, ProviderVisitListItem>()
-    for (const v of visits) {
+    for (const v of visibleVisits) {
       const id = String(v.visit_id || v.id || '').trim()
       if (id) visitById.set(id, v)
     }
 
     const merged = new Map<string, ProviderUpcomingAppointment>()
 
-    for (const a of appointments) {
+    for (const a of visibleAppointments) {
       const vid = String(a.visit_id || '').trim()
       if (!vid || !a.scheduled_start) continue
       const visit = visitById.get(vid)
@@ -186,7 +202,7 @@ function DashboardSlotsPage() {
       merged.set(vid, { ...a, status: effectiveStatus, mobile_number: visit?.mobile_number ?? a.mobile_number })
     }
 
-    for (const v of visits) {
+    for (const v of visibleVisits) {
       const sched = v.scheduled_start
       if (!sched) continue
       const vid = String(v.visit_id || v.id || '').trim()
@@ -196,7 +212,7 @@ function DashboardSlotsPage() {
     }
 
     return [...merged.values()].sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
-  }, [appointments, visits])
+  }, [visibleAppointments, visibleVisits])
 
   const selectedDaySlots = useMemo(() => {
     const now = new Date()
@@ -223,7 +239,7 @@ function DashboardSlotsPage() {
     }
     if (view === 'visits') {
       const targetDayRef = dayReference(day)
-      return visits
+      return visibleVisits
         .filter((visit) => isSameCalendarDay(visit.scheduled_start, targetDayRef))
         .map((visit) => visitToUpcomingRow(visit))
         .sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
@@ -231,7 +247,7 @@ function DashboardSlotsPage() {
 
     const targetDayRef = dayReference(day)
     const firstPerPatient = new Map<string, ProviderUpcomingAppointment>()
-    for (const visit of visits) {
+    for (const visit of visibleVisits) {
       const pid = (visit.patient_id || '').trim()
       if (!pid) continue
       const registeredAt = visit.patient_created_at
@@ -249,7 +265,7 @@ function DashboardSlotsPage() {
       }
     }
     return [...firstPerPatient.values()].sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
-  }, [day, selectedDaySlots, view, visits])
+  }, [day, selectedDaySlots, view, visibleVisits])
 
   return (
     <div className="min-h-screen bg-white text-[#171d16] font-manrope">

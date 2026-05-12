@@ -55,6 +55,14 @@ function toDisplayName(value: string | null | undefined): string {
     .join(' ')
 }
 
+function hasRenderablePatientName(value: string | null | undefined): boolean {
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized === 'unknown patient') return false
+  if (normalized === 'patient') return false
+  return true
+}
+
 /** Not finished and not actively in consultation (still “waiting to be seen”). */
 function isNotVisitedYet(status: string | undefined): boolean {
   const s = normalizeVisitStatus(status)
@@ -117,6 +125,14 @@ function ProviderDashboardPage() {
 
   const appointments: ProviderUpcomingAppointment[] = upcomingQuery.data ?? []
   const visits: ProviderVisitListItem[] = visitsQuery.data ?? []
+  const visibleAppointments = useMemo(
+    () => appointments.filter((item) => hasRenderablePatientName(item.patient_name)),
+    [appointments],
+  )
+  const visibleVisits = useMemo(
+    () => visits.filter((item) => hasRenderablePatientName(item.patient_name)),
+    [visits],
+  )
   const loading = (upcomingQuery.isFetching && !upcomingQuery.data) || (visitsQuery.isFetching && !visitsQuery.data)
   const error = useMemo(() => {
     const errs: string[] = []
@@ -144,14 +160,14 @@ function ProviderDashboardPage() {
 
   const mergedUpcoming = useMemo(() => {
     const visitById = new Map<string, ProviderVisitListItem>()
-    for (const v of visits) {
+    for (const v of visibleVisits) {
       const id = String(v.visit_id || v.id || '').trim()
       if (id) visitById.set(id, v)
     }
 
     const merged = new Map<string, ProviderUpcomingAppointment>()
 
-    for (const a of appointments) {
+    for (const a of visibleAppointments) {
       const vid = String(a.visit_id || '').trim()
       if (!vid || !a.scheduled_start) continue
       const visit = visitById.get(vid)
@@ -160,7 +176,7 @@ function ProviderDashboardPage() {
       merged.set(vid, { ...a, status: effectiveStatus })
     }
 
-    for (const v of visits) {
+    for (const v of visibleVisits) {
       const sched = v.scheduled_start
       if (!sched) continue
       const vid = String(v.visit_id || v.id || '').trim()
@@ -170,17 +186,17 @@ function ProviderDashboardPage() {
     }
 
     return [...merged.values()].sort((x, y) => timeValue(x.scheduled_start) - timeValue(y.scheduled_start))
-  }, [appointments, visits])
+  }, [visibleAppointments, visibleVisits])
 
   const dayLabel = upcomingDayFilter === 'today' ? 'Today' : 'Tomorrow'
 
   const selectedDayAllVisits = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
-      return visits.filter((v) => isSameCalendarDay(v.scheduled_start, now))
+      return visibleVisits.filter((v) => isSameCalendarDay(v.scheduled_start, now))
     }
-    return visits.filter((v) => isTomorrowSlot(v.scheduled_start || '', now))
-  }, [upcomingDayFilter, visits])
+    return visibleVisits.filter((v) => isTomorrowSlot(v.scheduled_start || '', now))
+  }, [upcomingDayFilter, visibleVisits])
 
   const selectedDayUpcomingSlots = useMemo(() => {
     const now = new Date()
@@ -198,7 +214,7 @@ function ProviderDashboardPage() {
   const stats = useMemo(() => {
     const targetDayRef = dayReference(upcomingDayFilter)
     const patientsForDaySet = new Set<string>()
-    for (const visit of visits) {
+    for (const visit of visibleVisits) {
       const pid = (visit.patient_id || '').trim()
       if (!pid) continue
       const isNewlyRegistered = isSameCalendarDay(visit?.patient_created_at, targetDayRef)
@@ -215,13 +231,13 @@ function ProviderDashboardPage() {
       pending,
       visitsForDayCount: selectedDayAllVisits.length,
     }
-  }, [selectedDayUpcomingSlots, upcomingDayFilter, visits, selectedDayAllVisits.length])
+  }, [selectedDayUpcomingSlots, upcomingDayFilter, visibleVisits, selectedDayAllVisits.length])
 
   const upcomingList = useMemo(() => {
     const now = new Date()
     if (upcomingDayFilter === 'today') {
       const nowMs = now.getTime()
-      return visits
+      return visibleVisits
         .filter((v) => {
           if (!isSameCalendarDay(v.scheduled_start, now)) return false
           return timeValue(v.scheduled_start) >= nowMs
@@ -229,11 +245,11 @@ function ProviderDashboardPage() {
         .map((v) => visitToUpcomingRow(v))
         .sort((a, b) => timeValue(a.scheduled_start) - timeValue(b.scheduled_start))
     }
-    return visits
+    return visibleVisits
       .filter((v) => isTomorrowSlot(v.scheduled_start || '', now))
       .map((v) => visitToUpcomingRow(v))
       .sort((a, b) => timeValue(a.scheduled_start) - timeValue(b.scheduled_start))
-  }, [upcomingDayFilter, visits])
+  }, [upcomingDayFilter, visibleVisits])
 
   const visibleUpcoming = useMemo(
     () => upcomingList.slice(0, upcomingVisibleCount),
