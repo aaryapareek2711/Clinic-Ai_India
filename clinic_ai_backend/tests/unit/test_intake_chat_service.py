@@ -117,6 +117,14 @@ def test_should_not_reask_final_question_if_already_present() -> None:
     assert service._should_ask_final_question(session) is False
 
 
+class _FakeVisitsCollection:
+    def update_one(self, *_args, **_kwargs):  # noqa: ANN001
+        return type("UpdateResult", (), {"modified_count": 1})()
+
+    def find_one(self, *_args, **_kwargs):  # noqa: ANN001
+        return {}
+
+
 class _FakeCollection:
     def __init__(self) -> None:
         self.last_update = None
@@ -253,10 +261,83 @@ def test_generate_next_turn_exception_uses_global_fallback_metadata() -> None:
     assert service.whatsapp.sent
 
 
+def test_start_intake_supersedes_active_session_when_destination_number_changes() -> None:
+    """Wrong clinic phone on file: correcting patient number must allow opening message to new WhatsApp destination."""
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "sess-1",
+        "patient_id": "patient-1",
+        "visit_id": "visit-1",
+        "to_number": "919111111111",
+        "status": "awaiting_conversation_start",
+    }
+    fake_db.patients = _FakeCollection()
+    fake_db.patients.record = {"patient_id": "patient-1", "name": "Pat"}
+    fake_db.visits = _FakeVisitsCollection()
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    settings = get_settings()
+    previous_template = settings.whatsapp_intake_template_name
+    previous_param_count = settings.whatsapp_intake_template_param_count
+    settings.whatsapp_intake_template_name = "opening_msg"
+    settings.whatsapp_intake_template_param_count = 1
+    try:
+        service.start_intake(
+            patient_id="patient-1",
+            visit_id="visit-1",
+            to_number="+91 98765 43210",
+            language="en",
+        )
+    finally:
+        settings.whatsapp_intake_template_name = previous_template
+        settings.whatsapp_intake_template_param_count = previous_param_count
+
+    assert service.whatsapp.sent
+    first = service.whatsapp.sent[0]
+    assert first[0] == "template"
+    assert first[1] == "919876543210"
+    assert fake_db.intake_sessions.record.get("to_number") == "919876543210"
+
+
+def test_start_intake_skips_when_active_session_same_destination() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {
+        "_id": "sess-1",
+        "patient_id": "patient-1",
+        "visit_id": "visit-1",
+        "to_number": "919876543210",
+        "status": "in_progress",
+    }
+    fake_db.patients = _FakeCollection()
+    fake_db.patients.record = {"patient_id": "patient-1", "name": "Pat"}
+    fake_db.visits = _FakeVisitsCollection()
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.start_intake(
+        patient_id="patient-1",
+        visit_id="visit-1",
+        to_number="+91 98765 43210",
+        language="en",
+    )
+
+    assert not service.whatsapp.sent
+
+
 def test_start_intake_prefers_template_when_configured() -> None:
     service = IntakeChatService.__new__(IntakeChatService)
     fake_db = type("FakeDB", (), {})()
     fake_db.intake_sessions = _FakeCollection()
+    fake_db.patients = _FakeCollection()
+    fake_db.patients.record = {"patient_id": "patient-1", "name": "Pat"}
+    fake_db.visits = _FakeVisitsCollection()
     service.db = fake_db
     service.whatsapp = _FakeWhatsApp()
     service.openai = OpenAIQuestionClient()
@@ -288,6 +369,9 @@ def test_start_intake_falls_back_to_text_when_template_fails() -> None:
     service = IntakeChatService.__new__(IntakeChatService)
     fake_db = type("FakeDB", (), {})()
     fake_db.intake_sessions = _FakeCollection()
+    fake_db.patients = _FakeCollection()
+    fake_db.patients.record = {"patient_id": "patient-1", "name": "Pat"}
+    fake_db.visits = _FakeVisitsCollection()
     service.db = fake_db
     service.whatsapp = _FakeWhatsApp(fail_template=True)
     service.openai = OpenAIQuestionClient()

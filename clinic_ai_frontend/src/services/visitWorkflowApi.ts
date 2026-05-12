@@ -601,6 +601,13 @@ export async function structureVisitDialogue(
   return Array.isArray(data.dialogue) ? data.dialogue : []
 }
 
+/** DELETE /api/notes/{patient_id}/visits/{visit_id}/dialogue — removes stored Doctor/Patient dialogue only */
+export async function deleteVisitStructuredDialogue(patientId: string, visitId: string): Promise<void> {
+  await apiClient.delete(
+    `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue`,
+  )
+}
+
 /** GET /api/notes/{patient_id}/visits/{visit_id}/dialogue — 202 while queued/processing */
 export async function fetchVisitTranscriptionDialogue(
   patientId: string,

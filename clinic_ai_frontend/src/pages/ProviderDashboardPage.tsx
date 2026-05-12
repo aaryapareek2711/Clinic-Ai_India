@@ -381,9 +381,9 @@ function ProviderDashboardPage() {
           <div className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
             <div className="border-b border-gray-100 p-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[24px] font-bold leading-tight">Upcoming Schedule</h2>
+                <h2 className="text-3xl font-bold leading-tight">Upcoming Schedule</h2>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs font-bold text-green-700">
                 {upcomingList.length} {upcomingDayFilter} · total slots
               </p>
             </div>

@@ -162,3 +162,16 @@ class VisitTranscriptionRepository:
             now=now,
         )
         return True
+
+    def clear_structured_dialogue(self, *, patient_id: str, visit_id: str) -> bool:
+        """Remove stored Doctor/Patient turns; raw transcript and transcription status are unchanged."""
+        now = _utc_now()
+        session = self.get_session(patient_id=patient_id, visit_id=visit_id)
+        if not session:
+            return False
+        self._sync_visit_transcription_projection(
+            visit_id=visit_id,
+            payload={"structured_dialogue": None, "updated_at": now},
+            now=now,
+        )
+        return True

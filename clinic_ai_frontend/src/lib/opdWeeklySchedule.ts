@@ -60,6 +60,51 @@ export function validTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
 }
 
+/** Half-open intervals [start, end) in minutes overlap with positive width. */
+export function intervalsOverlapMinutesHalfOpen(start1: number, end1: number, start2: number, end2: number): boolean {
+  return start1 < end2 && start2 < end1
+}
+
+/**
+ * Valid Shift 2 start times on `allSlots` such that some later slot can be Shift 2 end without overlapping Shift 1
+ * [morningStart, morningEnd). Uses the same half-open model as `getSlotWindowsForDate`.
+ */
+export function filterNonOverlappingEveningStarts(
+  allSlots: readonly string[],
+  morningStartHHmm: string,
+  morningEndHHmm: string,
+): string[] {
+  const ms = minutesFromHHmm(morningStartHHmm)
+  const me = minutesFromHHmm(morningEndHHmm)
+  if (me <= ms) return [...allSlots]
+  return allSlots.filter((esStr) => {
+    const es = minutesFromHHmm(esStr)
+    return allSlots.some((eeStr) => {
+      const ee = minutesFromHHmm(eeStr)
+      if (ee <= es) return false
+      return !intervalsOverlapMinutesHalfOpen(ms, me, es, ee)
+    })
+  })
+}
+
+/** Valid Shift 2 end times for a chosen evening start, non-overlapping Shift 1. */
+export function filterNonOverlappingEveningEnds(
+  allSlots: readonly string[],
+  morningStartHHmm: string,
+  morningEndHHmm: string,
+  eveningStartHHmm: string,
+): string[] {
+  const ms = minutesFromHHmm(morningStartHHmm)
+  const me = minutesFromHHmm(morningEndHHmm)
+  const es = minutesFromHHmm(eveningStartHHmm)
+  if (me <= ms) return allSlots.filter((eeStr) => minutesFromHHmm(eeStr) > es)
+  return allSlots.filter((eeStr) => {
+    const ee = minutesFromHHmm(eeStr)
+    if (ee <= es) return false
+    return !intervalsOverlapMinutesHalfOpen(ms, me, es, ee)
+  })
+}
+
 /**
  * Row from saved weekly schedule, or synthesized from signup globals (`DoctorScheduleSettings` opd fields).
  */

@@ -127,15 +127,39 @@ class IntakeChatService:
             sort=[("updated_at", -1)],
         ) or {}
         existing_status = str(existing_session.get("status") or "")
-        # Idempotency: do not reset an active intake or resend greeting.
-        if existing_session and existing_status in {"awaiting_conversation_start", "awaiting_illness", "in_progress"}:
+        existing_to = self._normalize_phone_number(str(existing_session.get("to_number") or ""))
+        # Idempotency: do not reset an active intake or resend greeting to the same destination.
+        if existing_session and existing_status in ACTIVE_SESSION_STATUSES:
+            if existing_to == normalized_to_number:
+                logger.info(
+                    "intake_start_skipped_existing_active_session visit_id=%s patient_id=%s status=%s",
+                    visit_id,
+                    patient_id,
+                    existing_status,
+                )
+                return
+            # Staff corrected patient phone: supersede session bound to wrong/old number, then resend opening to new number.
+            sid = existing_session.get("_id")
+            if sid is not None:
+                self.db.intake_sessions.update_one(
+                    {"_id": sid},
+                    {
+                        "$set": {
+                            "status": "superseded",
+                            "pending_question": None,
+                            "pending_topic": None,
+                            "superseded_reason": "patient_phone_changed",
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
             logger.info(
-                "intake_start_skipped_existing_active_session visit_id=%s patient_id=%s status=%s",
+                "intake_start_replacing_session_for_new_number visit_id=%s patient_id=%s old_to=%s new_to=%s",
                 visit_id,
                 patient_id,
-                existing_status,
+                self._mask_phone_number(existing_to),
+                self._mask_phone_number(normalized_to_number),
             )
-            return
         opening_message = self._opening_message(language)
         patient_name = ""
         patients_collection = getattr(self.db, "patients", None)

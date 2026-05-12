@@ -101,6 +101,41 @@ function validTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
 }
 
+function minutesFromHHmmLocal(v: string): number {
+  const [h, m] = v.split(':').map((n) => Number(n))
+  if (Number.isNaN(h) || Number.isNaN(m)) return 0
+  return h * 60 + m
+}
+
+/** Half-open [s1, e1) vs [s2, e2) overlap (same rule as booking windows). */
+function intervalsOverlapHalfOpenMinutes(s1: number, e1: number, s2: number, e2: number): boolean {
+  return s1 < e2 && s2 < e1
+}
+
+/** Drop Shift 2 when it overlaps Shift 1 or times are invalid (keeps Settings / booking consistent). */
+function sanitizeWeeklyScheduleRow(row: OpdDayScheduleRow): OpdDayScheduleRow {
+  if (row.closed || !row.eveningEnabled) return row
+  if (!validTime(row.morningStart) || !validTime(row.morningEnd) || !validTime(row.eveningStart) || !validTime(row.eveningEnd)) {
+    return { ...row, eveningEnabled: false }
+  }
+  const ms = minutesFromHHmmLocal(row.morningStart)
+  const me = minutesFromHHmmLocal(row.morningEnd)
+  const es = minutesFromHHmmLocal(row.eveningStart)
+  const ee = minutesFromHHmmLocal(row.eveningEnd)
+  if (me <= ms || ee <= es) {
+    return { ...row, eveningEnabled: false }
+  }
+  if (intervalsOverlapHalfOpenMinutes(ms, me, es, ee)) {
+    return { ...row, eveningEnabled: false }
+  }
+  return row
+}
+
+function sanitizeWeeklySchedule(rows: OpdDayScheduleRow[] | null): OpdDayScheduleRow[] | null {
+  if (!rows || rows.length !== 7) return rows
+  return rows.map(sanitizeWeeklyScheduleRow)
+}
+
 export function getDoctorScheduleSettings(): DoctorScheduleSettings {
   try {
     const raw = localStorage.getItem(KEY)
@@ -144,15 +179,22 @@ export function getDoctorScheduleSettings(): DoctorScheduleSettings {
           : DEFAULT_DOCTOR_SCHEDULE.defaultSlotMinutes,
       weeklySchedule,
     }
-    return candidate
+    return {
+      ...candidate,
+      weeklySchedule: sanitizeWeeklySchedule(candidate.weeklySchedule),
+    }
   } catch {
     return DEFAULT_DOCTOR_SCHEDULE
   }
 }
 
 export function saveDoctorScheduleSettings(next: DoctorScheduleSettings): void {
+  const cleaned: DoctorScheduleSettings = {
+    ...next,
+    weeklySchedule: sanitizeWeeklySchedule(next.weeklySchedule),
+  }
   try {
-    localStorage.setItem(KEY, JSON.stringify(next))
+    localStorage.setItem(KEY, JSON.stringify(cleaned))
   } catch {
     /* ignore */
   }

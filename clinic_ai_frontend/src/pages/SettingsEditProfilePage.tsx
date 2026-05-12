@@ -9,7 +9,16 @@ import {
   type OpdDayKey,
   type OpdDayScheduleRow,
 } from '../lib/doctorScheduleSettings'
-import { clockPartsFrom24h, effectiveDayRow, pad2, to24h } from '../lib/opdWeeklySchedule'
+import {
+  clockPartsFrom24h,
+  effectiveDayRow,
+  filterNonOverlappingEveningEnds,
+  filterNonOverlappingEveningStarts,
+  intervalsOverlapMinutesHalfOpen,
+  minutesFromHHmm,
+  pad2,
+  to24h,
+} from '../lib/opdWeeklySchedule'
 import { useNavigate } from 'react-router-dom'
 import { getStoredAuthProfile } from '../lib/authSession'
 import BackButton from '../components/BackButton'
@@ -64,8 +73,41 @@ type WeeklyDayUi = {
   eveningEnd: ClockParts
 }
 
-const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const
-const MINUTES_OPTS = Array.from({ length: 60 }, (_, i) => pad2(i))
+/** 15-minute grid for single time dropdowns (matches typical slot granularity). */
+const TIME_SLOT_STEP_MIN = 15
+const TIME_SLOT_HHMM: string[] = (() => {
+  const out: string[] = []
+  for (let m = 0; m < 24 * 60; m += TIME_SLOT_STEP_MIN) {
+    const h = Math.floor(m / 60)
+    const mm = m % 60
+    out.push(`${pad2(h)}:${pad2(mm)}`)
+  }
+  return out
+})()
+
+function nearestTimeSlot(hhmm: string): string {
+  if (TIME_SLOT_HHMM.includes(hhmm)) return hhmm
+  const target = minutesFromHHmm(hhmm)
+  let best = TIME_SLOT_HHMM[0]!
+  let bestDiff = Infinity
+  for (const s of TIME_SLOT_HHMM) {
+    const d = Math.abs(minutesFromHHmm(s) - target)
+    if (d < bestDiff) {
+      bestDiff = d
+      best = s
+    }
+  }
+  return best
+}
+
+function formatTime12Label(hhmm: string): string {
+  const { h12, mm, mer } = clockPartsFrom24h(hhmm)
+  return `${h12}:${mm} ${mer}`
+}
+
+function snapClockParts(cp: ClockParts): ClockParts {
+  return clockPartsFrom24h(nearestTimeSlot(to24h(cp.h12, cp.mm, cp.mer)))
+}
 
 const DAY_OPTIONS = [
   { key: 'monday', label: 'Monday' },
@@ -83,13 +125,86 @@ function scheduleToWeeklyUi(schedule: DoctorScheduleSettings): WeeklyDayUi[] {
     return {
       key: dayKey,
       closed: eff.closed,
-      morningStart: clockPartsFrom24h(eff.morningStart),
-      morningEnd: clockPartsFrom24h(eff.morningEnd),
+      morningStart: snapClockParts(clockPartsFrom24h(eff.morningStart)),
+      morningEnd: snapClockParts(clockPartsFrom24h(eff.morningEnd)),
       eveningEnabled: eff.eveningEnabled,
-      eveningStart: clockPartsFrom24h(eff.eveningStart),
-      eveningEnd: clockPartsFrom24h(eff.eveningEnd),
+      eveningStart: snapClockParts(clockPartsFrom24h(eff.eveningStart)),
+      eveningEnd: snapClockParts(clockPartsFrom24h(eff.eveningEnd)),
     }
-  })
+  }).map(clampDayEvening)
+}
+
+/** Keep Shift 2 inside slots that do not overlap Shift 1 (half-open intervals, same model as booking windows). */
+function clampDayEvening(row: WeeklyDayUi): WeeklyDayUi {
+  if (row.closed || !row.eveningEnabled) return row
+  const mS = to24h(row.morningStart.h12, row.morningStart.mm, row.morningStart.mer)
+  const mE = to24h(row.morningEnd.h12, row.morningEnd.mm, row.morningEnd.mer)
+  if (minutesFromHHmm(mE) <= minutesFromHHmm(mS)) return row
+
+  const starts = filterNonOverlappingEveningStarts(TIME_SLOT_HHMM, mS, mE)
+  if (starts.length === 0) {
+    return { ...row, eveningEnabled: false }
+  }
+  let esRaw = nearestTimeSlot(to24h(row.eveningStart.h12, row.eveningStart.mm, row.eveningStart.mer))
+  if (!starts.includes(esRaw)) esRaw = starts[0]!
+  const ends = filterNonOverlappingEveningEnds(TIME_SLOT_HHMM, mS, mE, esRaw)
+  if (ends.length === 0) {
+    return { ...row, eveningEnabled: false }
+  }
+  let eeRaw = nearestTimeSlot(to24h(row.eveningEnd.h12, row.eveningEnd.mm, row.eveningEnd.mer))
+  if (!ends.includes(eeRaw)) eeRaw = ends[ends.length - 1]!
+
+  return {
+    ...row,
+    eveningStart: snapClockParts(clockPartsFrom24h(esRaw)),
+    eveningEnd: snapClockParts(clockPartsFrom24h(eeRaw)),
+  }
+}
+
+function defaultFirstEveningPair(morningStartHHmm: string, morningEndHHmm: string): { start: string; end: string } | null {
+  const starts = filterNonOverlappingEveningStarts(TIME_SLOT_HHMM, morningStartHHmm, morningEndHHmm)
+  const first = starts[0]
+  if (!first) return null
+  const ends = filterNonOverlappingEveningEnds(TIME_SLOT_HHMM, morningStartHHmm, morningEndHHmm, first)
+  const last = ends[ends.length - 1]
+  if (!last) return null
+  return { start: first, end: last }
+}
+
+/** Human-readable issues that block save (Shift 1 order, Shift 2 order, overlap, or out-of-allowed grid). */
+function collectWeeklyAvailabilityErrors(rows: WeeklyDayUi[]): string[] {
+  const out: string[] = []
+  for (const r of rows) {
+    if (r.closed) continue
+    const dayLabel = DAY_OPTIONS.find((d) => d.key === r.key)?.label ?? r.key
+    const mS = to24h(r.morningStart.h12, r.morningStart.mm, r.morningStart.mer)
+    const mE = to24h(r.morningEnd.h12, r.morningEnd.mm, r.morningEnd.mer)
+    if (minutesFromHHmm(mE) <= minutesFromHHmm(mS)) {
+      out.push(`${dayLabel}: Shift 1 end must be after Shift 1 start.`)
+      continue
+    }
+    if (!r.eveningEnabled) continue
+    const es = nearestTimeSlot(to24h(r.eveningStart.h12, r.eveningStart.mm, r.eveningStart.mer))
+    const ee = nearestTimeSlot(to24h(r.eveningEnd.h12, r.eveningEnd.mm, r.eveningEnd.mer))
+    const msN = minutesFromHHmm(mS)
+    const meN = minutesFromHHmm(mE)
+    const esN = minutesFromHHmm(es)
+    const eeN = minutesFromHHmm(ee)
+    if (eeN <= esN) {
+      out.push(`${dayLabel}: Shift 2 end must be after Shift 2 start.`)
+      continue
+    }
+    if (intervalsOverlapMinutesHalfOpen(msN, meN, esN, eeN)) {
+      out.push(`${dayLabel}: Shift 2 overlaps Shift 1 — adjust times or turn off Shift 2.`)
+      continue
+    }
+    const allowedStarts = filterNonOverlappingEveningStarts(TIME_SLOT_HHMM, mS, mE)
+    const allowedEnds = filterNonOverlappingEveningEnds(TIME_SLOT_HHMM, mS, mE, es)
+    if (!allowedStarts.includes(es) || !allowedEnds.includes(ee)) {
+      out.push(`${dayLabel}: Shift 2 must lie completely outside Shift 1.`)
+    }
+  }
+  return out
 }
 
 function weeklyUiToPayload(rows: WeeklyDayUi[]): OpdWeeklyDayPayload[] {
@@ -149,61 +264,43 @@ function globalsFromWeeklyUi(rows: WeeklyDayUi[]): {
   }
 }
 
-function TimeTripleSelect({
+function TimeSingleSelect({
   disabled,
-  idPrefix,
+  id,
+  ariaLabel,
   onChange,
+  slotOptions,
   value,
 }: {
   disabled?: boolean
-  idPrefix: string
+  id: string
+  ariaLabel: string
   onChange: (next: ClockParts) => void
+  /** When set, only these HH:mm slots are selectable (e.g. Shift 2 outside Shift 1). */
+  slotOptions?: readonly string[]
   value: ClockParts
 }) {
   const sel =
-    'rounded-md border border-gray-200 bg-white px-1.5 py-1.5 text-sm text-[#171d16] disabled:cursor-not-allowed disabled:opacity-60'
+    'min-w-[9rem] flex-1 rounded-md border border-gray-200 bg-white px-2 py-2 text-sm text-[#171d16] disabled:cursor-not-allowed disabled:opacity-60'
+  const options = slotOptions ?? TIME_SLOT_HHMM
+  const hhmm = to24h(value.h12, value.mm, value.mer)
+  const selectedKey = nearestTimeSlot(hhmm)
+  const safeKey = options.includes(selectedKey) ? selectedKey : (options[0] ?? selectedKey)
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <select
-        aria-label={`${idPrefix} hour`}
-        className={sel}
-        disabled={disabled}
-        id={`${idPrefix}-h`}
-        onChange={(ev) => onChange({ ...value, h12: Number(ev.target.value) })}
-        value={value.h12}
-      >
-        {HOURS_12.map((h) => (
-          <option key={h} value={h}>
-            {String(h).padStart(2, '0')}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${idPrefix} minute`}
-        className={sel}
-        disabled={disabled}
-        id={`${idPrefix}-m`}
-        onChange={(ev) => onChange({ ...value, mm: ev.target.value })}
-        value={value.mm}
-      >
-        {MINUTES_OPTS.map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${idPrefix} AM or PM`}
-        className={`${sel} min-w-[68px]`}
-        disabled={disabled}
-        id={`${idPrefix}-p`}
-        onChange={(ev) => onChange({ ...value, mer: ev.target.value as 'AM' | 'PM' })}
-        value={value.mer}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
-      </select>
-    </div>
+    <select
+      aria-label={ariaLabel}
+      className={sel}
+      disabled={disabled || options.length === 0}
+      id={id}
+      onChange={(ev) => onChange(clockPartsFrom24h(ev.target.value))}
+      value={safeKey}
+    >
+      {options.map((slot) => (
+        <option key={slot} value={slot}>
+          {formatTime12Label(slot)}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -314,9 +411,16 @@ function SettingsEditProfilePage() {
     [fullName, jobTitle, phone, license, avatarUrl],
   )
 
+  const availabilityErrors = useMemo(() => collectWeeklyAvailabilityErrors(weeklyUi), [weeklyUi])
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBanner(null)
+    const scheduleProblems = collectWeeklyAvailabilityErrors(weeklyUi)
+    if (scheduleProblems.length > 0) {
+      setBanner({ type: 'err', text: scheduleProblems.join(' ') })
+      return
+    }
     const payloadSchedule = weeklyUiToPayload(weeklyUi)
     const scheduleSnap = JSON.stringify(payloadSchedule)
     const stored = getDoctorScheduleSettings()
@@ -578,11 +682,36 @@ function SettingsEditProfilePage() {
                     </p>
                   </div>
 
+                  {availabilityErrors.length > 0 ? (
+                    <div
+                      className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-medium text-red-800"
+                      role="alert"
+                    >
+                      <p className="font-semibold text-red-900">Fix availability before saving:</p>
+                      <ul className="mt-1 list-inside list-disc space-y-0.5">
+                        {availabilityErrors.map((msg, i) => (
+                          <li key={`${i}-${msg.slice(0, 40)}`}>{msg}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-3">
                     {DAY_OPTIONS.map((d) => {
                       const row = weeklyUi.find((x) => x.key === d.key)
                       if (!row) return null
                       const dk = d.key as OpdDayKey
+                      const mS = to24h(row.morningStart.h12, row.morningStart.mm, row.morningStart.mer)
+                      const mE = to24h(row.morningEnd.h12, row.morningEnd.mm, row.morningEnd.mer)
+                      const eveningStartSlots =
+                        row.closed || !row.eveningEnabled
+                          ? undefined
+                          : filterNonOverlappingEveningStarts(TIME_SLOT_HHMM, mS, mE)
+                      const esKey = nearestTimeSlot(to24h(row.eveningStart.h12, row.eveningStart.mm, row.eveningStart.mer))
+                      const eveningEndSlots =
+                        row.closed || !row.eveningEnabled
+                          ? undefined
+                          : filterNonOverlappingEveningEnds(TIME_SLOT_HHMM, mS, mE, esKey)
                       return (
                         <div key={d.key} className="rounded-lg border border-gray-200 bg-white p-4">
                           <div className="flex flex-col gap-3 border-b border-gray-100 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -613,22 +742,28 @@ function SettingsEditProfilePage() {
                             </label>
                           </div>
 
-                          <p className="mt-3 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Morning shift</p>
+                          <p className="mt-3 mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Shift 1</p>
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                            <TimeTripleSelect
+                            <TimeSingleSelect
+                              ariaLabel={`${d.label} Shift 1 start`}
                               disabled={row.closed}
-                              idPrefix={`${d.key}-morning-start`}
+                              id={`${d.key}-shift1-start`}
                               onChange={(next) =>
-                                setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningStart: next } : x)))
+                                setWeeklyUi((prev) =>
+                                  prev.map((x) => (x.key === dk ? clampDayEvening({ ...x, morningStart: next }) : x)),
+                                )
                               }
                               value={row.morningStart}
                             />
                             <span className="text-sm text-gray-500">to</span>
-                            <TimeTripleSelect
+                            <TimeSingleSelect
+                              ariaLabel={`${d.label} Shift 1 end`}
                               disabled={row.closed}
-                              idPrefix={`${d.key}-morning-end`}
+                              id={`${d.key}-shift1-end`}
                               onChange={(next) =>
-                                setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, morningEnd: next } : x)))
+                                setWeeklyUi((prev) =>
+                                  prev.map((x) => (x.key === dk ? clampDayEvening({ ...x, morningEnd: next }) : x)),
+                                )
                               }
                               value={row.morningEnd}
                             />
@@ -639,35 +774,76 @@ function SettingsEditProfilePage() {
                               checked={row.eveningEnabled}
                               className="h-4 w-4 rounded border-gray-300 text-[#16a34a]"
                               disabled={row.closed}
-                              onChange={(ev) =>
-                                setWeeklyUi((prev) =>
-                                  prev.map((x) => (x.key === dk ? { ...x, eveningEnabled: ev.target.checked } : x)),
-                                )
-                              }
+                              onChange={(ev) => {
+                                const checked = ev.target.checked
+                                if (!checked) {
+                                  setBanner(null)
+                                  setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningEnabled: false } : x)))
+                                  return
+                                }
+                                setWeeklyUi((prev) => {
+                                  const current = prev.find((x) => x.key === dk)
+                                  if (!current || current.closed) return prev
+                                  const ms = to24h(current.morningStart.h12, current.morningStart.mm, current.morningStart.mer)
+                                  const mend = to24h(current.morningEnd.h12, current.morningEnd.mm, current.morningEnd.mer)
+                                  const pair = defaultFirstEveningPair(ms, mend)
+                                  if (!pair) {
+                                    queueMicrotask(() =>
+                                      setBanner({
+                                        type: 'err',
+                                        text: `${d.label}: No Shift 2 window fits outside Shift 1. Shorten or reposition Shift 1 first.`,
+                                      }),
+                                    )
+                                    return prev
+                                  }
+                                  queueMicrotask(() => setBanner(null))
+                                  return prev.map((x) =>
+                                    x.key === dk
+                                      ? clampDayEvening({
+                                          ...x,
+                                          eveningEnabled: true,
+                                          eveningStart: snapClockParts(clockPartsFrom24h(pair.start)),
+                                          eveningEnd: snapClockParts(clockPartsFrom24h(pair.end)),
+                                        })
+                                      : x,
+                                  )
+                                })
+                              }}
                               type="checkbox"
                             />
                             <span className={`text-sm font-medium ${row.closed ? 'text-gray-400' : 'text-[#171d16]'}`}>
-                              Evening shift available
+                              Shift 2 available
                             </span>
                           </label>
 
                           {row.eveningEnabled && !row.closed ? (
                             <div className="mt-3">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Evening shift</p>
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Shift 2</p>
+                              <p className="mb-2 text-[11px] font-medium leading-snug text-red-600">
+                                Only times outside Shift 1 are available (no overlap; Shift 1 end and Shift 2 start may be the same time).
+                              </p>
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <TimeTripleSelect
-                                  idPrefix={`${d.key}-evening-start`}
+                                <TimeSingleSelect
+                                  ariaLabel={`${d.label} Shift 2 start`}
+                                  id={`${d.key}-shift2-start`}
                                   onChange={(next) =>
-                                    setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningStart: next } : x)))
+                                    setWeeklyUi((prev) =>
+                                      prev.map((x) => (x.key === dk ? clampDayEvening({ ...x, eveningStart: next }) : x)),
+                                    )
                                   }
+                                  slotOptions={eveningStartSlots}
                                   value={row.eveningStart}
                                 />
                                 <span className="text-sm text-gray-500">to</span>
-                                <TimeTripleSelect
-                                  idPrefix={`${d.key}-evening-end`}
+                                <TimeSingleSelect
+                                  ariaLabel={`${d.label} Shift 2 end`}
+                                  id={`${d.key}-shift2-end`}
                                   onChange={(next) =>
-                                    setWeeklyUi((prev) => prev.map((x) => (x.key === dk ? { ...x, eveningEnd: next } : x)))
+                                    setWeeklyUi((prev) =>
+                                      prev.map((x) => (x.key === dk ? clampDayEvening({ ...x, eveningEnd: next }) : x)),
+                                    )
                                   }
+                                  slotOptions={eveningEndSlots}
                                   value={row.eveningEnd}
                                 />
                               </div>
@@ -682,7 +858,7 @@ function SettingsEditProfilePage() {
                 <div className="mt-8 flex justify-end border-t border-gray-100 pt-6">
                   <button
                     className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-8 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
-                    disabled={saving || loading}
+                    disabled={saving || loading || availabilityErrors.length > 0}
                     type="submit"
                   >
                     <span className="material-symbols-outlined text-lg">save</span>
