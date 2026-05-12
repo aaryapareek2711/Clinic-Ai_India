@@ -219,6 +219,10 @@ function SettingsEditProfilePage() {
       license: '',
       avatarUrl: '',
     })
+    const schedule = getDoctorScheduleSettings()
+    const w = scheduleToWeeklyUi(schedule)
+    setWeeklyUi(w)
+    initialWeeklyJsonRef.current = JSON.stringify(weeklyUiToPayload(w))
   }, [])
 
   const loadProfile = useCallback(async () => {
@@ -237,13 +241,18 @@ function SettingsEditProfilePage() {
       setPhone(readPhone(me))
       setLicense(me.medical_license_number ?? '')
       setAvatarUrl(me.avatar_url ?? '')
-      setInitialProfile({
-        fullName: me.full_name ?? '',
-        jobTitle: me.job_title ?? '',
-        phone: readPhone(me),
-        license: me.medical_license_number ?? '',
-        avatarUrl: me.avatar_url ?? '',
-      })
+      syncDoctorScheduleFromServer(me)
+      const applied = getDoctorScheduleSettings()
+      setOpdStart(applied.opdStart)
+      setOpdEnd(applied.opdEnd)
+      setAddEveningShift(applied.addEveningShift)
+      setEveningStart(applied.eveningStart)
+      setEveningEnd(applied.eveningEnd)
+      setDefaultSlotMinutes(applied.defaultSlotMinutes)
+      const schedule = getDoctorScheduleSettings()
+      const w = scheduleToWeeklyUi(schedule)
+      setWeeklyUi(w)
+      initialWeeklyJsonRef.current = JSON.stringify(weeklyUiToPayload(w))
     } catch {
       applyStoredFallbackProfile()
     } finally {
@@ -271,12 +280,12 @@ function SettingsEditProfilePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBanner(null)
+    const payloadSchedule = weeklyUiToPayload(weeklyUi)
+    const scheduleSnap = JSON.stringify(payloadSchedule)
+    const stored = getDoctorScheduleSettings()
     saveDoctorScheduleSettings({
-      opdStart,
-      opdEnd,
-      addEveningShift,
-      eveningStart,
-      eveningEnd,
+      ...stored,
+      weeklySchedule: weeklyUiToStoredRows(weeklyUi),
       defaultSlotMinutes,
     }
     saveDoctorScheduleSettings(schedulePayload)
@@ -291,7 +300,12 @@ function SettingsEditProfilePage() {
     }
     const scheduleChanged = initialWeeklyJsonRef.current !== scheduleSnap
     if (!hasAuthToken()) {
-      setBanner({ type: 'ok', text: 'OPD settings saved locally. Sign in to save profile fields to server.' })
+      setBanner({
+        type: 'ok',
+        text: 'Saved on this device. Sign in to sync your profile and OPD hours to the server.',
+      })
+      initialWeeklyJsonRef.current = scheduleSnap
+      setBanner({ type: 'ok', text: 'Availability saved on this device. Sign in to sync your profile and server.' })
       return
     }
     const profileChanged =
@@ -301,8 +315,8 @@ function SettingsEditProfilePage() {
       phone.trim() !== initialProfile.phone.trim() ||
       license.trim() !== initialProfile.license.trim() ||
       avatarUrl.trim() !== initialProfile.avatarUrl.trim()
-    if (!profileChanged) {
-      setBanner({ type: 'ok', text: 'OPD settings saved.' })
+    if (!profileChanged && !scheduleChanged) {
+      setBanner({ type: 'ok', text: 'No changes to save.' })
       return
     }
     setSaving(true)
@@ -316,11 +330,25 @@ function SettingsEditProfilePage() {
         opd_weekly_schedule?: OpdWeeklyDayPayload[]
       } = {
         full_name: fullName.trim(),
+        phone: phone.trim() || undefined,
+        job_title: jobTitle.trim() || undefined,
+        medical_license_number: license.trim() || undefined,
+        avatar_url: avatarUrl.trim() || undefined,
+        opd_morning_start: opdStart,
+        opd_morning_end: opdEnd,
+        opd_evening_enabled: addEveningShift,
+        opd_evening_start: addEveningShift ? eveningStart : null,
+        opd_evening_end: addEveningShift ? eveningEnd : null,
+      })
         phone: phone.trim(),
         job_title: jobTitle.trim(),
         medical_license_number: license.trim(),
         avatar_url: avatarUrl.trim(),
-      })
+      }
+      if (scheduleChanged) {
+        patch.opd_weekly_schedule = payloadSchedule
+      }
+      const updated = await patchMyProfile(patch)
       setFullName(updated.full_name ?? '')
       setJobTitle(updated.job_title ?? '')
       setEmailDisplay(updated.email ?? '')
@@ -334,6 +362,7 @@ function SettingsEditProfilePage() {
         license: updated.medical_license_number ?? '',
         avatarUrl: updated.avatar_url ?? '',
       })
+      initialWeeklyJsonRef.current = scheduleSnap
       if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
       setPreviewBlobUrl(null)
       setBanner({ type: 'ok', text: 'Profile and availability saved.' })
@@ -341,7 +370,8 @@ function SettingsEditProfilePage() {
     } catch (err) {
       setBanner({
         type: 'err',
-        text: `OPD settings saved. Profile fields could not be updated right now (${getApiErrorMessage(err)}).`,
+        text: `Local OPD settings were saved, but the server update failed (${getApiErrorMessage(err)}).`,
+        text: `Availability is saved on this device. Profile could not be updated (${getApiErrorMessage(err)}).`,
       })
     } finally {
       setSaving(false)
