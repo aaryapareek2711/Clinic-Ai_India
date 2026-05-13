@@ -89,7 +89,7 @@ class VisitTranscriptionRepository:
         patient_id: str,
         visit_id: str,
         transcript: str,
-        structured_dialogue: list[dict[str, str]],
+        structured_dialogue: list[dict[str, str]] | None = None,
         word_count: int,
         audio_duration_seconds: float | None,
         metadata: dict[str, Any] | None = None,
@@ -100,6 +100,7 @@ class VisitTranscriptionRepository:
             payload={
                 "transcription_status": "completed",
                 "transcript": transcript,
+                # None clears any prior visit dialogue when a new transcript completes (re-upload).
                 "structured_dialogue": structured_dialogue,
                 "word_count": word_count,
                 "audio_duration_seconds": audio_duration_seconds,

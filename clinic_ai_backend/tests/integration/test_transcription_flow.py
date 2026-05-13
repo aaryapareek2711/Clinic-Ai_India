@@ -474,7 +474,8 @@ def test_worker_marks_visit_session_completed(
     session = visit_doc.get("transcription_session") or {}
     assert session.get("transcription_status") == "completed"
     assert "namaste" in (session.get("transcript") or "")
-    assert session.get("structured_dialogue")
+    # Visit-level speaker dialogue is OpenAI-only (POST /dialogue/structure); worker does not persist it.
+    assert not session.get("structured_dialogue")
 
 
 def test_worker_preserves_unknown_dialogue_when_single_segment_has_no_diarization(
@@ -483,7 +484,7 @@ def test_worker_preserves_unknown_dialogue_when_single_segment_has_no_diarizatio
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """One unknown segment: do not invent Doctor/Patient roles (see infer_alternating_two_speaker_dialogue)."""
+    """One unknown segment: job result keeps Unknown label; visit has no structured_dialogue until manual structure."""
     _insert_previsit(fake_db, "p10", "v10")
     audio_path = tmp_path / "a10.wav"
     audio_path.write_bytes(b"x")
@@ -562,9 +563,7 @@ def test_worker_preserves_unknown_dialogue_when_single_segment_has_no_diarizatio
     visit_doc = fake_db.visits.find_one({"visit_id": "v10"})
     assert visit_doc is not None
     session = visit_doc.get("transcription_session") or {}
-    sd = session.get("structured_dialogue") or []
-    assert len(sd) == 1
-    assert "Unknown" in sd[0]
+    assert not session.get("structured_dialogue")
 
     result = fake_db.transcription_results.find_one({"job_id": "j10"})
     assert result is not None

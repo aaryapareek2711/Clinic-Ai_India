@@ -255,7 +255,6 @@ class TranscriptionWorker:
                 job,
                 full_text=full_text,
                 normalized=segments_to_store,
-                structured_dialogue=structured,
                 metadata={
                     "transcription_status": transcription_status,
                     "language_requested": language_requested or "auto",
@@ -390,7 +389,6 @@ class TranscriptionWorker:
         *,
         full_text: str,
         normalized: list[dict[str, Any]],
-        structured_dialogue: list[dict[str, str]],
         metadata: dict[str, Any] | None = None,
     ) -> None:
         visit_id = self._visit_id(job)
@@ -398,11 +396,14 @@ class TranscriptionWorker:
             return
         duration = audio_duration_from_segments_ms(normalized)
         word_count = len(full_text.split()) if full_text else 0
+        # Do not persist worker-built dialogue on the visit. It is segment-heuristic and often
+        # reads as long mixed paragraphs vs OpenAI structuring (POST /dialogue/structure).
+        # Segment-level dialogue remains in transcription_results + visit metadata["segments"].
         VisitTranscriptionRepository().mark_completed(
             patient_id=str(job["patient_id"]),
             visit_id=visit_id,
             transcript=full_text,
-            structured_dialogue=structured_dialogue,
+            structured_dialogue=None,
             word_count=word_count,
             audio_duration_seconds=duration,
             metadata=metadata or {},

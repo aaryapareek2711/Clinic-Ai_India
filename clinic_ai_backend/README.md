@@ -114,7 +114,9 @@ Transcription uses Azure **short-audio** REST with raw POST body bytes. **ffmpeg
 
 ### Speaker dialogue (manual structure endpoint)
 
-Async transcription does not require OpenAI. **Structured Doctor/Patient/(Family)** dialogue uses **`POST /api/notes/.../dialogue/structure`** and **`OPENAI_API_KEY`**.
+When transcription **completes**, the visit stores the **raw transcript** only; **`transcription_session.structured_dialogue`** stays empty until a clinician runs **`POST /api/notes/{patient_id}/visits/{visit_id}/dialogue/structure`** (OpenAI, requires **`OPENAI_API_KEY`**). That avoids overwriting good LLM turns with segment-heuristic dialogue on first upload or **re-upload**.
+
+Segment-level STT output (including speaker labels when Azure returns them) remains on the **`transcription_results`** document and in visit **`metadata["segments"]`** for auditing.
 
 ---
 
