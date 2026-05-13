@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
@@ -26,6 +26,8 @@ from src.application.use_cases.send_post_visit_summary_whatsapp_to_patient impor
     send_latest_post_visit_summary_whatsapp_to_patient,
 )
 from src.adapters.db.mongo.client import get_database
+from src.api.deps import get_current_user
+from src.api.tenant_scope import ensure_patient_owned_by_doctor, normalize_doctor_id
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Notes"])
@@ -66,6 +68,11 @@ def _encode_note_patient_id(doc: dict[str, Any]) -> dict[str, Any]:
     if raw:
         out["patient_id"] = encode_patient_id(raw)
     return out
+
+
+def _ensure_clinician_patient_access(*, internal_patient_id: str, current_user: dict) -> None:
+    db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_patient_id)
 
 
 def _sync_note_into_visit(*, note_type: str, doc: dict[str, Any]) -> None:
@@ -191,9 +198,13 @@ def get_clinical_note_template(body: ClinicalNoteTemplateRequest) -> dict[str, A
 
 
 @router.post("/clinical-note", response_model=NoteGenerateResponse)
-def generate_clinical_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
+def generate_clinical_note(
+    request: NoteGenerateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> NoteGenerateResponse:
     """Generate clinical note (default note type)."""
     request.patient_id = resolve_internal_patient_id(request.patient_id, allow_raw_fallback=True)
+    _ensure_clinician_patient_access(internal_patient_id=request.patient_id, current_user=current_user)
     default_type = get_settings().default_note_type
     note_type: NoteType = request.note_type or default_type
     return _generate_by_type(note_type=note_type, request=request)
@@ -229,10 +240,14 @@ def generate_soap_note(request: NoteGenerateRequest) -> NoteGenerateResponse:
 
 
 @router.post("/post-visit-summary", response_model=NoteGenerateResponse)
-def generate_post_visit_summary(request: NoteGenerateRequest) -> NoteGenerateResponse:
+def generate_post_visit_summary(
+    request: NoteGenerateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> NoteGenerateResponse:
     """Generate patient-facing post-visit summary explicitly."""
     try:
         internal_patient_id = resolve_internal_patient_id(request.patient_id, allow_raw_fallback=True)
+        _ensure_clinician_patient_access(internal_patient_id=internal_patient_id, current_user=current_user)
         doc = GeneratePostVisitSummaryUseCase().execute(
             patient_id=internal_patient_id,
             visit_id=request.visit_id,
@@ -257,10 +272,12 @@ def get_latest_clinical_note(
         default=None,
         description="When set, fetch latest note of this type (e.g. soap). Otherwise uses server default_note_type.",
     ),
+    current_user: dict = Depends(get_current_user),
 ) -> NoteGenerateResponse:
     """Fetch latest clinical note for a patient visit."""
     resolved_type: NoteType = note_type or get_settings().default_note_type
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    _ensure_clinician_patient_access(internal_patient_id=internal_patient_id, current_user=current_user)
     note = ClinicalNoteRepository().find_latest(
         patient_id=internal_patient_id,
         visit_id=visit_id,
@@ -279,11 +296,14 @@ def get_latest_clinical_note(
 )
 def send_post_visit_summary_whatsapp_route(
     body: PostVisitWhatsAppSendRequest,
+    current_user: dict = Depends(get_current_user),
 ) -> PostVisitWhatsAppSendResponse:
     """Send latest saved post-visit summary template plus immediate Meta follow-up template."""
     try:
+        internal_pid = resolve_internal_patient_id(body.patient_id, allow_raw_fallback=True)
+        _ensure_clinician_patient_access(internal_patient_id=internal_pid, current_user=current_user)
         result = send_latest_post_visit_summary_whatsapp_to_patient(
-            patient_id=resolve_internal_patient_id(body.patient_id, allow_raw_fallback=True),
+            patient_id=internal_pid,
             visit_id=body.visit_id,
             phone_number_override=body.phone_number,
             preferred_language=body.preferred_language,
@@ -306,9 +326,11 @@ def send_post_visit_summary_whatsapp_route(
 def get_latest_post_visit_summary(
     patient_id: str = Query(min_length=1),
     visit_id: str = Query(min_length=1),
+    current_user: dict = Depends(get_current_user),
 ) -> NoteGenerateResponse:
     """Fetch latest post-visit summary note for a patient visit."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    _ensure_clinician_patient_access(internal_patient_id=internal_patient_id, current_user=current_user)
     note = ClinicalNoteRepository().find_latest(
         patient_id=internal_patient_id,
         visit_id=visit_id,

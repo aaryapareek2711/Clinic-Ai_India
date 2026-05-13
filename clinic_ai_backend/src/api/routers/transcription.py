@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import unquote
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from src.adapters.db.mongo.client import get_database
@@ -24,6 +24,8 @@ from src.api.schemas.audio import (
 from src.api.schemas.transcription_session import TranscriptionSessionResponse
 from src.application.services.dialogue_pii import scrub_dialogue_turns
 from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
+from src.api.deps import get_current_user
+from src.api.tenant_scope import ensure_patient_owned_by_doctor, normalize_doctor_id
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.core.config import get_settings
 
@@ -66,10 +68,12 @@ async def upload_transcription_audio(
     audio_file: UploadFile = File(...),
     language_mix: str = Form(default="auto"),
     speaker_mode: SpeakerMode = Form(default="two_speakers"),
+    current_user: dict = Depends(get_current_user),
 ) -> TranscriptionUploadAcceptedResponse:
     """Upload audio, create job and enqueue async processing (visit session when visit_id is set)."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_patient_id)
     visit_doc = db.visits.find_one({"visit_id": visit_id}, {"visit_type": 1})
     is_walk_in = _is_walk_in_visit_type((visit_doc or {}).get("visit_type"))
     if not is_walk_in:
@@ -198,10 +202,16 @@ async def upload_transcription_audio(
 
 
 @router.get("/transcribe/status/{patient_id}/{visit_id}")
-def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
+def get_visit_transcription_status(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Poll visit-scoped transcription status (transcript-bundle compatible fields)."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
+    db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_pid)
     repo = VisitTranscriptionRepository()
     session = repo.get_session(patient_id=internal_pid, visit_id=internal_vid)
     if not session:
@@ -272,10 +282,16 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
 
 
 @router.get("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
-async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Response | TranscriptionSessionResponse:
+async def get_visit_transcription_dialogue(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> Response | TranscriptionSessionResponse:
     """Return transcript + optional structured dialogue; 202 with Retry-After while processing."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
+    db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_pid)
     repo = VisitTranscriptionRepository()
     session = repo.get_session(patient_id=internal_pid, visit_id=internal_vid)
     transcription_status = (
@@ -328,10 +344,13 @@ async def structure_visit_dialogue(
     patient_id: str,
     visit_id: str,
     body: StructureDialogueRequest | None = Body(default=None),
+    current_user: dict = Depends(get_current_user),
 ) -> JSONResponse:
     """Structure stored transcript into Doctor/Patient JSON and scrub PII; persists on the visit session."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
+    db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_pid)
     vrepo = VisitTranscriptionRepository()
     session = vrepo.get_session(patient_id=internal_pid, visit_id=internal_vid)
     if not session or not (session.get("transcript") or "").strip():
@@ -360,10 +379,16 @@ async def structure_visit_dialogue(
 
 
 @router.delete("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
-async def delete_visit_structured_dialogue(patient_id: str, visit_id: str) -> JSONResponse:
+async def delete_visit_structured_dialogue(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> JSONResponse:
     """Remove stored structured (Doctor/Patient) dialogue for this visit; transcript remains."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
+    db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_pid)
     vrepo = VisitTranscriptionRepository()
     if not vrepo.clear_structured_dialogue(patient_id=internal_pid, visit_id=internal_vid):
         raise HTTPException(

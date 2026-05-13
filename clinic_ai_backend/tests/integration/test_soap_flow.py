@@ -18,6 +18,7 @@ def _insert_note_context(fake_db, patient_id: str, job_id: str = "job-n1", visit
             "gender": "male",
             "preferred_language": "en",
             "phone_number": "+919876543210",
+            "doctor_id": "DOC001",
         }
     )
     fake_db.pre_visit_summaries.insert_one(
@@ -84,7 +85,7 @@ def test_default_generate_prefers_india_note(app_client, fake_db, monkeypatch: p
         },
     )
     response = app_client.post(
-        "/notes/generate",
+        "/api/notes/clinical-note",
         json={"patient_id": "p-note-1", "visit_id": "v1", "transcription_job_id": "job-note-1"},
     )
     assert response.status_code == 200
@@ -97,8 +98,13 @@ def test_default_generate_prefers_india_note(app_client, fake_db, monkeypatch: p
 def test_soap_endpoint_remains_operational(app_client, fake_db) -> None:
     _insert_note_context(fake_db, patient_id="p-note-2", job_id="job-note-2")
     response = app_client.post(
-        "/notes/soap",
-        json={"patient_id": "p-note-2", "visit_id": "v1", "transcription_job_id": "job-note-2"},
+        "/api/notes/clinical-note",
+        json={
+            "patient_id": "p-note-2",
+            "visit_id": "v1",
+            "transcription_job_id": "job-note-2",
+            "note_type": "soap",
+        },
     )
     assert response.status_code == 200
     payload = response.json()
@@ -151,7 +157,7 @@ def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monke
         },
     )
     response = app_client.post(
-        "/notes/post-visit-summary",
+        "/api/notes/post-visit-summary",
         json={"patient_id": "p-note-3", "visit_id": "v1", "transcription_job_id": "job-note-3"},
     )
     assert response.status_code == 200
@@ -166,10 +172,6 @@ def test_post_visit_summary_includes_whatsapp_payload(app_client, fake_db, monke
 
 
 def test_post_visit_summary_follow_up_date_overrides_next_visit(app_client, fake_db, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "src.application.use_cases.generate_post_visit_summary.schedule_follow_up_after_post_visit",
-        lambda **_: None,
-    )
     _insert_note_context(fake_db, patient_id="p-note-fu-pv", job_id="job-note-fu-pv")
     fake_db.clinical_notes.insert_one(
         {
@@ -209,7 +211,7 @@ def test_post_visit_summary_follow_up_date_overrides_next_visit(app_client, fake
         },
     )
     response = app_client.post(
-        "/notes/post-visit-summary",
+        "/api/notes/post-visit-summary",
         json={
             "patient_id": "p-note-fu-pv",
             "visit_id": "v1",
@@ -249,7 +251,7 @@ def test_generate_india_with_follow_up_date_sets_payload_and_context(app_client,
         _fake_generate,
     )
     response = app_client.post(
-        "/notes/generate",
+        "/api/notes/clinical-note",
         json={
             "patient_id": "p-note-fu-in",
             "visit_id": "v1",
@@ -266,6 +268,7 @@ def test_generate_india_with_follow_up_date_sets_payload_and_context(app_client,
 def test_follow_up_reminders_run_sends_meta_template(app_client, patched_db, monkeypatch: pytest.MonkeyPatch) -> None:
     """Cron endpoint sends WhatsApp template at T-3d (uses intake/opening_msg template when follow-up name unset)."""
     settings = config_module.get_settings()
+    settings.follow_up_reminder_cron_secret = ""
     settings.whatsapp_access_token = "test-token"
     settings.whatsapp_phone_number_id = "test-phone-id"
     settings.whatsapp_intake_template_name = "opening_msg"
@@ -310,7 +313,7 @@ def test_follow_up_reminders_run_sends_meta_template(app_client, patched_db, mon
 
     monkeypatch.setattr(ProcessFollowUpRemindersUseCase, "execute", _execute_with_fixed_now)
 
-    response = app_client.post("/workflow/follow-up-reminders/run")
+    response = app_client.post("/api/workflow/follow-up-reminders/run")
     assert response.status_code == 200
     body = response.json()
     assert body["sent_3d"] == 1
@@ -326,6 +329,7 @@ def test_follow_up_reminders_run_sends_meta_template(app_client, patched_db, mon
 def test_follow_up_reminders_run_sends_day_before_reminder(app_client, patched_db, monkeypatch: pytest.MonkeyPatch) -> None:
     """Second template fires once we are on the calendar day before next_visit_at (same 09:00 UTC anchor)."""
     settings = config_module.get_settings()
+    settings.follow_up_reminder_cron_secret = ""
     settings.whatsapp_access_token = "test-token"
     settings.whatsapp_phone_number_id = "test-phone-id"
     settings.whatsapp_intake_template_name = "opening_msg"
@@ -370,7 +374,7 @@ def test_follow_up_reminders_run_sends_day_before_reminder(app_client, patched_d
 
     monkeypatch.setattr(ProcessFollowUpRemindersUseCase, "execute", _execute_with_fixed_now)
 
-    response = app_client.post("/workflow/follow-up-reminders/run")
+    response = app_client.post("/api/workflow/follow-up-reminders/run")
     assert response.status_code == 200
     body = response.json()
     assert body["sent_3d"] == 0
@@ -386,6 +390,7 @@ def test_follow_up_reminders_run_fetches_patient_phone_when_to_number_missing(
     app_client, patched_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = config_module.get_settings()
+    settings.follow_up_reminder_cron_secret = ""
     settings.whatsapp_access_token = "test-token"
     settings.whatsapp_phone_number_id = "test-phone-id"
     settings.whatsapp_intake_template_name = "opening_msg"
@@ -409,6 +414,7 @@ def test_follow_up_reminders_run_fetches_patient_phone_when_to_number_missing(
             "patient_id": "p-fu-phone",
             "name": "Rahul",
             "phone_number": "+91 98765 43210",
+            "doctor_id": "DOC001",
         }
     )
     nv = datetime(2030, 6, 20, 9, 0, tzinfo=timezone.utc)
@@ -437,7 +443,7 @@ def test_follow_up_reminders_run_fetches_patient_phone_when_to_number_missing(
 
     monkeypatch.setattr(ProcessFollowUpRemindersUseCase, "execute", _execute_with_fixed_now)
 
-    response = app_client.post("/workflow/follow-up-reminders/run")
+    response = app_client.post("/api/workflow/follow-up-reminders/run")
     assert response.status_code == 200
     body = response.json()
     assert body["sent_3d"] == 1
@@ -453,9 +459,9 @@ def test_follow_up_reminders_run_requires_cron_secret_when_configured(
     settings = config_module.get_settings()
     settings.follow_up_reminder_cron_secret = "expected-secret"
     monkeypatch.setattr("src.core.config.get_settings", lambda: settings)
-    bad = app_client.post("/workflow/follow-up-reminders/run", headers={"X-Cron-Secret": "wrong"})
+    bad = app_client.post("/api/workflow/follow-up-reminders/run", headers={"X-Cron-Secret": "wrong"})
     assert bad.status_code == 401
-    ok = app_client.post("/workflow/follow-up-reminders/run", headers={"X-Cron-Secret": "expected-secret"})
+    ok = app_client.post("/api/workflow/follow-up-reminders/run", headers={"X-Cron-Secret": "expected-secret"})
     assert ok.status_code == 200
 
 
@@ -482,7 +488,7 @@ def test_post_visit_summary_uses_request_language_override(app_client, fake_db, 
 
     monkeypatch.setattr("src.adapters.external.ai.openai_client.OpenAIQuestionClient.generate_post_visit_summary", _fake_generate)
     response = app_client.post(
-        "/notes/post-visit-summary",
+        "/api/notes/post-visit-summary",
         json={
             "patient_id": "p-note-4",
             "visit_id": "v1",
@@ -520,7 +526,7 @@ def test_post_visit_summary_kannada_payload_key(app_client, fake_db, monkeypatch
         _fake_generate,
     )
     response = app_client.post(
-        "/notes/post-visit-summary",
+        "/api/notes/post-visit-summary",
         json={
             "patient_id": "p-note-kn",
             "visit_id": "v1",
@@ -547,6 +553,7 @@ def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fa
             "age": 31,
             "gender": "female",
             "preferred_language": "en",
+            "doctor_id": "DOC001",
         }
     )
     fake_db.clinical_notes.insert_one(
@@ -586,7 +593,7 @@ def test_post_visit_summary_prefers_india_note_without_transcript(app_client, fa
         },
     )
     response = app_client.post(
-        "/notes/post-visit-summary",
+        "/api/notes/post-visit-summary",
         json={"patient_id": "p-note-5", "visit_id": "v5"},
     )
     assert response.status_code == 200

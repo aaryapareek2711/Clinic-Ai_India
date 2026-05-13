@@ -1,7 +1,7 @@
 """Workflow routes module."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from src.adapters.db.mongo.client import get_database
@@ -15,6 +15,8 @@ from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisi
 from src.application.use_cases.process_follow_up_reminders import ProcessFollowUpRemindersUseCase
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
+from src.api.deps import get_current_user
+from src.api.tenant_scope import ensure_patient_owned_by_doctor, normalize_doctor_id
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/workflow", tags=["Workflow"])
@@ -43,9 +45,14 @@ def run_follow_up_reminders(x_cron_secret: str | None = Header(default=None, ali
 
 
 @router.post("/pre-visit-summary/{patient_id}/{visit_id}", response_model=PreVisitSummaryResponse)
-def generate_pre_visit_summary(patient_id: str, visit_id: str) -> PreVisitSummaryResponse:
+def generate_pre_visit_summary(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> PreVisitSummaryResponse:
     """Generate pre-visit summary for the intake session tied to this visit."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
     try:
         doc = GeneratePreVisitSummaryUseCase().execute(patient_id=internal_patient_id, visit_id=visit_id)
         doc["patient_id"] = encode_patient_id(str(doc.get("patient_id") or internal_patient_id))
@@ -55,10 +62,15 @@ def generate_pre_visit_summary(patient_id: str, visit_id: str) -> PreVisitSummar
 
 
 @router.get("/pre-visit-summary/{patient_id}/{visit_id}", response_model=PreVisitSummaryResponse)
-def get_latest_pre_visit_summary(patient_id: str, visit_id: str) -> PreVisitSummaryResponse:
+def get_latest_pre_visit_summary(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> PreVisitSummaryResponse:
     """Fetch latest pre-visit summary for a specific visit."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_patient_id)
     # Prefer the embedded single-source-of-truth document on the visit.
     visit = db.visits.find_one(
         {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": internal_patient_id},
@@ -91,10 +103,12 @@ def save_additional_doctor_note(
     patient_id: str,
     visit_id: str,
     body: SaveAdditionalDoctorNoteRequest,
+    current_user: dict = Depends(get_current_user),
 ) -> PreVisitSummaryResponse:
     """Persist the additional doctor note (right below red flags) in the pre-visit summary."""
 
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
     note = body.note
     if note is not None:
         note = str(note).strip() or None
@@ -141,10 +155,15 @@ def save_additional_doctor_note(
 
 
 @router.get("/doctor-appointment-view/{patient_id}/{visit_id}", response_model=DoctorAppointmentViewResponse)
-def get_doctor_appointment_view(patient_id: str, visit_id: str) -> DoctorAppointmentViewResponse:
+def get_doctor_appointment_view(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> DoctorAppointmentViewResponse:
     """Provide doctor-ready appointment context with summary and vitals."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_patient_id)
     summary_obj = None
     # Prefer embedded summary on the visit first.
     visit = db.visits.find_one(

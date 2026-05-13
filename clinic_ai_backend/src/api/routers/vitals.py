@@ -1,6 +1,9 @@
 """Vitals routes module."""
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
+from src.adapters.db.mongo.client import get_database
+from src.api.deps import get_current_user
+from src.api.tenant_scope import ensure_patient_owned_by_doctor, normalize_doctor_id
 from src.api.schemas.vitals import (
     LatestVitalsResponse,
     PatientLookupRequest,
@@ -18,10 +21,18 @@ router = APIRouter(prefix="/api/vitals", tags=["Workflow"])
 
 
 @router.post("/lookup-patient", response_model=PatientLookupResponse)
-def lookup_patient(payload: PatientLookupRequest) -> PatientLookupResponse:
+def lookup_patient(
+    payload: PatientLookupRequest,
+    current_user: dict = Depends(get_current_user),
+) -> PatientLookupResponse:
     """Lookup patient from entered name and phone number."""
     try:
         patient = StoreVitalsUseCase().lookup_patient(payload.name, payload.phone_number)
+        ensure_patient_owned_by_doctor(
+            get_database(),
+            normalize_doctor_id(current_user),
+            str(patient["patient_id"]),
+        )
         return PatientLookupResponse(
             patient_id=encode_patient_id(str(patient["patient_id"])),
             visit_id=patient.get("latest_visit_id"),
@@ -33,10 +44,15 @@ def lookup_patient(payload: PatientLookupRequest) -> PatientLookupResponse:
 
 
 @router.post("/generate-form/{patient_id}/{visit_id}", response_model=VitalsFormResponse)
-def generate_vitals_form(patient_id: str, visit_id: str) -> VitalsFormResponse:
+def generate_vitals_form(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> VitalsFormResponse:
     """Generate vitals form only if context indicates need."""
     try:
         internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+        ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
         doc = StoreVitalsUseCase().generate_vitals_form(internal_patient_id, visit_id)
         if doc.get("patient_id"):
             doc["patient_id"] = encode_patient_id(str(doc["patient_id"]))
@@ -48,6 +64,7 @@ def generate_vitals_form(patient_id: str, visit_id: str) -> VitalsFormResponse:
 @router.post("/submit", response_model=VitalsSubmitResponse)
 def submit_vitals(
     payload: VitalsSubmitRequest = Body(..., openapi_examples=VITALS_SUBMIT_OPENAPI_EXAMPLES),
+    current_user: dict = Depends(get_current_user),
 ) -> VitalsSubmitResponse:
     """Submit vitals values captured by hospital staff.
 
@@ -55,6 +72,7 @@ def submit_vitals(
     """
     try:
         internal_patient_id = resolve_internal_patient_id(payload.patient_id, allow_raw_fallback=True)
+        ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
         doc = StoreVitalsUseCase().submit_vitals(
             patient_id=internal_patient_id,
             visit_id=payload.visit_id,
@@ -75,7 +93,11 @@ def submit_vitals(
 
 
 @router.get("/submit-template/{patient_id}/{visit_id}", response_model=VitalsSubmitTemplateResponse)
-def get_submit_template(patient_id: str, visit_id: str) -> VitalsSubmitTemplateResponse:
+def get_submit_template(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> VitalsSubmitTemplateResponse:
     """
     Build a submit template with exact keys from latest vitals form.
 
@@ -83,6 +105,7 @@ def get_submit_template(patient_id: str, visit_id: str) -> VitalsSubmitTemplateR
     """
     try:
         internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+        ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
         doc = StoreVitalsUseCase().build_submit_template(internal_patient_id, visit_id)
         if doc.get("patient_id"):
             doc["patient_id"] = encode_patient_id(str(doc["patient_id"]))
@@ -94,9 +117,14 @@ def get_submit_template(patient_id: str, visit_id: str) -> VitalsSubmitTemplateR
 
 
 @router.get("/latest/{patient_id}/{visit_id}", response_model=LatestVitalsResponse)
-def get_latest_vitals(patient_id: str, visit_id: str) -> LatestVitalsResponse:
+def get_latest_vitals(
+    patient_id: str,
+    visit_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> LatestVitalsResponse:
     """Get latest submitted vitals for patient."""
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    ensure_patient_owned_by_doctor(get_database(), normalize_doctor_id(current_user), internal_patient_id)
     doc = StoreVitalsUseCase().get_latest_vitals(internal_patient_id, visit_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Vitals not found")

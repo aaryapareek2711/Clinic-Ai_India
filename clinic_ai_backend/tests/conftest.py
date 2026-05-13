@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.app import create_app
+from src.api.deps import get_current_user
 from src.core import config as config_module
 
 
@@ -60,6 +61,25 @@ class InMemoryCollection:
             elif doc_value != value:
                 return False
         return True
+
+    def find_one_and_delete(
+        self,
+        filter: dict | None = None,
+        sort: list[tuple[str, int]] | None = None,
+        **_kwargs: object,
+    ) -> dict | None:
+        """Mongo-compatible FIFO pop: match ``filter``, optionally ``sort``, remove one doc."""
+        query = filter or {}
+        matches = [(i, doc) for i, doc in enumerate(self.docs) if self._matches(doc, query)]
+        if not matches:
+            return None
+        if sort:
+            for field, direction in reversed(sort):
+                reverse = direction < 0
+                matches.sort(key=lambda item: item[1].get(field), reverse=reverse)
+        index, _doc = matches[0]
+        removed = self.docs.pop(index)
+        return deepcopy(removed)
 
     def find_one(
         self,
@@ -203,9 +223,38 @@ def patched_db(fake_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> In
     return fake_db
 
 
+def _integration_test_doctor_user() -> dict:
+    """Synthetic clinician used to satisfy tenant-scoped APIs in integration tests."""
+    return {
+        "id": "integration-test-doc",
+        "email": "doc@test.local",
+        "username": "integration-doc",
+        "role": "doctor",
+        "doctor_id": "DOC001",
+        "is_active": True,
+    }
+
+
 @pytest.fixture
 def app_client(patched_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Disable background transcription workers so the in-memory queue stays deterministic."""
+    monkeypatch.setattr("src.app.start_background_workers", lambda: None)
+
+    async def _noop_stop() -> None:
+        return None
+
+    monkeypatch.setattr("src.app.stop_background_workers", _noop_stop)
+    app = create_app()
+    app.dependency_overrides[get_current_user] = _integration_test_doctor_user
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def app_client_real_auth(patched_db: InMemoryDatabase, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """TestClient without tenant/auth overrides (use for JWT login /auth/me flows)."""
     monkeypatch.setattr("src.app.start_background_workers", lambda: None)
 
     async def _noop_stop() -> None:

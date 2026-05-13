@@ -3,9 +3,11 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.adapters.db.mongo.client import get_database
+from src.api.deps import get_current_user
+from src.api.tenant_scope import ensure_patient_owned_by_doctor, normalize_doctor_id
 from src.application.services.intake_chat_service import ACTIVE_SESSION_STATUSES, IntakeChatService
 from src.application.utils.india_phone import normalize_india_mobile_storage
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
@@ -140,6 +142,7 @@ def _ensure_patient_indexes(db) -> None:
         return
     try:
         db.patients.create_index([("patient_id", 1)], unique=True)
+        db.patients.create_index([("doctor_id", 1)])
         db.patients.create_index([("updated_at", -1)])
         db.patients.create_index([("name", 1)])
         db.visits.create_index([("patient_id", 1), ("created_at", -1)])
@@ -189,13 +192,14 @@ def _find_reusable_active_visit(db, *, patient_id: str) -> dict | None:
 
 
 @router.get("", response_model=list[PatientSummaryResponse])
-def list_patients() -> list[PatientSummaryResponse]:
+def list_patients(current_user: dict = Depends(get_current_user)) -> list[PatientSummaryResponse]:
     """Return normalized patient records for frontend patient picker."""
+    doctor_id = normalize_doctor_id(current_user)
     db = get_database()
     _ensure_patient_indexes(db)
     records = list(
         db.patients.find(
-            {},
+            {"doctor_id": doctor_id},
             {
                 "_id": 0,
                 "patient_id": 1,
@@ -277,15 +281,17 @@ def list_patients_paged(
     page_size: int = Query(default=20, ge=1, le=200),
     search: str | None = Query(default=None),
     sort: str = Query(default="created_newest"),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Return paginated patient records with server-side filtering/sorting."""
+    doctor_id = normalize_doctor_id(current_user)
     db = get_database()
     _ensure_patient_indexes(db)
-    query: dict = {}
+    query: dict = {"doctor_id": doctor_id}
     search_value = str(search or "").strip()
     if search_value:
         escaped = re.escape(search_value)
-        query["name"] = {"$regex": escaped, "$options": "i"}
+        query = {"$and": [query, {"name": {"$regex": escaped, "$options": "i"}}]}
 
     total = int(db.patients.count_documents(query))
     skip = (page - 1) * page_size
@@ -433,11 +439,16 @@ def list_patients_paged(
 
 
 @router.get("/{patient_id}", response_model=PatientSummaryResponse)
-def get_patient(patient_id: str) -> PatientSummaryResponse:
+def get_patient(
+    patient_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> PatientSummaryResponse:
     """Return one patient by opaque or raw internal id."""
+    doctor_id = normalize_doctor_id(current_user)
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
     _ensure_patient_indexes(db)
+    ensure_patient_owned_by_doctor(db, doctor_id, internal_patient_id)
     record = db.patients.find_one({"patient_id": internal_patient_id})
     if not record:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -445,11 +456,17 @@ def get_patient(patient_id: str) -> PatientSummaryResponse:
 
 
 @router.patch("/{patient_id}", response_model=PatientSummaryResponse)
-def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSummaryResponse:
+def patch_patient(
+    patient_id: str,
+    payload: PatientUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> PatientSummaryResponse:
     """Update demographics and related fields; may migrate internal id if name/phone identity changes."""
+    doctor_id = normalize_doctor_id(current_user)
     internal_old = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
     _ensure_patient_indexes(db)
+    ensure_patient_owned_by_doctor(db, doctor_id, internal_old)
     existing = db.patients.find_one({"patient_id": internal_old})
     if not existing:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -514,6 +531,7 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
     new_doc.pop("_id", None)
     new_doc.update(set_doc)
     new_doc["patient_id"] = internal_new
+    new_doc["doctor_id"] = doctor_id
     new_doc["updated_at"] = now
     db.patients.insert_one(new_doc)
     _rewire_internal_patient_id(db, internal_old, internal_new)
@@ -525,10 +543,15 @@ def patch_patient(patient_id: str, payload: PatientUpdateRequest) -> PatientSumm
 
 
 @router.get("/{patient_id}/latest-visit")
-def get_latest_visit_for_patient(patient_id: str) -> dict:
+def get_latest_visit_for_patient(
+    patient_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Return latest existing visit for a patient (no new visit creation)."""
+    doctor_id = normalize_doctor_id(current_user)
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    ensure_patient_owned_by_doctor(db, doctor_id, internal_patient_id)
     patient = db.patients.find_one({"patient_id": internal_patient_id})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -549,8 +572,12 @@ def get_latest_visit_for_patient(patient_id: str) -> dict:
 
 
 @router.post("/register", response_model=PatientRegisterResponse)
-def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse:
+def register_patient(
+    payload: PatientRegisterRequest,
+    current_user: dict = Depends(get_current_user),
+) -> PatientRegisterResponse:
     """Register patient by hospital staff (visit workflow starts on New Visit creation)."""
+    doctor_id = normalize_doctor_id(current_user)
     try:
         phone_norm = normalize_india_mobile_storage(str(payload.phone_number or "").strip())
     except ValueError as exc:
@@ -567,12 +594,21 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
         _require_appointment_not_in_past(scheduled_start)
     db = get_database()
-    existing_patient = db.patients.find_one({"patient_id": internal_patient_id}) is not None
+    prior = db.patients.find_one({"patient_id": internal_patient_id})
+    if prior:
+        prior_did = str(prior.get("doctor_id") or "").strip().upper()
+        if prior_did and prior_did != doctor_id:
+            raise HTTPException(
+                status_code=409,
+                detail="This patient is already registered under another clinician.",
+            )
+    existing_patient = prior is not None
     db.patients.update_one(
         {"patient_id": internal_patient_id},
         {
             "$set": {
                 "patient_id": internal_patient_id,
+                "doctor_id": doctor_id,
                 "name": payload.name,
                 "phone_number": phone_norm,
                 "age": payload.age,
@@ -662,10 +698,13 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
 def create_visit_from_existing_patient(
     patient_id: str,
     payload: CreateVisitFromPatientRequest,
+    current_user: dict = Depends(get_current_user),
 ) -> CreateVisitFromPatientResponse:
     """Create a new open visit for an existing patient and trigger intake on this visit_id."""
+    doctor_id = normalize_doctor_id(current_user)
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     db = get_database()
+    ensure_patient_owned_by_doctor(db, doctor_id, internal_patient_id)
     patient = db.patients.find_one({"patient_id": internal_patient_id})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")

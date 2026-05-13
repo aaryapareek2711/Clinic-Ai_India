@@ -6,7 +6,6 @@ import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
 
 from src.adapters.db.mongo.client import get_database
@@ -22,8 +21,9 @@ from src.api.schemas.auth import (
 from src.core.auth import create_access_token, create_refresh_token, hash_password, verify_token, verify_password
 from src.core.config import get_settings
 
+from src.api.deps import get_current_user as _get_current_user
+
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 DOCTOR_ID_RE = re.compile(r"^DOC(\d{3})$")
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -320,25 +320,6 @@ def _build_auth_response(user_doc: dict) -> AuthResponse:
         token_type="bearer",
         expires_in=settings.access_token_expire_minutes * 60,
     )
-
-
-def _get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    payload = verify_token(token)
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
-    user_id = str(payload.get("sub") or "").strip()
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-    db = get_database()
-    user_doc = db.users.find_one({"id": user_id})
-    if not user_doc:
-        # Compass edits sometimes drift `id`; JWT still carries email from login.
-        email = str(payload.get("email") or "").strip()
-        if email:
-            user_doc = db.users.find_one({"email": email})
-    if not user_doc or not bool(user_doc.get("is_active", True)):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
-    return user_doc
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)

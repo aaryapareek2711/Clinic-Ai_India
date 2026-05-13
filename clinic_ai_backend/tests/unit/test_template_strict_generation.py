@@ -34,6 +34,17 @@ def _seed_completed_transcription(patched_db: Any, *, patient_id: str, visit_id:
 
 
 def _seed_visit(patched_db: Any, *, patient_id: str, visit_id: str) -> None:
+    patched_db.patients.replace_one(
+        {"patient_id": patient_id},
+        {
+            "patient_id": patient_id,
+            "name": "Template Test Patient",
+            "phone_number": "9876543210",
+            "doctor_id": "DOC001",
+            "updated_at": _utc_now(),
+        },
+        upsert=True,
+    )
     patched_db.visits.insert_one({"visit_id": visit_id, "patient_id": patient_id, "updated_at": _utc_now()})
 
 

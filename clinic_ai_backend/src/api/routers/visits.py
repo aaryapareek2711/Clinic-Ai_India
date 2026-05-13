@@ -1,7 +1,7 @@
 """Visit routes module."""
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.adapters.db.mongo.client import get_database
@@ -10,6 +10,15 @@ from src.api.schemas.patient import ScheduleVisitIntakeRequest, ScheduleVisitInt
 from src.application.services.intake_chat_service import IntakeChatService
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
+from src.api.deps import get_current_user
+from src.api.tenant_scope import (
+    assert_provider_matches_user,
+    ensure_patient_owned_by_doctor,
+    ensure_visit_owned_by_doctor,
+    merge_patient_search_with_doctor,
+    normalize_doctor_id,
+    visit_filter_for_doctor,
+)
 from src.core.config import get_settings
 from src.core.ttl_cache import TTLCache
 router = APIRouter(prefix="/api/visits", tags=["Visits"])
@@ -159,6 +168,50 @@ def _workflow_stage_triplet_for_status(status: str) -> dict:
     }
 
 
+def _visit_detail_payload(db, visit: dict, *, visit_id_hint: str | None = None) -> dict:
+    """Build visit detail JSON (same shape as legacy GET /visits/{visit_id})."""
+    resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id_hint or "")
+    patient_id = str(visit.get("patient_id") or "")
+    patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0}) or {}
+    full_name = (patient.get("name") or "").strip()
+    name_parts = [part for part in full_name.split(" ") if part]
+    first_name = name_parts[0] if name_parts else "Patient"
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    age = patient.get("age")
+    year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
+
+    default_stage = _workflow_stage_triplet_for_status(visit.get("status") or "open")
+    resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
+    return {
+        "id": resolved_visit_id,
+        "patient_id": encode_patient_id(patient_id) if patient_id else "",
+        "provider_id": str(visit.get("provider_id") or ""),
+        "appointment_id": visit.get("appointment_id"),
+        "visit_type": str(visit.get("visit_type") or "Visit"),
+        "status": str(visit.get("status") or "open"),
+        "previous_workflow_stage": visit.get("previous_workflow_stage", default_stage.get("previous_workflow_stage")),
+        "current_workflow_stage": visit.get("current_workflow_stage", default_stage.get("current_workflow_stage")),
+        "next_workflow_stage": visit.get("next_workflow_stage", default_stage.get("next_workflow_stage")),
+        "chief_complaint": resolved_chief_complaint,
+        "reason_for_visit": visit.get("reason_for_visit"),
+        "scheduled_start": visit.get("scheduled_start"),
+        "actual_start": _serialize_datetime(visit.get("actual_start")),
+        "actual_end": _serialize_datetime(visit.get("actual_end")),
+        "subjective": visit.get("subjective"),
+        "objective": visit.get("objective"),
+        "assessment": visit.get("assessment"),
+        "plan": visit.get("plan"),
+        "patient": {
+            "id": encode_patient_id(patient_id) if patient_id else "",
+            "first_name": first_name,
+            "last_name": last_name,
+            "date_of_birth": str(patient.get("date_of_birth") or f"{year:04d}-01-01"),
+            "gender": str(patient.get("gender") or "unknown"),
+            "phone_number": patient.get("phone_number"),
+        },
+    }
+
+
 def _public_visit_payload(visit: dict) -> dict:
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or "")
     patient_id = str(visit.get("patient_id") or "")
@@ -239,10 +292,11 @@ def _intake_send_allowed(db, visit_id: str) -> tuple[bool, bool]:
     return False, True
 
 
-def _set_visit_status(db, visit_id: str, status: str) -> dict:
+def _set_visit_status(db, visit_id: str, status: str, *, doctor_id: str) -> dict:
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
 
     normalized_status = status.strip().lower()
     current_status = _normalize_visit_status(visit)
@@ -281,7 +335,11 @@ def _set_visit_status(db, visit_id: str, status: str) -> dict:
 
 
 @router.post("/{visit_id}/schedule-intake", response_model=ScheduleVisitIntakeResponse)
-def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRequest) -> ScheduleVisitIntakeResponse:
+def schedule_visit_and_send_intake(
+    visit_id: str,
+    payload: ScheduleVisitIntakeRequest,
+    current_user: dict = Depends(get_current_user),
+) -> ScheduleVisitIntakeResponse:
     """Attach appointment time to a visit and start WhatsApp intake when appropriate."""
     if not _appointment_time_valid(payload.appointment_time):
         raise HTTPException(status_code=422, detail="appointment_time must be HH:MM in 24-hour format")
@@ -304,6 +362,8 @@ def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRe
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
+    doctor_id = normalize_doctor_id(current_user)
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
 
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
     internal_patient_id = str(visit.get("patient_id") or "")
@@ -357,6 +417,7 @@ def list_provider_upcoming_visits(
     provider_id: str,
     from_date: str | None = Query(default=None, description="Optional lower bound ISO (inclusive) for scheduled_start"),
     to_date: str | None = Query(default=None, description="Optional upper bound ISO (inclusive) for scheduled_start"),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
     cache_key = f"provider:upcoming:{provider_id}:{from_date or ''}:{to_date or ''}"
@@ -364,6 +425,7 @@ def list_provider_upcoming_visits(
     if cached is not None:
         return cached
     db = get_database()
+    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
     # Keep this endpoint fast: don't return the full visit history.
     # Without a limit/projection, the backend can hang on Render and the frontend shows "Failed to load visits".
@@ -373,16 +435,12 @@ def list_provider_upcoming_visits(
         scheduled_bounds["$gte"] = str(from_date).strip()
     if to_date and str(to_date).strip():
         scheduled_bounds["$lte"] = str(to_date).strip()
+    scope = visit_filter_for_doctor(db, doctor_id)
     records = list(
         db.visits.find(
             {
                 "status": {"$nin": list(LOCKED_VISIT_STATUSES)},
-                "$or": [
-                    {"provider_id": provider_id},
-                    {"provider_id": ""},
-                    {"provider_id": None},
-                    {"provider_id": {"$exists": False}},
-                ],
+                **scope,
                 # Queue/board UI only cares about items with an appointment time fixed.
                 "scheduled_start": scheduled_bounds,
             },
@@ -450,6 +508,7 @@ def list_provider_upcoming_visits(
 def list_provider_visits(
     provider_id: str,
     status_filter: str | None = Query(default=None, description="Filter by visit status (scheduled, in_progress, completed, etc)"),
+    current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     """Return provider visits for Visits workspace list."""
     cache_key = f"provider:visits:{provider_id}:{status_filter or ''}"
@@ -457,16 +516,11 @@ def list_provider_visits(
     if cached is not None:
         return cached
     db = get_database()
+    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
     VISITS_LIMIT = 200
-    query: dict = {
-        "$or": [
-            {"provider_id": provider_id},
-            {"provider_id": ""},
-            {"provider_id": None},
-            {"provider_id": {"$exists": False}},
-        ],
-    }
+    scope = visit_filter_for_doctor(db, doctor_id)
+    query: dict = dict(scope)
     if status_filter:
         status_value = str(status_filter).strip().lower()
         if status_value == "scheduled":
@@ -603,18 +657,14 @@ def list_provider_visits_paged(
         default=None,
         description="Optional ISO-8601 upper bound (exclusive) for visit time-window filter",
     ),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
+    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
-    query: dict = {
-        "$or": [
-            {"provider_id": provider_id},
-            {"provider_id": ""},
-            {"provider_id": None},
-            {"provider_id": {"$exists": False}},
-        ],
-    }
+    scope = visit_filter_for_doctor(db, doctor_id)
+    query: dict = dict(scope)
     if status_filter:
         status_value = str(status_filter).strip().lower()
         if status_value == "scheduled":
@@ -631,7 +681,10 @@ def list_provider_visits_paged(
         search_regex = {"$regex": escaped, "$options": "i"}
         patient_matches = list(
             db.patients.find(
-                {"$or": [{"name": search_regex}, {"phone_number": search_regex}, {"patient_id": search_regex}]},
+                merge_patient_search_with_doctor(
+                    {"$or": [{"name": search_regex}, {"phone_number": search_regex}, {"patient_id": search_regex}]},
+                    doctor_id,
+                ),
                 {"_id": 0, "patient_id": 1},
             )
         )
@@ -773,21 +826,17 @@ def list_provider_careprep(
     filter: str = Query(default="all", description="all|ready|in_progress"),
     search: str | None = Query(default=None),
     sort: str = Query(default="patient_newest", description="patient_newest|patient_oldest|name_az|name_za"),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """
     CarePrep read-model: return only fields needed by CarePrep UI.
     Avoids overfetching full visit list and reduces client-side computation.
     """
     db = get_database()
+    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
-    query: dict = {
-        "$or": [
-            {"provider_id": provider_id},
-            {"provider_id": ""},
-            {"provider_id": None},
-            {"provider_id": {"$exists": False}},
-        ],
-    }
+    scope = visit_filter_for_doctor(db, doctor_id)
+    query: dict = dict(scope)
     s = str(search or "").strip()
     if s:
         import re
@@ -795,7 +844,13 @@ def list_provider_careprep(
         esc = re.escape(s)
         rx = {"$regex": esc, "$options": "i"}
         patient_matches = list(
-            db.patients.find({"$or": [{"name": rx}, {"phone_number": rx}, {"patient_id": rx}]}, {"_id": 0, "patient_id": 1})
+            db.patients.find(
+                merge_patient_search_with_doctor(
+                    {"$or": [{"name": rx}, {"phone_number": rx}, {"patient_id": rx}]},
+                    doctor_id,
+                ),
+                {"_id": 0, "patient_id": 1},
+            )
         )
         patient_ids = [str(p.get("patient_id") or "").strip() for p in patient_matches if str(p.get("patient_id") or "").strip()]
         query["$and"] = [
@@ -915,11 +970,14 @@ def list_provider_careprep(
 def list_patient_visits(
     patient_id: str,
     status_filter: str | None = Query(default=None, description="Filter by visit status"),
+    current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     """Return visits for a single patient, resolving encrypted patient ids."""
+    doctor_id = normalize_doctor_id(current_user)
     db = get_database()
     _ensure_visit_indexes(db)
     internal_patient_id = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    ensure_patient_owned_by_doctor(db, doctor_id, internal_patient_id)
     query: dict = {"patient_id": internal_patient_id}
     if status_filter:
         query["status"] = status_filter
@@ -949,54 +1007,16 @@ def list_patient_visits(
 
 
 @router.get("/{visit_id}")
-def get_visit(visit_id: str) -> dict:
+def get_visit(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Return visit details for visit workflow page."""
     db = get_database()
+    doctor_id = normalize_doctor_id(current_user)
     _ensure_visit_indexes(db)
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
-
-    resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
-    patient_id = str(visit.get("patient_id") or "")
-    patient = db.patients.find_one({"patient_id": patient_id}, {"_id": 0}) or {}
-    full_name = (patient.get("name") or "").strip()
-    name_parts = [part for part in full_name.split(" ") if part]
-    first_name = name_parts[0] if name_parts else "Patient"
-    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
-    age = patient.get("age")
-    year = datetime.now(timezone.utc).year - age if isinstance(age, int) and age > 0 else 1970
-
-    default_stage = _workflow_stage_triplet_for_status(visit.get("status") or "open")
-    resolved_chief_complaint = visit.get("chief_complaint") or _extract_chief_complaint(db, patient_id, resolved_visit_id)
-    return {
-        "id": resolved_visit_id,
-        "patient_id": encode_patient_id(patient_id) if patient_id else "",
-        "provider_id": str(visit.get("provider_id") or ""),
-        "appointment_id": visit.get("appointment_id"),
-        "visit_type": str(visit.get("visit_type") or "Visit"),
-        "status": str(visit.get("status") or "open"),
-        "previous_workflow_stage": visit.get("previous_workflow_stage", default_stage.get("previous_workflow_stage")),
-        "current_workflow_stage": visit.get("current_workflow_stage", default_stage.get("current_workflow_stage")),
-        "next_workflow_stage": visit.get("next_workflow_stage", default_stage.get("next_workflow_stage")),
-        "chief_complaint": resolved_chief_complaint,
-        "reason_for_visit": visit.get("reason_for_visit"),
-        "scheduled_start": visit.get("scheduled_start"),
-        "actual_start": _serialize_datetime(visit.get("actual_start")),
-        "actual_end": _serialize_datetime(visit.get("actual_end")),
-        "subjective": visit.get("subjective"),
-        "objective": visit.get("objective"),
-        "assessment": visit.get("assessment"),
-        "plan": visit.get("plan"),
-        "patient": {
-            "id": encode_patient_id(patient_id) if patient_id else "",
-            "first_name": first_name,
-            "last_name": last_name,
-            "date_of_birth": str(patient.get("date_of_birth") or f"{year:04d}-01-01"),
-            "gender": str(patient.get("gender") or "unknown"),
-            "phone_number": patient.get("phone_number"),
-        },
-    }
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
+    return _visit_detail_payload(db, visit, visit_id_hint=visit_id)
 
 
 @router.get("/{visit_id}/summary")
@@ -1006,6 +1026,7 @@ def get_visit_summary(
         default=None,
         description="Comma-separated fields: visit,intake_session,pre_visit_summary,latest_vitals,latest_vitals_form,clinical_note. Default=all.",
     ),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """
     Return a visit workspace summary to reduce frontend waterfalls.
@@ -1014,6 +1035,7 @@ def get_visit_summary(
     latest vitals/form (if any), and latest clinical note (if any).
     """
     db = get_database()
+    doctor_id = normalize_doctor_id(current_user)
     _ensure_visit_indexes(db)
     cache_key = f"visit:summary:{visit_id}:{include or ''}"
     cached = _visit_summary_cache.get(cache_key)
@@ -1022,14 +1044,14 @@ def get_visit_summary(
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
 
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
     patient_id_raw = str(visit.get("patient_id") or "")
     patient = db.patients.find_one({"patient_id": patient_id_raw}, {"_id": 0}) or {}
 
     # Base visit payload (same shape as GET /api/visits/{visit_id})
-    # Note: `get_visit` is read-only (no write-on-read backfills).
-    visit_payload = get_visit(resolved_visit_id)
+    visit_payload = _visit_detail_payload(db, visit, visit_id_hint=resolved_visit_id)
 
     # Intake session snapshot (read-only; do NOT auto-complete or write in this summary endpoint).
     intake = visit.get("intake_session")
@@ -1133,12 +1155,14 @@ def get_visit_summary(
 
 
 @router.get("/{visit_id}/intake-session")
-def get_visit_intake_session(visit_id: str) -> dict:
+def get_visit_intake_session(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     """Return latest intake session question/answer history for a visit."""
+    doctor_id = normalize_doctor_id(current_user)
     db = get_database()
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
 
     resolved_visit_id = str(visit.get("visit_id") or visit.get("id") or visit_id)
     intake = visit.get("intake_session")
@@ -1187,41 +1211,47 @@ def get_visit_intake_session(visit_id: str) -> dict:
 
 
 @router.patch("/{visit_id}/status")
-def update_visit_status(visit_id: str, payload: VisitStatusUpdateRequest) -> dict:
+def update_visit_status(
+    visit_id: str,
+    payload: VisitStatusUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     db = get_database()
-    return _set_visit_status(db, visit_id, payload.status)
+    return _set_visit_status(db, visit_id, payload.status, doctor_id=normalize_doctor_id(current_user))
 
 
 @router.post("/{visit_id}/queue")
-def queue_visit(visit_id: str) -> dict:
+def queue_visit(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     db = get_database()
-    return _set_visit_status(db, visit_id, "in_queue")
+    return _set_visit_status(db, visit_id, "in_queue", doctor_id=normalize_doctor_id(current_user))
 
 
 @router.post("/{visit_id}/start")
-def start_visit_consultation(visit_id: str) -> dict:
+def start_visit_consultation(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     db = get_database()
-    return _set_visit_status(db, visit_id, "in_progress")
+    return _set_visit_status(db, visit_id, "in_progress", doctor_id=normalize_doctor_id(current_user))
 
 
 @router.post("/{visit_id}/complete")
-def complete_visit(visit_id: str) -> dict:
+def complete_visit(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     db = get_database()
-    return _set_visit_status(db, visit_id, "completed")
+    return _set_visit_status(db, visit_id, "completed", doctor_id=normalize_doctor_id(current_user))
 
 
 @router.post("/{visit_id}/no-show")
-def mark_visit_no_show(visit_id: str) -> dict:
+def mark_visit_no_show(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     db = get_database()
-    return _set_visit_status(db, visit_id, "no_show")
+    return _set_visit_status(db, visit_id, "no_show", doctor_id=normalize_doctor_id(current_user))
 
 
 @router.delete("/{visit_id}")
-def cancel_visit(visit_id: str) -> dict:
+def cancel_visit(visit_id: str, current_user: dict = Depends(get_current_user)) -> dict:
     db = get_database()
+    doctor_id = normalize_doctor_id(current_user)
     visit = _find_visit(db, visit_id)
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
+    ensure_visit_owned_by_doctor(db, doctor_id, visit)
 
     current_status = _normalize_visit_status(visit)
     if current_status in {"completed", "closed", "ended"}:
