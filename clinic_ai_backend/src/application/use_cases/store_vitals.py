@@ -39,10 +39,13 @@ class StoreVitalsUseCase:
         self.db = get_database()
         self.openai = OpenAIQuestionClient()
 
-    def lookup_patient(self, name: str, phone_number: str) -> dict:
-        """Find patient for entered name and phone number."""
-        patient_id = stable_patient_id(name, phone_number)
+    def lookup_patient(self, name: str, phone_number: str, *, doctor_id: str) -> dict:
+        """Find patient for entered name and phone number within this clinician's records."""
+        patient_id = stable_patient_id(name, phone_number, doctor_id=doctor_id)
         patient = self.db.patients.find_one({"patient_id": patient_id})
+        if not patient:
+            legacy_id = stable_patient_id(name, phone_number)
+            patient = self.db.patients.find_one({"patient_id": legacy_id, "doctor_id": doctor_id})
         if not patient:
             raise ValueError("Patient not found for provided name and phone number")
         visit = self.db.visits.find_one({"patient_id": patient_id}, sort=[("created_at", -1)])

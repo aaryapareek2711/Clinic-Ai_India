@@ -43,6 +43,23 @@ _PATIENT_ID_COLLECTIONS = (
 )
 
 
+def _resolve_internal_patient_key_for_doctor(db, *, name: str, phone_norm: str, doctor_id: str) -> str:
+    """
+    Canonical Mongo ``patient_id`` for this clinician + demographics.
+
+    Prefer scoped ``PatientId.generate(..., doctor_id=...)``; reuse an existing **legacy**
+    ``name_phone`` row only when it belongs to the same ``doctor_id`` (backward compatibility).
+    """
+    scoped = PatientId.generate(name, phone_norm, doctor_id=doctor_id)
+    if db.patients.find_one({"patient_id": scoped}):
+        return scoped
+    legacy = PatientId.generate(name, phone_norm)
+    legacy_doc = db.patients.find_one({"patient_id": legacy, "doctor_id": doctor_id})
+    if legacy_doc:
+        return legacy
+    return scoped
+
+
 def _sync_intake_sessions_to_number_excluding_active(db, patient_id: str, to_number: str, now: datetime) -> None:
     """Update stored WhatsApp destination for non-active intake rows (history / analytics)."""
     coll = getattr(db, "intake_sessions", None)
@@ -486,10 +503,9 @@ def patch_patient(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    try:
-        internal_new = PatientId.generate(merged_name, merged_phone)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    internal_new = _resolve_internal_patient_key_for_doctor(
+        db, name=merged_name, phone_norm=merged_phone, doctor_id=doctor_id
+    )
 
     patch_keys = (
         "name",
@@ -521,7 +537,8 @@ def patch_patient(
         updated = db.patients.find_one({"patient_id": internal_old})
         return _summarize_patient_record(db, updated or existing)
 
-    if db.patients.find_one({"patient_id": internal_new}):
+    existing_target = db.patients.find_one({"patient_id": internal_new})
+    if existing_target and internal_new != internal_old:
         raise HTTPException(
             status_code=409,
             detail="Another patient already exists for this name and phone. Resolve duplicates before changing identity.",
@@ -582,11 +599,6 @@ def register_patient(
         phone_norm = normalize_india_mobile_storage(str(payload.phone_number or "").strip())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    try:
-        # Reuse patient only when both name and phone map to same deterministic id.
-        internal_patient_id = PatientId.generate(payload.name, phone_norm)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     visit_id = VisitId.validate(VisitId.generate())
     now = datetime.now(timezone.utc)
     scheduled_start = None
@@ -594,14 +606,13 @@ def register_patient(
         scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
         _require_appointment_not_in_past(scheduled_start)
     db = get_database()
+    try:
+        internal_patient_id = _resolve_internal_patient_key_for_doctor(
+            db, name=payload.name, phone_norm=phone_norm, doctor_id=doctor_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     prior = db.patients.find_one({"patient_id": internal_patient_id})
-    if prior:
-        prior_did = str(prior.get("doctor_id") or "").strip().upper()
-        if prior_did and prior_did != doctor_id:
-            raise HTTPException(
-                status_code=409,
-                detail="This patient is already registered under another clinician.",
-            )
     existing_patient = prior is not None
     db.patients.update_one(
         {"patient_id": internal_patient_id},

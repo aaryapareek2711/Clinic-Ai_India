@@ -86,7 +86,7 @@ def test_patch_identity_rewires_visits(app_client) -> None:
     new_opaque = patched.json()["patient_id"]
     internal_after = decode_patient_id(new_opaque)
     assert internal_before != internal_after
-    assert internal_after == "visitcarryjr_919000000003"
+    assert internal_after == "doc001_visitcarryjr_919000000003"
 
     visit_res = app_client.get(f"/api/patients/{new_opaque}/latest-visit")
     assert visit_res.status_code == 200

@@ -27,10 +27,13 @@ def lookup_patient(
 ) -> PatientLookupResponse:
     """Lookup patient from entered name and phone number."""
     try:
-        patient = StoreVitalsUseCase().lookup_patient(payload.name, payload.phone_number)
+        doctor_key = normalize_doctor_id(current_user)
+        patient = StoreVitalsUseCase().lookup_patient(
+            payload.name, payload.phone_number, doctor_id=doctor_key
+        )
         ensure_patient_owned_by_doctor(
             get_database(),
-            normalize_doctor_id(current_user),
+            doctor_key,
             str(patient["patient_id"]),
         )
         return PatientLookupResponse(

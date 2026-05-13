@@ -105,6 +105,22 @@ def _dedupe_adjacent_dialogue_turns(turns: list[dict[str, str]]) -> list[dict[st
     return out
 
 
+def _speaker_rules_block(speaker_mode: str) -> str:
+    normalized_mode = str(speaker_mode or "two_speakers").strip().lower()
+    if normalized_mode == "three_speakers":
+        return (
+            "The consultation uses three roles: Doctor, Patient, and Family Member. "
+            "Preserve Family Member turns when a caregiver/attendant speaks for or about the patient. "
+            "Do not collapse Family Member speech into Patient. "
+            "Use {\"Family Member\": \"...\"} when a relative/caregiver speaks (including answering for the patient); "
+            "use {\"Patient\": \"...\"} only for the patient themselves."
+        )
+    return (
+        "Use only Doctor and Patient roles for this consultation; map third-party caregiver lines to Patient "
+        "(two-speaker mode)."
+    )
+
+
 def _structure_one_chunk_openai(
     *,
     raw_transcript: str,
@@ -115,34 +131,29 @@ def _structure_one_chunk_openai(
     speaker_mode: str = "two_speakers",
 ) -> list[dict[str, str]]:
     settings = get_settings()
-    normalized_mode = str(speaker_mode or "two_speakers").strip().lower()
-    if normalized_mode == "three_speakers":
-        speaker_instruction = (
-            "The consultation uses three roles: Doctor, Patient, and Family Member. "
-            "Preserve Family Member turns when a caregiver/attendant speaks for or about the patient. "
-            "Do not collapse Family Member speech into Patient."
-        )
-    else:
-        speaker_instruction = (
-            "Use only Doctor and Patient roles for this consultation; map third-party caregiver lines to Patient."
-        )
+    speaker_instruction = _speaker_rules_block(speaker_mode)
     system = (
         "You are a medical dialogue analyst. Convert the raw consultation transcript into a JSON array. "
-        "Each element must be a single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
+        "Each element must be exactly one single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
         "or {\"Family Member\": \"text\"} when applicable. "
-        f"{speaker_instruction} "
-        "Each turn string must contain speech from exactly one role. If the fragment mixes speakers "
-        "(e.g. doctor question then patient answer), split into separate turns in chronological order — "
-        "never label a paragraph as Patient if it also contains the doctor's sentences, and vice versa. "
-        "Patient turns must keep the patient's symptoms, concerns, lifestyle, and reported behaviors "
-        "(what brought them in and how they describe the problem). Doctor turns keep exam, interpretation, "
-        "and advice. Prefer paragraph-style text per turn when natural, but still one speaker per object. "
-        "Remove direct identifiers (names used as people, phone numbers, emails, SSN-style numbers). "
+        f"{speaker_instruction}\n\n"
+        "STRICT one speaker per JSON object (paragraph-style text is OK; mixed speakers in one object is NOT):\n"
+        "- Patient turns: symptoms, concerns, history, lifestyle, answers to questions, short replies "
+        "(\"Yeah\", \"OK\", \"Once a year\", \"No\", narrative sentences). Never put these inside a Doctor object.\n"
+        "- Doctor turns: questions, examination narration, interpretation, counseling, plan — only what the clinician "
+        "says. If the transcript has a doctor question immediately followed by the patient's answer, "
+        "you MUST emit {\"Doctor\": \"...question...\"} then {\"Patient\": \"...answer...\"} as separate items.\n"
+        "- Do NOT attach the patient's reply to the end of the doctor's paragraph.\n"
+        "- BAD example: one Doctor string that ends with the patient's \"Yeah\" or \"I had an X-ray\" — split those out "
+        "into Patient turns.\n"
+        "- GOOD: multiple alternating Doctor/Patient objects when the conversation alternates.\n\n"
+        "Clinical content: Patient turns must preserve what the patient reported as the problem and relevant story; "
+        "Doctor turns preserve exam/plan language. "
+        "Prefer paragraph-length turns when one speaker holds the floor, but split as soon as the other speaker talks.\n"
+        "Remove direct identifiers (personal names used as people, phone numbers, emails, SSN-style numbers). "
         "Do NOT remove medication names, vitals, lab values, timelines, or clinical terms. "
         "Do NOT summarize away complaints, history, exam findings, counseling, or plan items — "
         "every clinically relevant phase in this fragment must appear as one or more turns. "
-        "Do NOT merge multiple distinct clinical sentences into one short turn; prefer more, shorter turns "
-        "so multi-step exams, medication lists, and counseling blocks stay complete. "
         "Verbatim wording is strongly preferred over paraphrase; do not invent lines not in the fragment. "
         f"Write spoken text in {output_language}. Do not translate or romanize the transcript. "
         "Return ONLY valid JSON array, no markdown."
@@ -163,7 +174,7 @@ def _structure_one_chunk_openai(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.05,
+        "temperature": 0,
     }
     req = request.Request(
         url="https://api.openai.com/v1/chat/completions",

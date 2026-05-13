@@ -15,6 +15,12 @@ def test_patient_id_generate_cleans_and_formats() -> None:
     assert value == "john_15551234567"
 
 
+def test_patient_id_generate_scoped_per_doctor() -> None:
+    value = PatientId.generate("John", "+1 (555) 123-4567", doctor_id="DOC001")
+    assert value == "doc001_john_15551234567"
+    assert PatientId.validate(value) == value
+
+
 def test_patient_id_generate_rejects_empty_clean_name() -> None:
     with pytest.raises(ValueError):
         PatientId.generate("!!!", "+1 555 1234")

@@ -22,7 +22,7 @@ def test_register_returns_opaque_patient_id_and_consult_visit_id(app_client) -> 
 
     opaque_patient_id = data["patient_id"]
     internal = decode_patient_id(opaque_patient_id)
-    assert internal == "john_919876543210"
+    assert internal == "doc001_john_919876543210"
     assert data.get("pending_schedule_for_intake") is True
     assert data.get("visit_id") is None
     assert data.get("whatsapp_triggered") is False
@@ -50,7 +50,7 @@ def test_create_visit_accepts_opaque_patient_id(app_client, monkeypatch) -> None
     assert res.status_code == 200
     body = res.json()
     assert re.fullmatch(r"^CONSULT-\d{8}-\d{3}$", body["visit_id"]) is not None
-    assert decode_patient_id(body["patient_id"]) == "asha_919876543210"
+    assert decode_patient_id(body["patient_id"]) == "doc001_asha_919876543210"
     assert body.get("pending_schedule_for_intake") is True
     assert body.get("intake_triggered") is False
 
