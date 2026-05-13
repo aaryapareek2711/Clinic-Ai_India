@@ -12,7 +12,21 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """Validate bearer JWT and return the Mongo user document."""
-    payload = verify_token(token)
+    try:
+        payload = verify_token(token)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "TOKEN_EXPIRED":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
     user_id = str(payload.get("sub") or "").strip()

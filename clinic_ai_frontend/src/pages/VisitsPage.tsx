@@ -7,8 +7,9 @@ import { getApiErrorMessage } from '../lib/apiClient'
 import { computeVisitDateRange, presetAnchoredToLiveToday, ymdFromLocalDate, ymdToLocalStart, type VisitDatePresetId } from '../lib/visitDateRangePresets'
 import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
-  DEFAULT_PROVIDER_ID,
   fetchProviderVisitsPaged,
+  getSignedInProviderId,
+  resolveSignedInProviderId,
 } from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 import VisitKanbanBoard from './visit/VisitKanbanBoard'
@@ -57,19 +58,21 @@ function VisitsPage() {
     queryKey: [
       'visits',
       'provider',
-      DEFAULT_PROVIDER_ID,
+      getSignedInProviderId(),
       'paged',
       { page: currentPage, pageSize: PAGE_SIZE, search, sort: serverSort, rangeStartIso, rangeEndExclusiveIso },
     ],
-    queryFn: () =>
-      fetchProviderVisitsPaged(DEFAULT_PROVIDER_ID, {
+    queryFn: async () => {
+      const pid = await resolveSignedInProviderId()
+      return fetchProviderVisitsPaged(pid, {
         page: currentPage,
         pageSize: PAGE_SIZE,
         search,
         sort: serverSort,
         rangeStartIso,
         rangeEndExclusiveIso,
-      }),
+      })
+    },
     placeholderData: keepPreviousData,
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,

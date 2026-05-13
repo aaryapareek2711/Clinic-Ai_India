@@ -6,9 +6,10 @@ import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import {
-  DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
   fetchProviderVisits,
+  getSignedInProviderId,
+  resolveSignedInProviderId,
   type ProviderUpcomingAppointment,
   type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
@@ -132,16 +133,16 @@ function DashboardSlotsPage() {
   const dayLabel = day === 'today' ? 'Today' : 'Tomorrow'
 
   const upcomingQuery = useQuery({
-    queryKey: ['dashboard', 'slots', 'upcoming', DEFAULT_PROVIDER_ID],
-    queryFn: () => fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+    queryKey: ['dashboard', 'slots', 'upcoming', getSignedInProviderId()],
+    queryFn: async () => fetchProviderUpcoming(await resolveSignedInProviderId()),
     staleTime: 15_000,
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,
   })
 
   const visitsQuery = useQuery({
-    queryKey: ['dashboard', 'slots', 'visits', DEFAULT_PROVIDER_ID],
-    queryFn: () => fetchProviderVisits(DEFAULT_PROVIDER_ID),
+    queryKey: ['dashboard', 'slots', 'visits', getSignedInProviderId()],
+    queryFn: async () => fetchProviderVisits(await resolveSignedInProviderId()),
     staleTime: 15_000,
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,

@@ -1,3 +1,4 @@
+import { AUTH_DOCTOR_ID_STORAGE_KEY } from '../lib/authSession'
 import { apiClient, getApiErrorMessage } from '../lib/apiClient'
 import {
   DEFAULT_DOCTOR_SCHEDULE,
@@ -21,6 +22,7 @@ export type OpdWeeklyDayPayload = {
 
 export type ProviderProfile = {
   id: string
+  doctor_id?: string | null
   email: string
   username: string
   full_name: string
@@ -104,6 +106,10 @@ export function coerceProviderProfile(raw: unknown): ProviderProfile {
   const r = raw as Record<string, unknown>
   return {
     id: str(r.id),
+    doctor_id: (() => {
+      const d = firstNonEmpty(r.doctor_id, r.provider_id)
+      return d ? d.trim().toUpperCase() : null
+    })(),
     email: firstNonEmpty(r.email, r.email_address, r.user_email) || str(r.email),
     username: str(r.username),
     full_name: firstNonEmpty(r.full_name, r.display_name, r.name, r.fullName, r.doctor_name, r.provider_name),
@@ -195,6 +201,8 @@ function persistProfileToLocalStorage(data: ProviderProfile): void {
     localStorage.setItem('auth_user_username', (data.username || '').trim())
     localStorage.setItem('auth_user_job_title', (data.job_title || '').trim())
     localStorage.setItem('auth_user_role', (data.role || '').trim())
+    const did = (data.doctor_id || '').trim().toUpperCase()
+    if (did) localStorage.setItem(AUTH_DOCTOR_ID_STORAGE_KEY, did)
   } catch {
     /* ignore */
   }

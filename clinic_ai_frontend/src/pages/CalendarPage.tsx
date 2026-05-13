@@ -19,8 +19,8 @@ import {
 } from '../lib/doctorScheduleSettings'
 import { effectiveDayRow, weekdayKeyFromDateStr } from '../lib/opdWeeklySchedule'
 import {
-  DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
+  resolveSignedInProviderId,
   scheduleVisitIntake,
   type ProviderUpcomingAppointment,
 } from '../services/visitWorkflowApi'
@@ -172,7 +172,8 @@ function CalendarPage() {
       setLoadError(null)
     }
     try {
-      const appointmentsRes = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+      const pid = await resolveSignedInProviderId()
+      const appointmentsRes = await fetchProviderUpcoming(pid, {
         fromDate: activeRange.fromDate,
         toDate: activeRange.toDate,
       })
@@ -243,7 +244,7 @@ function CalendarPage() {
     const dateStr = rescheduleDate.trim()
     void (async () => {
       try {
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+        const data = await fetchProviderUpcoming(await resolveSignedInProviderId(), {
           fromDate: `${dateStr}T00:00:00`,
           toDate: `${dateStr}T23:59:59`,
         })

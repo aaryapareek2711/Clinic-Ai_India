@@ -12,11 +12,11 @@ from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.api.deps import get_current_user
 from src.api.tenant_scope import (
-    assert_provider_matches_user,
     ensure_patient_owned_by_doctor,
     ensure_visit_owned_by_doctor,
     merge_patient_search_with_doctor,
     normalize_doctor_id,
+    resolve_provider_segment,
     visit_filter_for_doctor,
 )
 from src.core.config import get_settings
@@ -420,12 +420,12 @@ def list_provider_upcoming_visits(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Return provider visits from Mongo for dashboard/calendar."""
-    cache_key = f"provider:upcoming:{provider_id}:{from_date or ''}:{to_date or ''}"
+    db = get_database()
+    doctor_id = resolve_provider_segment(provider_id, current_user)
+    cache_key = f"provider:upcoming:{doctor_id}:{from_date or ''}:{to_date or ''}"
     cached = _provider_upcoming_cache.get(cache_key)
     if cached is not None:
         return cached
-    db = get_database()
-    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
     # Keep this endpoint fast: don't return the full visit history.
     # Without a limit/projection, the backend can hang on Render and the frontend shows "Failed to load visits".
@@ -511,12 +511,12 @@ def list_provider_visits(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     """Return provider visits for Visits workspace list."""
-    cache_key = f"provider:visits:{provider_id}:{status_filter or ''}"
+    db = get_database()
+    doctor_id = resolve_provider_segment(provider_id, current_user)
+    cache_key = f"provider:visits:{doctor_id}:{status_filter or ''}"
     cached = _provider_visits_cache.get(cache_key)
     if cached is not None:
         return cached
-    db = get_database()
-    doctor_id = assert_provider_matches_user(provider_id, current_user)
     _ensure_visit_indexes(db)
     VISITS_LIMIT = 200
     scope = visit_filter_for_doctor(db, doctor_id)
@@ -661,7 +661,7 @@ def list_provider_visits_paged(
 ) -> dict:
     """Return paginated provider visits with server-side filtering."""
     db = get_database()
-    doctor_id = assert_provider_matches_user(provider_id, current_user)
+    doctor_id = resolve_provider_segment(provider_id, current_user)
     _ensure_visit_indexes(db)
     scope = visit_filter_for_doctor(db, doctor_id)
     query: dict = dict(scope)
@@ -833,7 +833,7 @@ def list_provider_careprep(
     Avoids overfetching full visit list and reduces client-side computation.
     """
     db = get_database()
-    doctor_id = assert_provider_matches_user(provider_id, current_user)
+    doctor_id = resolve_provider_segment(provider_id, current_user)
     _ensure_visit_indexes(db)
     scope = visit_filter_for_doctor(db, doctor_id)
     query: dict = dict(scope)

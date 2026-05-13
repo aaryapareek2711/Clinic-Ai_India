@@ -1,9 +1,14 @@
-import { apiClient } from '../lib/apiClient'
+import axios from 'axios'
+
+import { apiClient, API_BASE_URL } from '../lib/apiClient'
+import { AUTH_DOCTOR_ID_STORAGE_KEY } from '../lib/authSession'
 
 import { invalidateMyProfileCache } from './profileApi'
 
 export type AuthUser = {
   id: string
+  /** Matches Mongo tenant scope (`DOC001`, …); required for `/api/visits/provider/{id}`. */
+  doctor_id?: string | null
   email: string
   username: string
   full_name: string
@@ -39,9 +44,29 @@ export function persistAuthSession(res: AuthResponse): void {
     localStorage.setItem('auth_user_username', (res.user.username || '').trim())
     localStorage.setItem('auth_user_job_title', (res.user.job_title || '').trim())
     localStorage.setItem('auth_user_role', (res.user.role || '').trim())
+    const did = (res.user.doctor_id || '').trim().toUpperCase()
+    if (did) localStorage.setItem(AUTH_DOCTOR_ID_STORAGE_KEY, did)
+    else localStorage.removeItem(AUTH_DOCTOR_ID_STORAGE_KEY)
   } catch {
     /* ignore */
   }
+}
+
+/** POST /api/auth/refresh — standalone axios so apiClient 401 interceptor does not recurse. */
+export async function refreshAuthSession(): Promise<AuthResponse> {
+  const rt =
+    typeof localStorage !== 'undefined' ? localStorage.getItem('refresh_token')?.trim() : ''
+  if (!rt) {
+    throw new Error('No refresh token')
+  }
+  const base = API_BASE_URL.replace(/\/$/, '')
+  const url = base ? `${base}/api/auth/refresh` : '/api/auth/refresh'
+  const { data } = await axios.post<AuthResponse>(
+    url,
+    { refresh_token: rt },
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+  return data
 }
 
 /** POST /api/auth/login — `username` may be username or email (matches backend). */

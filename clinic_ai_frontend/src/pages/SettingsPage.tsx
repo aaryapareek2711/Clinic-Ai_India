@@ -6,7 +6,11 @@ import { getStoredAuthProfile } from '../lib/authSession'
 import { getDoctorScheduleSettings, type OpdDayKey } from '../lib/doctorScheduleSettings'
 import { effectiveDayRow } from '../lib/opdWeeklySchedule'
 import { fetchMyProfile, getApiErrorMessage, PROVIDER_PROFILE_UPDATED_EVENT, type ProviderProfile } from '../services/profileApi'
-import { DEFAULT_PROVIDER_ID, fetchProviderVisits, type ProviderVisitListItem } from '../services/visitWorkflowApi'
+import {
+  fetchProviderVisits,
+  resolveSignedInProviderId,
+  type ProviderVisitListItem,
+} from '../services/visitWorkflowApi'
 import BackButton from '../components/BackButton'
 import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import NotificationsDrawer from './NotificationsDrawer'
@@ -90,7 +94,7 @@ function SettingsPage() {
     let cancelled = false
     void (async () => {
       try {
-        const rows = await fetchProviderVisits(DEFAULT_PROVIDER_ID)
+        const rows = await fetchProviderVisits(await resolveSignedInProviderId())
         if (!cancelled) setVisits(rows)
       } catch {
         // Keep cards usable with fallback placeholders if stats API fails.

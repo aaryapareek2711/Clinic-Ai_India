@@ -23,6 +23,22 @@ def assert_provider_matches_user(provider_id: str, user: dict) -> str:
     return doctor_id
 
 
+_SELF_PROVIDER_MARKERS = frozenset({"me", "self", "current", "default"})
+
+
+def resolve_provider_segment(provider_id: str, user: dict) -> str:
+    """
+    Resolve ``provider_id`` path segment to canonical ``DOCxxx``.
+
+    Treats ``me``, ``self``, ``current``, and ``default`` as aliases for the signed-in clinician
+    so older clients that hard-code ``default`` still receive their own data (never another tenant).
+    """
+    key = str(provider_id or "").strip().lower()
+    if key in _SELF_PROVIDER_MARKERS:
+        return normalize_doctor_id(user)
+    return assert_provider_matches_user(provider_id, user)
+
+
 def patient_ids_for_doctor(db, doctor_id: str) -> list[str]:
     out: list[str] = []
     for row in db.patients.find({"doctor_id": doctor_id}, {"patient_id": 1}):

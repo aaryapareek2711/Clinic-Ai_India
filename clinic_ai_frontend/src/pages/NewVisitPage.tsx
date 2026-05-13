@@ -12,7 +12,11 @@ import { PROVIDER_PROFILE_UPDATED_EVENT } from '../services/profileApi'
 import BackButton from '../components/BackButton'
 import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { createVisitFromPatient, registerPatient } from '../services/patientsApi'
-import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
+import {
+  fetchProviderUpcoming,
+  resolveSignedInProviderId,
+  type ProviderUpcomingAppointment,
+} from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 function localDateInputMin(d = new Date()): string {
@@ -158,7 +162,8 @@ function NewVisitPage() {
     let cancelled = false
     void (async () => {
       try {
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+        const pid = await resolveSignedInProviderId()
+        const data = await fetchProviderUpcoming(pid, {
           fromDate: `${dateStr}T00:00:00`,
           toDate: `${dateStr}T23:59:59`,
         })
@@ -358,8 +363,9 @@ function NewVisitPage() {
 
         const firstStart = startsToCreate[0]
         const totalDuration = startsToCreate.length * (schedule.defaultSlotMinutes || 15)
+        const pid = await resolveSignedInProviderId()
         const createdVisit = await createVisitFromPatient(registered.patient_id, {
-          provider_id: DEFAULT_PROVIDER_ID,
+          provider_id: pid,
           scheduled_start: firstStart,
           visit_type: visitKind,
         })

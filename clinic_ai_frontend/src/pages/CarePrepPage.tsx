@@ -5,7 +5,11 @@ import BackButton from '../components/BackButton'
 import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
-import { DEFAULT_PROVIDER_ID, fetchProviderCarePrep } from '../services/visitWorkflowApi'
+import {
+  fetchProviderCarePrep,
+  getSignedInProviderId,
+  resolveSignedInProviderId,
+} from '../services/visitWorkflowApi'
 import type { CarePrepItem } from '../services/visitWorkflowApi'
 
 import NotificationsDrawer from './NotificationsDrawer'
@@ -156,7 +160,7 @@ export default function CarePrepPage() {
     queryKey: [
       'careprep',
       'rows',
-      DEFAULT_PROVIDER_ID,
+      getSignedInProviderId(),
       {
         page: currentPage,
         pageSize: PAGE_SIZE,
@@ -164,13 +168,15 @@ export default function CarePrepPage() {
         sort: sortBy,
       },
     ],
-    queryFn: () =>
-      fetchProviderCarePrep(DEFAULT_PROVIDER_ID, {
+    queryFn: async () => {
+      const pid = await resolveSignedInProviderId()
+      return fetchProviderCarePrep(pid, {
         page: currentPage,
         pageSize: PAGE_SIZE,
         search: searchQuery.trim() || undefined,
         sort: sortBy,
-      }),
+      })
+    },
     staleTime: 10_000,
   })
   const loading = isFetching && !data

@@ -1,6 +1,8 @@
 import axios from 'axios'
 
+import { AUTH_DOCTOR_ID_STORAGE_KEY, hasAuthToken } from '../lib/authSession'
 import { apiClient, getApiErrorMessage } from '../lib/apiClient'
+import { fetchMyProfile } from './profileApi'
 
 export type VisitDetailResponse = {
   id: string
@@ -143,6 +145,38 @@ export type CarePrepResponse = {
 
 export const DEFAULT_PROVIDER_ID =
   (import.meta.env.VITE_PROVIDER_ID as string | undefined)?.trim() || 'default'
+
+/**
+ * Clinician ID for `/api/visits/provider/{id}` and related calls — must match JWT `doctor_id`.
+ * Set from login/register (`AUTH_DOCTOR_ID_STORAGE_KEY`) and refreshed from `/api/auth/me`.
+ */
+export function getSignedInProviderId(): string {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(AUTH_DOCTOR_ID_STORAGE_KEY)?.trim()
+      if (raw) return raw.toUpperCase()
+    } catch {
+      /* ignore */
+    }
+  }
+  const envId = (import.meta.env.VITE_PROVIDER_ID as string | undefined)?.trim()
+  if (envId) return envId.toUpperCase()
+  return DEFAULT_PROVIDER_ID.toUpperCase()
+}
+
+/** Ensures `doctor_id` is loaded into storage (legacy sessions / before first `/auth/me`). */
+export async function resolveSignedInProviderId(): Promise<string> {
+  if (typeof localStorage !== 'undefined' && hasAuthToken()) {
+    try {
+      if (!localStorage.getItem(AUTH_DOCTOR_ID_STORAGE_KEY)?.trim()) {
+        await fetchMyProfile()
+      }
+    } catch {
+      /* ignore — fall through to getSignedInProviderId */
+    }
+  }
+  return getSignedInProviderId()
+}
 
 export async function fetchProviderVisits(providerId: string): Promise<ProviderVisitListItem[]> {
   const { data } = await apiClient.get<ProviderVisitListItem[]>(

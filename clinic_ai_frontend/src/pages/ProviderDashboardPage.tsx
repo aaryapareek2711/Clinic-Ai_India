@@ -6,9 +6,10 @@ import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import {
-  DEFAULT_PROVIDER_ID,
   fetchProviderUpcoming,
   fetchProviderVisits,
+  getSignedInProviderId,
+  resolveSignedInProviderId,
   type ProviderUpcomingAppointment,
   type ProviderVisitListItem,
 } from '../services/visitWorkflowApi'
@@ -109,15 +110,15 @@ function ProviderDashboardPage() {
   const lastFocusRefetchAtRef = useRef(0)
 
   const upcomingQuery = useQuery({
-    queryKey: ['dashboard', 'upcoming', DEFAULT_PROVIDER_ID],
-    queryFn: () => fetchProviderUpcoming(DEFAULT_PROVIDER_ID),
+    queryKey: ['dashboard', 'upcoming', getSignedInProviderId()],
+    queryFn: async () => fetchProviderUpcoming(await resolveSignedInProviderId()),
     staleTime: 15_000,
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,
   })
   const visitsQuery = useQuery({
-    queryKey: ['dashboard', 'visits', DEFAULT_PROVIDER_ID],
-    queryFn: () => fetchProviderVisits(DEFAULT_PROVIDER_ID),
+    queryKey: ['dashboard', 'visits', getSignedInProviderId()],
+    queryFn: async () => fetchProviderVisits(await resolveSignedInProviderId()),
     staleTime: 15_000,
     refetchInterval: AUTO_REFRESH_MS,
     refetchIntervalInBackground: false,

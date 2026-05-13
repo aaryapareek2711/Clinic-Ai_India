@@ -14,7 +14,11 @@ import { DOCTOR_SCHEDULE_UPDATED_EVENT, getDoctorScheduleSettings } from '../lib
 import { formatPatientDisplayId } from '../lib/patientDisplayId'
 import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { createVisitFromPatient, fetchPatients, type PatientSummary } from '../services/patientsApi'
-import { DEFAULT_PROVIDER_ID, fetchProviderUpcoming, type ProviderUpcomingAppointment } from '../services/visitWorkflowApi'
+import {
+  fetchProviderUpcoming,
+  resolveSignedInProviderId,
+  type ProviderUpcomingAppointment,
+} from '../services/visitWorkflowApi'
 import NotificationsDrawer from './NotificationsDrawer'
 
 const DAILY_SLOT_LIMIT = 15
@@ -105,7 +109,8 @@ function NewAppointmentPage() {
     let cancelled = false
     void (async () => {
       try {
-        const data = await fetchProviderUpcoming(DEFAULT_PROVIDER_ID, {
+        const pid = await resolveSignedInProviderId()
+        const data = await fetchProviderUpcoming(pid, {
           fromDate: `${dateStr}T00:00:00`,
           toDate: `${dateStr}T23:59:59`,
         })
@@ -239,9 +244,10 @@ function NewAppointmentPage() {
     }
     try {
       setSubmitting(true)
+      const pid = await resolveSignedInProviderId()
       if (visitKind === 'walk_in') {
         await createVisitFromPatient(selectedId, {
-          provider_id: DEFAULT_PROVIDER_ID,
+          provider_id: pid,
           scheduled_start: null,
           visit_type: 'walk_in',
         })
@@ -249,7 +255,7 @@ function NewAppointmentPage() {
         const firstStart = uniqueStarts[0]
         const totalDuration = uniqueStarts.length * appointmentDuration
         await createVisitFromPatient(selectedId, {
-          provider_id: DEFAULT_PROVIDER_ID,
+          provider_id: pid,
           scheduled_start: firstStart,
           visit_type: 'scheduled',
         })

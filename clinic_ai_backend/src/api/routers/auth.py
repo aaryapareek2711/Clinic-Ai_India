@@ -12,13 +12,20 @@ from src.adapters.db.mongo.client import get_database
 from src.api.schemas.auth import (
     AuthResponse,
     OpdWeeklyDay,
+    RefreshTokenRequest,
     UserLoginRequest,
     UserProfileUpdateRequest,
     UserRegisterRequest,
     UserResponse,
     UserRoleUpdateRequest,
 )
-from src.core.auth import create_access_token, create_refresh_token, hash_password, verify_token, verify_password
+from src.core.auth import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    verify_refresh_token_payload,
+    verify_password,
+)
 from src.core.config import get_settings
 
 from src.api.deps import get_current_user as _get_current_user
@@ -359,6 +366,33 @@ def register(payload: UserRegisterRequest) -> AuthResponse:
 
 def _digits_only(s: str) -> str:
     return "".join(c for c in s if c.isdigit())
+
+
+@router.post("/refresh", response_model=AuthResponse)
+def refresh_tokens(payload: RefreshTokenRequest) -> AuthResponse:
+    """Issue new access (+ refresh) JWTs using a valid refresh token."""
+    raw = str(payload.refresh_token or "").strip()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="refresh_token is required")
+    try:
+        claims = verify_refresh_token_payload(raw)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "TOKEN_EXPIRED":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
+    user_id = str(claims.get("sub") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
+    db = get_database()
+    user_doc = db.users.find_one({"id": user_id})
+    if not user_doc or not bool(user_doc.get("is_active", True)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+    user_doc = _ensure_doctor_id(db, user_doc)
+    return _build_auth_response(user_doc)
 
 
 @router.post("/login", response_model=AuthResponse)

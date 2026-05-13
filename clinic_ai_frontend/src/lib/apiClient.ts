@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 /**
  * Default to same-origin API paths.
@@ -21,7 +22,11 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use((config) => {
   const path = (config.url ?? '').toString()
-  if (path.includes('/api/auth/login') || path.includes('/api/auth/register')) {
+  if (
+    path.includes('/api/auth/login') ||
+    path.includes('/api/auth/register') ||
+    path.includes('/api/auth/refresh')
+  ) {
     return config
   }
   const token =
@@ -34,6 +39,66 @@ apiClient.interceptors.request.use((config) => {
   }
   return config
 })
+
+/** Single-flight refresh when access JWT expires (matches backend ``Token expired``). */
+let refreshInFlight: Promise<void> | null = null
+
+function fastApiDetail(err: AxiosError): string {
+  const d = err.response?.data
+  if (d && typeof d === 'object' && 'detail' in d) {
+    const x = (d as { detail: unknown }).detail
+    if (typeof x === 'string') return x
+  }
+  return ''
+}
+
+apiClient.interceptors.response.use(
+  (res) => res,
+  async (error: AxiosError) => {
+    const status = error.response?.status
+    const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
+    if (!original || original._retry || status !== 401) {
+      return Promise.reject(error)
+    }
+    const path = `${original.baseURL ?? ''}${original.url ?? ''}`
+    if (
+      path.includes('/api/auth/login') ||
+      path.includes('/api/auth/register') ||
+      path.includes('/api/auth/refresh')
+    ) {
+      return Promise.reject(error)
+    }
+    const detail = fastApiDetail(error)
+    if (detail !== 'Token expired') {
+      return Promise.reject(error)
+    }
+    if (typeof localStorage === 'undefined' || !localStorage.getItem('refresh_token')?.trim()) {
+      return Promise.reject(error)
+    }
+    try {
+      if (!refreshInFlight) {
+        refreshInFlight = (async () => {
+          const { persistAuthSession, refreshAuthSession } = await import('../services/authApi')
+          const data = await refreshAuthSession()
+          persistAuthSession(data)
+        })().finally(() => {
+          refreshInFlight = null
+        })
+      }
+      await refreshInFlight
+      original._retry = true
+      return apiClient(original)
+    } catch {
+      try {
+        const { clearAuthSession } = await import('./authSession')
+        clearAuthSession()
+      } catch {
+        /* ignore */
+      }
+      return Promise.reject(error)
+    }
+  },
+)
 
 function backendReachabilityHint(): string {
   if (API_BASE_URL) {

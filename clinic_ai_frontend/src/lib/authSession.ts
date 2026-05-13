@@ -1,3 +1,6 @@
+/** Persisted from `/api/auth/login`, `/api/auth/register`, and `/api/auth/me` — must match visit URLs. */
+export const AUTH_DOCTOR_ID_STORAGE_KEY = 'auth_doctor_id'
+
 /** Shared keys for provider session (login / signup / logout). */
 export function clearAuthSession(): void {
   for (const k of [
@@ -8,6 +11,7 @@ export function clearAuthSession(): void {
     'auth_user_username',
     'auth_user_job_title',
     'auth_user_role',
+    AUTH_DOCTOR_ID_STORAGE_KEY,
   ]) {
     try {
       localStorage.removeItem(k)

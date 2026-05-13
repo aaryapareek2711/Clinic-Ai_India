@@ -42,6 +42,10 @@ class UserLoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=10, max_length=4096)
+
+
 class UserRoleUpdateRequest(BaseModel):
     role: str = Field(min_length=1, max_length=40)
 
