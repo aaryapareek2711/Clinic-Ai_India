@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
 from src.adapters.external.ai.openai_client import IntakeTurnError
 from src.application.services.intake_chat_service import IntakeChatService
@@ -684,7 +686,8 @@ def test_stop_message_uses_rebound_session_destination() -> None:
     assert service.whatsapp.sent[0][1] == "919222222222"
 
 
-def test_duplicate_reply_without_message_id_generates_only_one_next_question() -> None:
+def test_duplicate_webhook_delivery_same_message_id_processes_intake_once() -> None:
+    """Meta may retry the same inbound; stable message_id must dedupe before a second LLM turn."""
     service = IntakeChatService.__new__(IntakeChatService)
     fake_db = type("FakeDB", (), {})()
     fake_db.intake_sessions = _FakeCollection()
@@ -711,12 +714,83 @@ def test_duplicate_reply_without_message_id_generates_only_one_next_question() -
     service.handle_patient_reply(
         from_number="919333333333",
         message_text="Fever from 2 days",
-        message_id=None,
+        message_id="wamid-same",
     )
     service.handle_patient_reply(
         from_number="919333333333",
         message_text="Fever from 2 days",
-        message_id=None,
+        message_id="wamid-same",
     )
 
     assert call_count["n"] == 1
+
+
+def test_inbound_dedupe_scope_key_distinguishes_intake_steps() -> None:
+    s1 = {"status": "awaiting_illness", "pending_question": "Please describe your main health problem in a few words."}
+    s2 = {"status": "in_progress", "pending_question": "What health problem brings you in today?"}
+    assert IntakeChatService._inbound_dedupe_scope_key(s1) != IntakeChatService._inbound_dedupe_scope_key(s2)
+
+
+def test_claim_inbound_text_blocks_quick_replay_same_slot() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {"_id": "session-1"}
+    service.db = fake_db
+    base = {
+        "_id": "session-1",
+        "status": "in_progress",
+        "pending_question": "What brings you in?",
+    }
+    assert service._claim_inbound_text(base, "Diabetes") is True
+    rec = fake_db.intake_sessions.record
+    session_after = {**base, **{k: rec[k] for k in ("last_inbound_fingerprint", "last_inbound_fingerprint_scope", "last_inbound_fingerprint_at") if k in rec}}
+    assert service._claim_inbound_text(session_after, "Diabetes") is False
+
+
+def test_claim_inbound_text_allows_same_word_when_pending_question_changes() -> None:
+    service = IntakeChatService.__new__(IntakeChatService)
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _FakeCollection()
+    fake_db.intake_sessions.record = {"_id": "session-1"}
+    service.db = fake_db
+    session_chief = {
+        "_id": "session-1",
+        "status": "awaiting_illness",
+        "pending_question": "Please describe your main health problem in a few words.",
+    }
+    assert service._claim_inbound_text(session_chief, "Diabetes") is True
+    rec = fake_db.intake_sessions.record
+    merged = {**session_chief, **{k: rec[k] for k in ("last_inbound_fingerprint", "last_inbound_fingerprint_scope", "last_inbound_fingerprint_at") if k in rec}}
+    session_follow = {
+        **merged,
+        "status": "in_progress",
+        "pending_question": "What health problem brings you in today?",
+    }
+    assert service._claim_inbound_text(session_follow, "Diabetes") is True
+
+
+def test_is_probable_duplicate_reply_ignores_legacy_rows_without_scope() -> None:
+    service = _build_service()
+    session = {
+        "status": "in_progress",
+        "pending_question": "What health problem brings you in today?",
+        "recent_inbound_text": "Diabetes",
+        "recent_inbound_at": datetime.now(timezone.utc).isoformat(),
+    }
+    assert service._is_probable_duplicate_reply(session, "Diabetes") is False
+
+
+def test_is_probable_duplicate_reply_blocks_same_slot_within_window() -> None:
+    service = _build_service()
+    scope = IntakeChatService._inbound_dedupe_scope_key(
+        {"status": "in_progress", "pending_question": "What health problem brings you in today?"},
+    )
+    session = {
+        "status": "in_progress",
+        "pending_question": "What health problem brings you in today?",
+        "recent_inbound_text": "Diabetes",
+        "recent_inbound_at": datetime.now(timezone.utc).isoformat(),
+        "recent_inbound_scope": scope,
+    }
+    assert service._is_probable_duplicate_reply(session, "Diabetes") is True

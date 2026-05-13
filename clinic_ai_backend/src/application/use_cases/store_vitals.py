@@ -241,22 +241,41 @@ class StoreVitalsUseCase:
             "fields": list(result.get("fields", [])),
             "generated_at": datetime.now(timezone.utc),
         }
-        self.db.visits.update_one(
-            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
-            {
-                "$set": {
-                    "vitals_form": form_doc,
-                    # Vitals form generation means we are now in the vitals stage.
-                    "status": "in_progress",
-                    "previous_workflow_stage": "pre_visit",
-                    "current_workflow_stage": "vitals",
-                    "next_workflow_stage": "transcription",
-                    "updated_at": form_doc["generated_at"],
-                }
-            },
-        )
-        form_doc.pop("_id", None)
-        return form_doc
+        # Only one writer may create `vitals_form` for this visit. Concurrent generate requests
+        # otherwise each assign a different `form_id`; the last write wins in DB while clients
+        # may still hold an earlier `form_id`, breaking submit validation.
+        visit_key = {"$or": [{"visit_id": visit_id}, {"id": visit_id}]}
+        no_persisted_form_id = {
+            "$or": [
+                {"vitals_form": {"$exists": False}},
+                {"vitals_form": None},
+                {"vitals_form": {}},
+                {"vitals_form.form_id": {"$exists": False}},
+                {"vitals_form.form_id": None},
+                {"vitals_form.form_id": ""},
+            ]
+        }
+        set_payload = {
+            "vitals_form": form_doc,
+            # Vitals form generation means we are now in the vitals stage.
+            "status": "in_progress",
+            "previous_workflow_stage": "pre_visit",
+            "current_workflow_stage": "vitals",
+            "next_workflow_stage": "transcription",
+            "updated_at": form_doc["generated_at"],
+        }
+        insert_filter = {"$and": [visit_key, no_persisted_form_id]}
+        insert_result = self.db.visits.update_one(insert_filter, {"$set": set_payload})
+        if insert_result.matched_count:
+            form_doc.pop("_id", None)
+            return form_doc
+
+        winner = self.db.visits.find_one(visit_key, {"_id": 0, "vitals_form": 1}) or {}
+        winner_form = dict(winner.get("vitals_form") or {})
+        winner_form.pop("_id", None)
+        if winner_form:
+            return winner_form
+        raise ValueError("Could not persist or read vitals form for this visit; retry generate-form.")
 
     def submit_vitals(
         self,

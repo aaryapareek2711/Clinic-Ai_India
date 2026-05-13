@@ -107,7 +107,15 @@ class GenerateIndiaClinicalNoteUseCase:
         if not doc:
             return None
         content = doc.get("content")
-        return content if isinstance(content, dict) else None
+        if not isinstance(content, dict):
+            return None
+        # Legacy / blueprint payloads may store narrative under SOAP "subjective" only.
+        merged = dict(content)
+        dn = str(merged.get("doctor_notes") or "").strip()
+        subj = str(merged.get("subjective") or "").strip()
+        if not dn and subj:
+            merged["doctor_notes"] = subj
+        return merged
 
     @staticmethod
     def _apply_template(payload: dict, template: dict) -> dict:
@@ -160,6 +168,14 @@ class GenerateIndiaClinicalNoteUseCase:
         if "data_gaps" not in selected:
             out["data_gaps"] = []
 
+        # Optional preferences (template UI hint textarea) are described as feeding doctor_notes.
+        # When the doctor_notes section is removed from included_sections, strict mode would otherwise
+        # clear LLM doctor_notes entirely while rx/plan still reflect the template — surface prefs here.
+        if "doctor_notes" not in selected:
+            prefs_only = _first_text(tpl.get("optional_preferences"))
+            if prefs_only:
+                out["doctor_notes"] = prefs_only
+
         # Fill missing selected sections from template starters (only for selected fields).
         if "chief_complaint" in selected and not str(out.get("chief_complaint") or "").strip():
             out["chief_complaint"] = _first_text(tpl.get("chief_complaint"))
@@ -172,7 +188,7 @@ class GenerateIndiaClinicalNoteUseCase:
         if "doctor_notes" in selected:
             # If template includes doctor notes, treat it as authoritative starter text.
             # Fallback to generated note text only when template doctor_notes is empty.
-            template_note = _first_text(tpl.get("doctor_notes"))
+            template_note = _first_text(tpl.get("doctor_notes"), tpl.get("subjective"))
             template_preferences = _first_text(tpl.get("optional_preferences"))
             if template_note:
                 out["doctor_notes"] = template_note
@@ -231,7 +247,7 @@ class GenerateIndiaClinicalNoteUseCase:
                 if _first_text(tpl.get(key)):
                     out[key] = _first_text(tpl.get(key))
 
-        template_note = _first_text(tpl.get("doctor_notes"))
+        template_note = _first_text(tpl.get("doctor_notes"), tpl.get("subjective"))
         template_preferences = _first_text(tpl.get("optional_preferences"))
         if template_note:
             out["doctor_notes"] = template_note

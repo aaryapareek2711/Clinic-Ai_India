@@ -179,6 +179,53 @@ def test_template_doctor_notes_excluded_generates_null_doctor_notes(
     assert payload["doctor_notes"] is None
 
 
+def test_template_optional_preferences_fill_doctor_notes_when_section_omitted(
+    app_client: Any,
+    patched_db: Any,
+    fake_llm: None,
+) -> None:
+    """Optional preferences are UI hints for narrative; they must survive strict mode when doctor_notes is not listed."""
+    patient_id = "john_prefs_1"
+    visit_id = "CONSULT-20260511-PREFS"
+    job_id = "job-prefs-1"
+    _seed_visit(patched_db, patient_id=patient_id, visit_id=visit_id)
+    _seed_completed_transcription(patched_db, patient_id=patient_id, visit_id=visit_id, job_id=job_id)
+
+    tpl_res = app_client.post(
+        "/api/templates",
+        json={
+            "name": "Prefs Only Template",
+            "description": "",
+            "type": "personal",
+            "category": "General",
+            "specialty": "",
+            "content": {
+                "included_sections": ["assessment", "plan", "rx"],
+                "section_detail_level": {"assessment": "brief", "plan": "brief"},
+                "optional_preferences": "Start insulin education; emphasize foot care.",
+            },
+            "tags": [],
+            "appointment_types": [],
+            "is_favorite": False,
+        },
+    )
+    assert tpl_res.status_code == 200
+    template_id = tpl_res.json()["id"]
+
+    note_res = app_client.post(
+        "/api/notes/clinical-note",
+        json={
+            "patient_id": patient_id,
+            "visit_id": visit_id,
+            "template_id": template_id,
+            "force_regenerate": True,
+        },
+    )
+    assert note_res.status_code == 200, note_res.text
+    payload = note_res.json()["payload"]
+    assert payload["doctor_notes"] == "Start insulin education; emphasize foot care."
+
+
 def test_assessment_detail_is_longer_than_brief(
     app_client: Any,
     patched_db: Any,

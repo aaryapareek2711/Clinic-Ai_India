@@ -683,6 +683,21 @@ export default function CreateTemplateModal({ isOpen, onClose, onCreated, onUpda
                     </div>
                   </div>
 
+                  {section === 'doctor_notes' && (
+                    <div>
+                      <label className="sr-only" htmlFor="tmpl-doctor-notes">
+                        Doctor notes template text
+                      </label>
+                      <textarea
+                        className="min-h-[120px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-[#171d16] focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                        id="tmpl-doctor-notes"
+                        onChange={(e) => setContent({ ...content, doctor_notes: e.target.value })}
+                        placeholder="Starter narrative for the clinical note (merged into doctor notes when this section is included)."
+                        value={content.doctor_notes}
+                      />
+                    </div>
+                  )}
+
                   {section === 'investigations' && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
