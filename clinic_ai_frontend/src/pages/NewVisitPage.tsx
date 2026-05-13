@@ -325,10 +325,6 @@ function NewVisitPage() {
       return
     }
     const hasAppointmentDate = appointmentDate.trim().length > 0
-    if (hasAppointmentDate && visitKind === 'walk_in' && !selectedSlot) {
-      setFormError('Select an appointment slot for Walk-in visit type.')
-      return
-    }
     try {
       setSubmitting(true)
       const registered = await registerPatient({
@@ -351,19 +347,25 @@ function NewVisitPage() {
                 .map((s) => s.startIso)
                 .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
 
-        if (visitKind === 'walk_in' && startsToCreate.length === 0) {
+        if (visitKind === 'scheduled' && startsToCreate.length === 0) {
           setFormError('Select appointment slot(s).')
           return
         }
 
+        const pid = await resolveSignedInProviderId()
         if (startsToCreate.length === 0) {
-          setFormError('Select appointment slot(s).')
+          // Walk-in: OPD slot is optional — create visit without scheduled_start (same as New Visit for existing patient).
+          await createVisitFromPatient(registered.patient_id, {
+            provider_id: pid,
+            scheduled_start: null,
+            visit_type: 'walk_in',
+          })
+          navigate('/dashboard', { replace: true })
           return
         }
 
         const firstStart = startsToCreate[0]
         const totalDuration = startsToCreate.length * (schedule.defaultSlotMinutes || 15)
-        const pid = await resolveSignedInProviderId()
         const createdVisit = await createVisitFromPatient(registered.patient_id, {
           provider_id: pid,
           scheduled_start: firstStart,
@@ -554,7 +556,7 @@ function NewVisitPage() {
                           ? `${appointmentDate} ${formatChipTime(selectedSlot?.startIso || '')} (${schedule.defaultSlotMinutes || 15}m) · Walk-in`
                           : `${selectedSlots.length} slot(s) selected on ${appointmentDate}`
                         : visitKind === 'walk_in'
-                          ? 'Select walk-in time'
+                          ? 'Walk-in (no time selected — optional)'
                           : 'Open / TBD'}
                     </span>
                   </div>
@@ -704,7 +706,10 @@ function NewVisitPage() {
                     </div>
                     {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
                     {visitKind === 'walk_in' && !selectedSlot && (
-                      <p className="mt-2 text-xs font-semibold text-[#0f5132]">Walk-in also needs an appointment time.</p>
+                      <p className="mt-2 text-xs text-[#575e70]">
+                        Optional: pick today&apos;s OPD slot to record an arrival time. You can confirm walk-in without a
+                        slot.
+                      </p>
                     )}
                     {visitKind === 'scheduled' && selectedSlots.length > 0 && (
                       <p className="mt-2 text-xs font-semibold text-[#0f5132]">Selected slots: {selectedSlots.length}</p>
