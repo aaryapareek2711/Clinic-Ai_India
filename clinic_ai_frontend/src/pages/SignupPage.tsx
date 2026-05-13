@@ -422,7 +422,7 @@ function SignupPage() {
                 </label>
                 <div className="relative">
                   <input
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 pr-12 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                    className="suppress-native-password-reveal w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 pr-12 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
                     id="password"
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Create a secure password"

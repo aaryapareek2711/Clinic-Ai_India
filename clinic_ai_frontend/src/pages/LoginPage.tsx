@@ -103,7 +103,7 @@ function LoginPage() {
                 </span>
                 <input
                   autoComplete="current-password"
-                  className="w-full bg-surface-container-low border border-outline-variant rounded-lg py-3 pl-12 pr-12 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="suppress-native-password-reveal w-full bg-surface-container-low border border-outline-variant rounded-lg py-3 pl-12 pr-12 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   id="login-password"
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
