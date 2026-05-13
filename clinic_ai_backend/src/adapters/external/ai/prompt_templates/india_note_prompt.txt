@@ -14,6 +14,12 @@ Return JSON only with exactly these keys:
 - chief_complaint: optional context string or null
 - data_gaps: array of strings
 
+doctor_notes — dialogue-style paragraphs (when encounter audio/text exists):
+- If context includes a non-empty "previsit_additional_doctor_note" string, keep that text verbatim at the very beginning of doctor_notes (existing rule below); then add encounter narrative after it.
+- When context has non-empty "structured_dialogue" OR non-empty "transcript_text": write the encounter portion of doctor_notes as labeled paragraphs so both patient and clinician content appear. Each paragraph MUST start with exactly one prefix on its own line: "Patient:", "Doctor:", "Family Member:", or "Unknown:" (plain text). When "structured_dialogue" is present, follow its turn order and speaker labels; merge consecutive same-role turns into one paragraph where natural. When only "transcript_text" is present, infer Patient vs Doctor turns conservatively and still use the same prefixes—do not collapse into doctor-only prose.
+- Preserve clinically relevant patient-reported facts (symptoms, duration, home readings, medications mentioned, adherence, concerns).
+- When there is no transcript and no structured_dialogue, doctor_notes may be brief prose or null aside from any mandatory pre-visit verbatim prefix.
+
 Rules:
 - Use exactly one of follow_up_in or follow_up_date.
 - If context JSON includes "staff_confirmed_follow_up_date" (ISO YYYY-MM-DD), you MUST set follow_up_date to that exact string and set follow_up_in to null.
