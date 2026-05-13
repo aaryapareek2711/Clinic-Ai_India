@@ -345,6 +345,49 @@ def test_visit_dialogue_returns_payload_when_completed(app_client, fake_db) -> N
     assert body["structured_dialogue"][0]["Doctor"] == "hello"
 
 
+def test_delete_visit_transcription_removes_session_and_deletes_audio_file(
+    app_client, fake_db, tmp_path: Path
+) -> None:
+    now = datetime.now(timezone.utc)
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"audio-bytes")
+    ref = f"file://{audio_path.as_posix()}"
+    fake_db.patients.insert_one(
+        {
+            "patient_id": "p1",
+            "name": "Delete Transcript Patient",
+            "phone_number": "9999999999",
+            "doctor_id": "DOC001",
+        }
+    )
+    fake_db.visits.insert_one(
+        {
+            "visit_id": "v1",
+            "patient_id": "p1",
+            "transcription_session": {
+                "patient_id": "p1",
+                "visit_id": "v1",
+                "transcription_status": "completed",
+                "transcript": "hello world",
+                "structured_dialogue": [{"Doctor": "hello"}],
+                "audio_file_path": ref,
+                "started_at": now,
+                "completed_at": now,
+                "word_count": 2,
+            },
+        }
+    )
+    response = app_client.delete("/api/notes/p1/visits/v1/transcription")
+    assert response.status_code == 200
+    assert response.json().get("message")
+    visit_doc = fake_db.visits.find_one({"visit_id": "v1"})
+    assert visit_doc is not None
+    assert not visit_doc.get("transcription_session")
+    assert not audio_path.is_file()
+    incomplete = app_client.get("/api/notes/p1/visits/v1/dialogue")
+    assert incomplete.status_code == 202
+
+
 def test_structure_dialogue_endpoint_persists(
     app_client, fake_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:

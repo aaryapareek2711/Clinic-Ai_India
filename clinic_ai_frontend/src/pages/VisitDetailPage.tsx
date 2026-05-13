@@ -12,7 +12,7 @@ import {
   fetchVisitTranscriptionDialogue,
   translateDisplayPayload,
   structureVisitDialogue,
-  deleteVisitStructuredDialogue,
+  deleteVisitTranscription,
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
@@ -364,9 +364,9 @@ export default function VisitDetailPage() {
     Record<string, unknown>
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
-  const [deleteDialogueOpen, setDeleteDialogueOpen] = useState(false)
-  const [deleteDialogueLoading, setDeleteDialogueLoading] = useState(false)
-  const [deleteDialogueError, setDeleteDialogueError] = useState<string | null>(null)
+  const [deleteTranscriptOpen, setDeleteTranscriptOpen] = useState(false)
+  const [deleteTranscriptLoading, setDeleteTranscriptLoading] = useState(false)
+  const [deleteTranscriptError, setDeleteTranscriptError] = useState<string | null>(null)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
   const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
@@ -1159,25 +1159,29 @@ export default function VisitDetailPage() {
     }
   }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
 
-  const handleDeleteStructuredDialogue = useCallback(async () => {
-    if (!patientId || !visitId || deleteDialogueLoading) return
-    setDeleteDialogueLoading(true)
-    setDeleteDialogueError(null)
+  const handleDeleteTranscription = useCallback(async () => {
+    if (!patientId || !visitId || deleteTranscriptLoading) return
+    setDeleteTranscriptLoading(true)
+    setDeleteTranscriptError(null)
     try {
-      await deleteVisitStructuredDialogue(patientId, visitId)
+      await deleteVisitTranscription(patientId, visitId)
       setTranscriptionStructuredDialogue(null)
+      setTranscriptionText(null)
       setTranslatedDisplayBundle((prev) =>
-        prev ? { ...prev, transcriptionStructuredDialogue: null } : null,
+        prev
+          ? { ...prev, transcriptionStructuredDialogue: null, transcriptionText: null }
+          : null,
       )
+      await refreshTranscriptionStatus()
       await loadTranscriptBody({ silent: true })
-      setTranscriptionMessage('Speaker dialogue deleted.')
-      setDeleteDialogueOpen(false)
+      setTranscriptionMessage('Transcript deleted.')
+      setDeleteTranscriptOpen(false)
     } catch (e) {
-      setDeleteDialogueError(getApiErrorMessage(e))
+      setDeleteTranscriptError(getApiErrorMessage(e))
     } finally {
-      setDeleteDialogueLoading(false)
+      setDeleteTranscriptLoading(false)
     }
-  }, [deleteDialogueLoading, loadTranscriptBody, patientId, visitId])
+  }, [deleteTranscriptLoading, loadTranscriptBody, patientId, refreshTranscriptionStatus, visitId])
 
   const dialogueTurns = useMemo(
     () => flattenStructuredDialogue(displayStructuredDialogue),
@@ -1881,16 +1885,16 @@ export default function VisitDetailPage() {
                         <h4 className="text-sm font-semibold text-[#171d16]">Speaker dialogue</h4>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-2">
-                        {dialogueTurns.length > 0 && (
+                        {(dialogueTurns.length > 0 || (displayTranscriptionText?.trim().length ?? 0) > 0) && (
                           <button
                             className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
                             onClick={() => {
-                              setDeleteDialogueError(null)
-                              setDeleteDialogueOpen(true)
+                              setDeleteTranscriptError(null)
+                              setDeleteTranscriptOpen(true)
                             }}
                             type="button"
                           >
-                            Delete dialogue
+                            Delete transcript
                           </button>
                         )}
                         {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
@@ -2365,44 +2369,44 @@ export default function VisitDetailPage() {
         </div>
       )}
 
-      {deleteDialogueOpen && (
+      {deleteTranscriptOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">
           <button
-            aria-label="Close delete dialogue confirmation"
+            aria-label="Close delete transcript confirmation"
             className="absolute inset-0"
             onClick={() => {
-              if (!deleteDialogueLoading) {
-                setDeleteDialogueOpen(false)
-                setDeleteDialogueError(null)
+              if (!deleteTranscriptLoading) {
+                setDeleteTranscriptOpen(false)
+                setDeleteTranscriptError(null)
               }
             }}
             type="button"
           />
           <div
-            aria-labelledby="delete-dialogue-title"
+            aria-labelledby="delete-transcript-title"
             aria-modal="true"
             className="relative z-[101] w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl"
             role="dialog"
           >
-            <h3 className="text-lg font-semibold text-[#171d16]" id="delete-dialogue-title">
-              Delete speaker dialogue?
+            <h3 className="text-lg font-semibold text-[#171d16]" id="delete-transcript-title">
+              Delete transcript?
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-[#575e70]">
-              This removes the Doctor/Patient turn list from this visit. The raw transcript stays on file; you can generate
-              dialogue again later.
+              This removes the full transcription for this visit: raw speech-to-text, speaker-labeled dialogue, status
+              metadata, and the uploaded audio file from storage. You can record or upload again later.
             </p>
-            {deleteDialogueError ? (
+            {deleteTranscriptError ? (
               <p className="mt-3 text-sm text-red-700" role="alert">
-                {deleteDialogueError}
+                {deleteTranscriptError}
               </p>
             ) : null}
             <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
               <button
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-slate-50 disabled:opacity-50"
-                disabled={deleteDialogueLoading}
+                disabled={deleteTranscriptLoading}
                 onClick={() => {
-                  setDeleteDialogueOpen(false)
-                  setDeleteDialogueError(null)
+                  setDeleteTranscriptOpen(false)
+                  setDeleteTranscriptError(null)
                 }}
                 type="button"
               >
@@ -2410,11 +2414,11 @@ export default function VisitDetailPage() {
               </button>
               <button
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={deleteDialogueLoading}
-                onClick={() => void handleDeleteStructuredDialogue()}
+                disabled={deleteTranscriptLoading}
+                onClick={() => void handleDeleteTranscription()}
                 type="button"
               >
-                {deleteDialogueLoading ? 'Deleting…' : 'Delete'}
+                {deleteTranscriptLoading ? 'Deleting…' : 'Delete transcript'}
               </button>
             </div>
           </div>

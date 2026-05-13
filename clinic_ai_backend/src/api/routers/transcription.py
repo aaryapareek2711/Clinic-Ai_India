@@ -378,24 +378,36 @@ async def structure_visit_dialogue(
     return JSONResponse(status_code=200, content={"dialogue": scrubbed, "message": "Success"})
 
 
-@router.delete("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
-async def delete_visit_structured_dialogue(
+@router.delete("/{patient_id}/visits/{visit_id}/transcription", response_model=None)
+async def delete_visit_transcription(
     patient_id: str,
     visit_id: str,
     current_user: dict = Depends(get_current_user),
 ) -> JSONResponse:
-    """Remove stored structured (Doctor/Patient) dialogue for this visit; transcript remains."""
+    """Remove this visit's transcription session from storage: raw transcript, structured dialogue, and metadata.
+
+    Uploaded audio referenced by the session is deleted from object/GridFS storage when present.
+    """
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
     db = get_database()
     ensure_patient_owned_by_doctor(db, normalize_doctor_id(current_user), internal_pid)
     vrepo = VisitTranscriptionRepository()
-    if not vrepo.clear_structured_dialogue(patient_id=internal_pid, visit_id=internal_vid):
+    session = vrepo.get_session(patient_id=internal_pid, visit_id=internal_vid)
+    if not session:
         raise HTTPException(
             status_code=404,
             detail={"error": "TRANSCRIPTION_SESSION_NOT_FOUND", "message": "No transcription session for this visit"},
         )
-    return JSONResponse(status_code=200, content={"message": "Structured dialogue removed"})
+    audio_ref = session.get("audio_file_path")
+    if isinstance(audio_ref, str) and audio_ref.strip():
+        TranscriptionAudioStore().delete_by_ref(audio_ref.strip())
+    if not vrepo.delete_transcription_session(patient_id=internal_pid, visit_id=internal_vid):
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "TRANSCRIPTION_SESSION_NOT_FOUND", "message": "No transcription session for this visit"},
+        )
+    return JSONResponse(status_code=200, content={"message": "Transcription removed"})
 
 
 def _normalize_language_mix(value: str) -> str:

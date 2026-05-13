@@ -184,3 +184,15 @@ class VisitTranscriptionRepository:
             },
         )
         return True
+
+    def delete_transcription_session(self, *, patient_id: str, visit_id: str) -> bool:
+        """Remove the entire embedded transcription_session from the visit (raw text, dialogue, job metadata)."""
+        session = self.get_session(patient_id=patient_id, visit_id=visit_id)
+        if not session:
+            return False
+        now = _utc_now()
+        result = self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"$unset": {"transcription_session": ""}, "$set": {"updated_at": now}},
+        )
+        return result.matched_count > 0

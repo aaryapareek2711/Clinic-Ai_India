@@ -131,6 +131,8 @@ class InMemoryCollection:
                     updated[key] = value
                 for key, value in update.get("$inc", {}).items():
                     updated[key] = int(updated.get(key, 0)) + int(value)
+                for key in update.get("$unset", {}):
+                    updated.pop(key, None)
                 self.docs[index] = updated
                 return UpdateResult(1)
         if upsert and update.get("$set"):
@@ -148,6 +150,8 @@ class InMemoryCollection:
                     updated[key] = value
                 for key, value in update.get("$inc", {}).items():
                     updated[key] = int(updated.get(key, 0)) + int(value)
+                for key in update.get("$unset", {}):
+                    updated.pop(key, None)
                 self.docs[index] = updated
 
     def replace_one(self, query: dict, replacement: dict, upsert: bool = False) -> None:
