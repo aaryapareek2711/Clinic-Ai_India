@@ -182,3 +182,63 @@ class VisitTranscriptionRepository:
             },
         )
         return True
+
+    def purge_transcription_for_visit(self, *, patient_id: str, visit_id: str) -> bool:
+        """
+        Remove visit transcription entirely: embedded session, pipeline jobs/results, audio metadata,
+        and stored audio bytes (best-effort via storage_ref on audio_files).
+
+        Returns True if anything existed to remove or the visit document matched.
+        """
+        from src.adapters.external.storage.object_storage import TranscriptionAudioStore
+
+        now = _utc_now()
+        visit = self.db.visits.find_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}]},
+            {"_id": 0, "patient_id": 1, "transcription_session": 1},
+        )
+        if not visit:
+            return False
+        visit_pid = str(visit.get("patient_id") or "").strip()
+        if visit_pid and visit_pid != str(patient_id).strip():
+            return False
+
+        session = dict(visit.get("transcription_session") or {})
+        had_session = bool(session)
+
+        jobs = list(
+            self.db.transcription_jobs.find(
+                {"patient_id": patient_id, "visit_id": visit_id},
+                {"job_id": 1},
+            )
+        )
+        job_ids_set: set[str] = {str(j["job_id"]) for j in jobs if j.get("job_id")}
+        sid_job = str(session.get("job_id") or "").strip()
+        if sid_job:
+            job_ids_set.add(sid_job)
+        job_ids = list(job_ids_set)
+
+        audio_docs = list(
+            self.db.audio_files.find(
+                {"patient_id": patient_id, "visit_id": visit_id},
+                {"storage_ref": 1},
+            )
+        )
+        store = TranscriptionAudioStore()
+        for doc in audio_docs:
+            store.delete_by_ref(doc.get("storage_ref"))
+
+        deleted_jobs = 0
+        if job_ids:
+            self.db.transcription_results.delete_many({"job_id": {"$in": job_ids}})
+            deleted_jobs = self.db.transcription_jobs.delete_many({"job_id": {"$in": job_ids}}).deleted_count
+
+        self.db.audio_files.delete_many({"patient_id": patient_id, "visit_id": visit_id})
+
+        res = self.db.visits.update_one(
+            {"$or": [{"visit_id": visit_id}, {"id": visit_id}], "patient_id": patient_id},
+            {"$unset": {"transcription_session": ""}, "$set": {"updated_at": now}},
+        )
+
+        removed_pipeline = deleted_jobs > 0 or len(audio_docs) > 0
+        return had_session or removed_pipeline or res.modified_count > 0

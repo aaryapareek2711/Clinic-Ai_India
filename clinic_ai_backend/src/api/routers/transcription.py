@@ -335,18 +335,21 @@ async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONRespon
     return JSONResponse(status_code=200, content={"dialogue": scrubbed, "message": "Success"})
 
 
-@router.delete("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
-async def delete_visit_structured_dialogue(patient_id: str, visit_id: str) -> JSONResponse:
-    """Remove stored structured (Doctor/Patient) dialogue for this visit; transcript remains."""
+@router.delete("/{patient_id}/visits/{visit_id}/transcription", response_model=None)
+async def delete_visit_transcription(patient_id: str, visit_id: str) -> JSONResponse:
+    """Remove this visit's transcription: session (raw text + dialogue), jobs, results, and stored audio."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
     vrepo = VisitTranscriptionRepository()
-    if not vrepo.clear_structured_dialogue(patient_id=internal_pid, visit_id=internal_vid):
+    if not vrepo.purge_transcription_for_visit(patient_id=internal_pid, visit_id=internal_vid):
         raise HTTPException(
             status_code=404,
-            detail={"error": "TRANSCRIPTION_SESSION_NOT_FOUND", "message": "No transcription session for this visit"},
+            detail={
+                "error": "TRANSCRIPTION_NOT_FOUND",
+                "message": "No transcription data found for this visit",
+            },
         )
-    return JSONResponse(status_code=200, content={"message": "Structured dialogue removed"})
+    return JSONResponse(status_code=200, content={"message": "Transcription removed"})
 
 
 def _normalize_language_mix(value: str) -> str:
