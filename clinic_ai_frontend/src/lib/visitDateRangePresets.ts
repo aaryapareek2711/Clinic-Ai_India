@@ -66,7 +66,7 @@ function endExclusiveFromStartDay(startDay: Date): Date {
 }
 
 /** Inclusive calendar-day end for display (endExclusive - 1ms day). */
-function lastInclusiveDay(startDay: Date, endExclusive: Date): Date {
+function lastInclusiveDay(endExclusive: Date): Date {
   const x = new Date(endExclusive)
   x.setMilliseconds(x.getMilliseconds() - 1)
   return startOfLocalDay(x)
@@ -104,7 +104,7 @@ export function formatRangeHint(
   const { rangeStartIso, rangeEndExclusiveIso } = computeVisitDateRange(preset, now, customFromYmd, customToYmd, opts)
   const start = new Date(rangeStartIso)
   const endEx = new Date(rangeEndExclusiveIso)
-  const last = lastInclusiveDay(start, endEx)
+  const last = lastInclusiveDay(endEx)
 
   if (preset === 'today') return fmt(start, shortMdy)
   if (preset === 'this_month' || preset === 'last_month') return fmt(start, monthYear)
