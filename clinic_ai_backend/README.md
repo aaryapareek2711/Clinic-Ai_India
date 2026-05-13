@@ -1,138 +1,174 @@
-# Clinic AI India Backend
+# Clinic AI India — Backend
 
-## Architecture Overview
-This project follows a Clean Architecture style with clear boundaries between presentation (`api`), application (`use_cases`, `ports`, `dto`), domain (`entities`, `value_objects`, `events`), and infrastructure (`adapters`). Shared cross-cutting concerns live in `core`, `middleware`, and `observability`. Background workflows are handled by `workers` for async processing and task sweeping.
+FastAPI service for the Clinic AI India provider product: patient/visit APIs, clinical notes (OpenAI), **Azure Speech** transcription with a MongoDB-backed job queue, optional **WhatsApp** webhooks, and JWT authentication.
 
-## Local Setup
+For **full-stack** setup order and deployment checklist, start at the repository **[root `README.md`](../README.md)**.
+
+---
+
+## Prerequisites
+
+| Requirement | Purpose |
+|-------------|---------|
+| **Python 3.11+** | Runtime |
+| **MongoDB** | Application data + `transcription_queue`; production uses **GridFS** for uploaded audio |
+| **ffmpeg** & **ffprobe** on `PATH` | Worker normalizes many MP3/M4A uploads before Azure Speech (see below). Dockerfiles install these. |
+| Provider keys | **OpenAI**, **Azure Speech**; **Meta WhatsApp** if you use intake/follow-up messaging |
+
+---
+
+## Quick setup (local)
+
+From this directory (`clinic_ai_backend/`):
+
 ```bash
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-make dev
 ```
 
-## Environment Variables
-| Variable | Required | Description | Example |
-|---|---|---|---|
-| OPENAI_API_KEY | Yes | API key for LLM provider | sk-... |
-| OPENAI_MODEL | No | OpenAI model for chat/note generation | gpt-4o-mini |
-| MONGODB_URL | Yes | MongoDB connection URI | mongodb://localhost:27017/clinic_ai |
-| MONGODB_DB_NAME | Yes | MongoDB database name | clinic_ai |
-| CORS_ORIGINS | Yes (for browser clients) | Comma-separated allowed frontend origins (no spaces). Set on Render for production. | `https://clinic-ai-india.vercel.app,http://localhost:5173,http://127.0.0.1:5173` |
-| CORS_ORIGIN_REGEX | No | Optional regex for dynamic preview domains (e.g., Vercel previews) | https://your-app-.*\\.vercel\\.app |
-| AZURE_SPEECH_KEY | Yes | Azure Speech Service API key | your-azure-speech-key |
-| AZURE_SPEECH_REGION | Yes* | Azure Speech region (required if endpoint not fully set) | centralindia |
-| AZURE_SPEECH_ENDPOINT | No | Optional explicit Speech endpoint | https://<region>.api.cognitive.microsoft.com/ |
-| MAX_AUDIO_SIZE_MB | No | Max upload size in MB | 25 |
-| TRANSCRIPTION_MAX_RETRIES | No | Retry attempts for failed jobs | 3 |
-| TRANSCRIPTION_TIMEOUT_SEC | No | Worker timeout per transcription call | 120 |
-| USE_LOCAL_ADAPTERS | No | If true: asyncio in-process transcription queue + temp files for audio when DB is not PyMongo | true |
-| LOCAL_AUDIO_STORAGE_PATH | No | Directory for temp transcription audio (non-GridFS / local adapters) | /tmp/clinic_audio |
-| MONGO_AUDIO_BUCKET_NAME | No | GridFS bucket name (Render + real MongoDB) | audio_blobs |
-| DEFAULT_NOTE_TYPE | No | Auto note generation type after transcription | india_clinical |
-| WHATSAPP_ACCESS_TOKEN | Yes (for WhatsApp) | Meta WhatsApp Cloud API token | EAA... |
-| WHATSAPP_PHONE_NUMBER_ID | Yes (for WhatsApp) | WhatsApp phone number id | 101648... |
-| WHATSAPP_VERIFY_TOKEN | Yes (for WhatsApp) | Webhook verify token | clinicai_india_webhook_2024 |
-| WHATSAPP_API_VERSION | No | Meta API version | v21.0 |
-| WHATSAPP_INTAKE_TEMPLATE_NAME | No | Initial outbound WhatsApp template name | opening_msg |
-| WHATSAPP_INTAKE_TEMPLATE_LANG_EN | No | English template locale code | en_US |
-| WHATSAPP_INTAKE_TEMPLATE_LANG_HI | No | Hindi template locale code | hi |
-| WHATSAPP_INTAKE_TEMPLATE_PARAM_COUNT | No | Number of body params in template | 1 |
-| INTAKE_USE_LLM_MESSAGE | No | Intake flag for LLM-based message generation (default false) | false |
-| INTAKE_REQUIRE_ALL_AGENTS | No | Intake flag requiring all intake agents to be present (default true) | true |
-| INTAKE_STRICT_VALIDATION | No | Intake flag for strict intake validation checks (default true) | true |
+Activate:
 
-### CORS on Render (and other hosts)
+- **Windows:** `.venv\Scripts\activate`
+- **macOS/Linux:** `source .venv/bin/activate`
 
-The API reads **`CORS_ORIGINS`** (comma-separated, **no spaces**). On [Render](https://render.com), open your web service → **Environment** → add or edit:
+```bash
+pip install -r requirements.txt
+copy .env.example .env
+```
 
-`CORS_ORIGINS=https://clinic-ai-india.vercel.app,http://localhost:5173,http://127.0.0.1:5173`
+Edit **`.env`** — required keys depend on features you enable; see **[Environment variables](#environment-variables)** and the annotated **[`.env.example`](.env.example)**.
 
-Save and **restart** (or redeploy) so the new value loads. For short-lived Vercel **preview** URLs, set **`CORS_ORIGIN_REGEX`** (see table above) instead of listing every preview origin.
+### MongoDB only via Docker
 
-## Intake Rollout Guidance (Safe Defaults)
-- Keep existing deployments safe by explicitly setting:
-  - `INTAKE_USE_LLM_MESSAGE=false`
-  - `INTAKE_REQUIRE_ALL_AGENTS=true`
-  - `INTAKE_STRICT_VALIDATION=true`
-- This keeps deterministic template fallback behavior active while still collecting validation/fallback telemetry.
+```bash
+docker compose up -d mongo
+```
 
-### Phase 1: Log-Only Validation (No LLM Message Delivery)
+Use `MONGODB_URL=mongodb://localhost:27017/clinic_ai` (and matching `MONGODB_DB_NAME`) unless you override the compose file.
+
+### Run the API
+
+| Command | When to use |
+|---------|-------------|
+| **`make dev`** | Local development — **auto-reload** on code changes (`scripts/bootstrap_dev.py`). |
+| **`python startup.py`** | Same app **without** reload — closer to production behavior. |
+
+Default bind: **`API_HOST`** / **`API_PORT`** (see `.env.example`), typically `http://0.0.0.0:8000`.
+
+**Smoke test:** `GET /health`
+
+Background **transcription workers** and scheduled tasks can run in-process (lifespan) or as separate processes — see **`Makefile`** targets `worker` and `sweeper` and **`deployments/docker/`** for split containers.
+
+---
+
+## Environment variables
+
+Authoritative template with comments: **[`.env.example`](.env.example)**.
+
+### Minimum for core features
+
+| Variable | Required when | Description |
+|----------|----------------|-------------|
+| `MONGODB_URL` | Always | MongoDB connection URI |
+| `MONGODB_DB_NAME` | Always | Database name |
+| `JWT_SECRET_KEY` | Always (auth) | Signing secret for JWT — **use a long random value in production** |
+| `CORS_ORIGINS` | Browser clients | Comma-separated allowed SPA origins, **no spaces** |
+| `OPENAI_API_KEY` | Notes / structured dialogue | OpenAI API key |
+| `AZURE_SPEECH_KEY` | Transcription | Azure Cognitive Services Speech |
+| `AZURE_SPEECH_REGION` | Transcription | e.g. `centralindia` (unless endpoint fully specifies region) |
+
+Optional but common:
+
+| Variable | Description |
+|----------|-------------|
+| `CORS_ORIGIN_REGEX` | Regex for dynamic preview hosts (e.g. Vercel previews) |
+| `OPENAI_MODEL` | Model id (default in settings may apply if unset) |
+| `ENCRYPTION_KEY` | Fernet key for sensitive fields — generate for production |
+| `WHATSAPP_*` | Meta WhatsApp Cloud API — see `.env.example` |
+| `USE_LOCAL_ADAPTERS` | `true` for in-process queue / local file audio when not using full PyMongo GridFS |
+| `LOCAL_AUDIO_STORAGE_PATH` | Temp audio directory when using local file storage |
+| `MONGO_AUDIO_BUCKET_NAME` | GridFS bucket name on real MongoDB |
+
+### CORS on hosted APIs (e.g. Render)
+
+Set **`CORS_ORIGINS`** to your real frontend origins, for example:
+
+`https://your-app.example.com,http://localhost:5173,http://127.0.0.1:5173`
+
+Redeploy or restart after changing environment variables.
+
+---
+
+## Production notes
+
+### Azure Speech and ffmpeg
+
+Transcription uses Azure **short-audio** REST with raw POST body bytes. **ffmpeg** normalizes many uploads to 16 kHz mono WAV first. If ffmpeg is missing, the worker may fall back to original bytes and some MP3 variants fail more often.
+
+- **Docker:** use **`deployments/docker/Dockerfile.api`** / **`Dockerfile.worker`** (ffmpeg included).  
+- **Bare metal / PaaS:** install ffmpeg in the image or buildpack.
+
+### Transcription storage model
+
+- **Queue:** MongoDB collection **`transcription_queue`** (not Azure Storage Queue).  
+- **Audio:** **GridFS** when using a normal PyMongo database connection; otherwise **`LOCAL_AUDIO_STORAGE_PATH`** + `file://` refs for dev/tests.
+
+### Speaker dialogue (manual structure endpoint)
+
+Async transcription does not require OpenAI. **Structured Doctor/Patient/(Family)** dialogue uses **`POST /api/notes/.../dialogue/structure`** and **`OPENAI_API_KEY`**.
+
+---
+
+## Intake feature flags (WhatsApp / LLM)
+
+Safe defaults (see root intake docs in older deployments):
+
 - `INTAKE_USE_LLM_MESSAGE=false`
 - `INTAKE_REQUIRE_ALL_AGENTS=true`
 - `INTAKE_STRICT_VALIDATION=true`
-- Goal: validate structure/message quality and reason-code telemetry without changing patient-facing question source.
 
-### Phase 2: Staging Enablement
-- `INTAKE_USE_LLM_MESSAGE=true`
-- `INTAKE_REQUIRE_ALL_AGENTS=true`
-- `INTAKE_STRICT_VALIDATION=true`
-- Goal: verify that LLM messages pass validation and that template fallback remains safe under staging traffic.
+Gradually enable LLM messaging in staging before production; monitor fallback rates. Extended rollout guidance remains available in internal runbooks — align with your observability stack.
 
-### Phase 3: Production Gradual Enable
-- Start canary with:
-  - `INTAKE_USE_LLM_MESSAGE=true`
-  - `INTAKE_REQUIRE_ALL_AGENTS=true`
-  - `INTAKE_STRICT_VALIDATION=true`
-- Gradually increase rollout only if monitoring remains healthy; immediately rollback to `INTAKE_USE_LLM_MESSAGE=false` on regressions.
+---
 
-### Monitoring Checklist
-- Fallback rate: track share of turns where `last_message_source != llm`.
-- Repeated topic rate: track repeated-topic recovery/fallback occurrences.
-- Completion rate: track intake sessions reaching normal completion.
-- Error reason distribution: monitor `last_fallback_reason` (for example `openai_http_error`, `json_parse_error`, `schema_invalid`, `message_invalid`, `topic_mismatch`, `unknown_exception`).
+## API layout (reference)
 
-## Doctor transcription (upload → poll → dialogue)
-- **Queue**: MongoDB collection `transcription_queue` (FIFO), or an in-process `asyncio` queue when `USE_LOCAL_ADAPTERS=true`. **Not** Azure Storage Queue.
-- **Audio**: Uploaded bytes go to **MongoDB GridFS** when the app uses a normal PyMongo `Database` (e.g. Render + Atlas). **No Azure Blob**. For local/tests with an in-memory DB stub, bytes are written under `LOCAL_AUDIO_STORAGE_PATH` as `file://` references.
-- **Azure Speech**: Short-audio REST API with **raw POST body bytes** (no SAS / cloud storage URL).
+| Area | Router module |
+|------|----------------|
+| Health | `src/api/routers/health.py` |
+| Auth | `src/api/routers/auth.py` |
+| Patients | `src/api/routers/patients.py` |
+| Visits / notes | `src/api/routers/visits.py`, `notes.py` |
+| Transcription | `src/api/routers/transcription.py` |
+| Vitals | `src/api/routers/vitals.py` |
+| WhatsApp | `src/api/routers/whatsapp.py` |
 
-## Azure Speech and MP3 uploads
-Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants decode to “success” with an empty transcript. The worker **normalizes uploads with FFmpeg** to 16 kHz mono PCM WAV before calling Azure when `ffmpeg` is on `PATH`.
+---
 
-- **Docker**: `deployments/docker/Dockerfile.api` and `Dockerfile.worker` install `ffmpeg`; rebuild and redeploy the image.
-- **Native Python on a host (e.g. Render without Docker)**: install `ffmpeg` in the environment (for example add a build step that installs it, or use a base image that includes it). If `ffmpeg` is missing, the worker falls back to the original bytes and MP3 failures are more likely.
+## Architecture (short)
 
-## Transcription language + diarization behavior
-- Supported explicit language hints map to Azure locales:
-  - `english`/`en` -> `en-IN` (or pass `en-US` explicitly)
-  - `hindi`/`hi` -> `hi-IN`
-  - `kannada`/`kn` -> `kn-IN`
-  - `bengali`/`bn` -> `bn-IN`
-  - `tamil`/`ta` -> `ta-IN`
-  - `telugu`/`te` -> `te-IN`
-  - `marathi`/`mr` -> `mr-IN`
-  - `gujarati`/`gu` -> `gu-IN`
-  - `malayalam`/`ml` -> `ml-IN`
-  - `odia`/`oriya`/`or` -> `or-IN`
-  - `punjabi`/`pa` -> `pa-IN`
-  - `urdu`/`ur` -> `ur-IN`
-- Hinglish (`hinglish`, `hi-en`, `en-hi`) uses a two-locale candidate set (`hi-IN`, `en-IN`) and preserves recognized mixed-script output.
-- If language is empty/auto, the worker tries multilingual candidates (`en-IN`, `hi-IN`, `kn-IN`, `bn-IN`, `ta-IN`, `te-IN`, `mr-IN`, `gu-IN`, `ml-IN`, `or-IN`, `pa-IN`, `ur-IN`) and keeps provider text in original recognized script.
-- The backend worker does not call LLMs for transcript restructuring in the async transcription path.
-- The backend does not call translation APIs in transcription flow; transcript text is stored as recognized.
-- Azure short-audio REST often returns no reliable speaker IDs. In that case:
-  - transcript still succeeds (`partial_success`)
-  - speakers remain `Unknown` / `Speaker 1` / `Speaker 2` (no forced Doctor/Patient labeling)
-  - metadata includes `diarization_status=not_supported_or_failed` with warnings.
+Clean-style layering: **`api`** → **`application`** (use cases, services) → **`domain`** → **`adapters`** (MongoDB, queues, Azure, OpenAI). Workers under **`src/workers/`**.
 
-### API mode and limitation
-- Current production mode is Azure Speech **short-audio REST v1** (`/speech/recognition/{interactive|conversation}/cognitiveservices/v1`).
-- This mode uses direct audio bytes POST with query locale (`language=<locale>`). Batch diarization endpoints are not used in this backend path.
-- Diarization is treated as best-effort in this mode and does not block transcript success.
+---
 
-### Request language behavior
-- Upload API accepts `language_mix` values like `english`, `hindi`, `kannada`, `bengali`, `tamil`, `telugu`, `hinglish`, etc.
-- Use `language_mix=auto` for multilingual candidate detection flow.
-- Frontend upload now defaults `language_mix` to `auto` (previously hardcoded to `en`).
+## Commands (`Makefile`)
 
-## Endpoint Module Map
-- Health: `src/api/routers/health.py`
-- Patients: `src/api/routers/patients.py`
-- Notes: `src/api/routers/notes.py`
-- Transcription: `src/api/routers/transcription.py`
-- Vitals: `src/api/routers/vitals.py`
-- WhatsApp: `src/api/routers/whatsapp.py`
-- Workflow: `src/api/routers/workflow.py`
+| Target | Action |
+|--------|--------|
+| `make install` | `pip install -r requirements.txt` |
+| `make dev` | Dev server with reload |
+| `make run` | `python startup.py` |
+| `make test` | `pytest -q` |
+| `make lint` | `ruff check src tests` |
+| `make format` | `ruff format src tests` |
+| `make worker` | `python worker_startup.py` |
+| `make sweeper` | `python sweeper_startup.py` |
+
+---
+
+## Tests
+
+```bash
+make test
+```
+
+Integration tests use an in-memory DB stub in **`tests/conftest.py`**; they do not require a live MongoDB.
