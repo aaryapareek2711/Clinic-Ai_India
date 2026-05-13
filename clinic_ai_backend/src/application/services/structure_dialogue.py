@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
 from urllib import request
 
 from src.core.config import get_settings

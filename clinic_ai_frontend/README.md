@@ -1,73 +1,37 @@
-# React + TypeScript + Vite
+# Clinic AI India — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite SPA for healthcare providers: appointments, visits, clinical notes, patients, templates, and care-prep intake flows. It calls the **Clinic AI India** FastAPI backend (`clinic_ai_backend`).
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 20+
+- npm (or compatible client)
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Copy `.env.example` to `.env` or `.env.local` and adjust values (see file comments).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start Vite dev server with API proxy (`vite.config.ts`). |
+| `npm run build` | Typecheck (`tsc -b`) and production bundle. |
+| `npm run lint` | ESLint on the project. |
+| `npm run preview` | Preview the production build locally. |
+
+## Environment variables
+
+See `.env.example`. The app typically uses:
+
+- **`VITE_API_BASE_URL`** — Absolute API root for production builds.
+- **`VITE_API_PROXY_TARGET`** — Backend URL for the Vite dev proxy (`/api`, `/health`, `/webhooks`).
+- **`VITE_PROVIDER_ID`** — Optional; used for provider-scoped visit listing.
+
+## Repository root
+
+The Git repository also contains the Python backend under `../clinic_ai_backend/`. See the root `README.md` for full-stack setup.

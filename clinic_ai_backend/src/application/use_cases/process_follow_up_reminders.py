@@ -146,7 +146,6 @@ class ProcessFollowUpRemindersUseCase:
             # Second ping: one calendar day before visit (same clock as next_visit_at), not only "24h" wall literal.
             t1d = nv - timedelta(days=1)
             rid = doc.get("reminder_id")
-            sent_any = False
             due_any = False
 
             if doc.get("remind_3d_sent_at") is None and now_utc >= t3 and now_utc < nv:
@@ -195,7 +194,6 @@ class ProcessFollowUpRemindersUseCase:
                         {"$set": {"remind_3d_sent_at": now_utc, "updated_at": now_utc}},
                     )
                     sent_3d += 1
-                    sent_any = True
                 except Exception as exc:
                     logger.warning(
                         "follow_up_reminder_send_failed reminder_kind=3d reminder_id=%s to=%s error=%s",
@@ -255,7 +253,6 @@ class ProcessFollowUpRemindersUseCase:
                         {"$set": {"remind_24h_sent_at": now_utc, "updated_at": now_utc}},
                     )
                     sent_24h += 1
-                    sent_any = True
                 except Exception as exc:
                     logger.warning(
                         "follow_up_reminder_send_failed reminder_kind=1d reminder_id=%s to=%s error=%s",

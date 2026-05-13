@@ -8,7 +8,6 @@ from src.application.services.follow_up_whatsapp_templates import (
     default_follow_up_body_line,
     follow_up_meta_template_param_count,
     follow_up_template_body_values,
-    follow_up_template_language_code,
     resolve_follow_up_template_name,
 )
 from src.application.services.intake_chat_service import IntakeChatService
@@ -137,7 +136,6 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
     if not to_number:
         logger.info("follow_up_immediate_whatsapp_skipped reason=no_patient_phone")
         return False
-    language_code = follow_up_template_language_code(settings, preferred_language)
     param_count = follow_up_meta_template_param_count(settings)
     follow_up_text = str(payload.get("follow_up") or "").strip() or "Follow your doctor's advice."
     nv = parse_next_visit_at(payload.get("next_visit_date"))

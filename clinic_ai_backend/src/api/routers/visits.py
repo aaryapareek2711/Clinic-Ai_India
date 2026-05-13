@@ -368,7 +368,7 @@ def list_provider_upcoming_visits(
     # Keep this endpoint fast: don't return the full visit history.
     # Without a limit/projection, the backend can hang on Render and the frontend shows "Failed to load visits".
     UPCOMING_LIMIT = 120
-    scheduled_bounds: dict = {"$exists": True, "$ne": None, "$ne": ""}
+    scheduled_bounds: dict = {"$exists": True, "$nin": [None, ""]}
     if from_date and str(from_date).strip():
         scheduled_bounds["$gte"] = str(from_date).strip()
     if to_date and str(to_date).strip():
