@@ -8,6 +8,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from src.api.routers import (
     auth,
     ai_jobs,
+    clinical_assistant,
     contextai,
     followthrough,
     health,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow.router)
     app.include_router(transcription.router)
     app.include_router(visits.router)
+    app.include_router(clinical_assistant.router)
     app.include_router(patient_chat.router)
     app.include_router(contextai.router)
     app.include_router(templates.router)

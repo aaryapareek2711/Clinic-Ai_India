@@ -15,18 +15,20 @@ from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-PROMPT_SCENARIOS = ("intake", "previsit", "soap", "postvisit")
+PROMPT_SCENARIOS = ("intake", "previsit", "soap", "postvisit", "clinical_assistant")
 PROMPT_PHASE_MAP = {
     "intake": "intake",
     "previsit": "pre_visit_summary",
     "soap": "soap",
     "postvisit": "post_visit_summary",
+    "clinical_assistant": "clinical_assistant",
 }
 PROMPT_FILES = {
     "intake": "intake_prompt.txt",
     "previsit": "summary_prompt.txt",
     "soap": "india_note_prompt.txt",
     "postvisit": "post_visit_summary_prompt.txt",
+    "clinical_assistant": "clinical_assistant_system_prompt.txt",
 }
 PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "adapters" / "external" / "ai" / "prompt_templates"
 MAX_PROMPT_LOG_CHARS = 4000

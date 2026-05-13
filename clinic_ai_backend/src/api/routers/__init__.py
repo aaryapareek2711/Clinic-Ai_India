@@ -1,6 +1,7 @@
 """API routers package module."""
 from src.api.routers import (
     auth,
+    clinical_assistant,
     contextai,
     health,
     intake,
@@ -17,6 +18,7 @@ from src.api.routers import (
 
 __all__ = [
     "auth",
+    "clinical_assistant",
     "contextai",
     "health",
     "intake",
