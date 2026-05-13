@@ -111,6 +111,10 @@ export type ProviderVisitListItem = {
   intake_last_updated_at?: string | null
   /** From visit.transcription_session — drives Kanban when workflow stage lags upload. */
   transcription_status?: string | null
+  /** True when visit embeds a non-empty india_clinical or SOAP payload (Kanban vs stale workflow stage). */
+  has_generated_clinical_note?: boolean | null
+  /** True when visit embeds a non-empty post-visit summary payload. */
+  has_post_visit_summary?: boolean | null
   created_at?: string
   updated_at?: string
 }
@@ -298,6 +302,19 @@ export async function fetchVisitDetail(visitId: string): Promise<VisitDetailResp
 export async function fetchVisitWorkspaceSummary(visitId: string): Promise<VisitWorkspaceSummaryResponse> {
   const { data } = await apiClient.get<VisitWorkspaceSummaryResponse>(
     `/api/visits/${encodeURIComponent(visitId)}/summary`,
+  )
+  return data
+}
+
+export type ClinicalAssistantMessage = { role: 'user' | 'assistant'; content: string }
+
+export async function postClinicalAssistantChat(
+  visitId: string,
+  messages: ClinicalAssistantMessage[],
+): Promise<{ reply: string }> {
+  const { data } = await apiClient.post<{ reply: string }>(
+    `/api/visits/${encodeURIComponent(visitId)}/clinical-assistant/chat`,
+    { messages },
   )
   return data
 }

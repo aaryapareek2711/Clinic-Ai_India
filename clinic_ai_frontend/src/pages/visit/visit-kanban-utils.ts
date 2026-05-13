@@ -215,7 +215,21 @@ function completedTranscriptionStageOverride(visit: ProviderVisitListItem): Visi
   if (norm(visit.transcription_status) !== 'completed') return null
   const wf = norm(visit.current_workflow_stage)
   if (['clinical_note', 'post_visit', 'completed', 'cancelled', 'no_show'].includes(wf)) return null
+  if (visit.has_generated_clinical_note === true || visit.has_post_visit_summary === true) return null
   if (wf === 'vitals' || wf === 'transcription' || wf === '') return 'transcription'
+  return null
+}
+
+function inProgressVisit(visit: ProviderVisitListItem): boolean {
+  const st = norm(visit.status)
+  return !['completed', 'complete', 'closed', 'ended', 'cancelled', 'no_show'].includes(st)
+}
+
+/** Furthest known stage from embedded visit data when Mongo workflow fields lag the UI. */
+function embeddedProgressKanbanStage(visit: ProviderVisitListItem): VisitKanbanStage | null {
+  if (!inProgressVisit(visit)) return null
+  if (visit.has_post_visit_summary === true) return 'post-visit-summary'
+  if (visit.has_generated_clinical_note === true) return 'clinical-note'
   return null
 }
 
@@ -233,6 +247,11 @@ export function getVisitFlowType(visit: ProviderVisitListItem): VisitFlowType {
 export function getVisitCurrentStep(visit: ProviderVisitListItem): string {
   const ts = norm(visit.transcription_status)
   if (['queued', 'uploading', 'processing', 'stale_processing', 'failed'].includes(ts)) return `transcription_${ts}`
+
+  const embedded = embeddedProgressKanbanStage(visit)
+  if (embedded === 'post-visit-summary') return 'post_visit_summary'
+  if (embedded === 'clinical-note') return 'clinical_note'
+
   if (ts === 'completed' && completedTranscriptionStageOverride(visit)) return 'transcription_completed'
 
   const tokens = collectCandidateTokens(visit)
@@ -248,11 +267,14 @@ export function getVisitKanbanStage(visit: ProviderVisitListItem): VisitKanbanSt
   const fromTranscription = transcriptionStageOverride(visit)
   if (fromTranscription) return fromTranscription
 
-  const fromCompletedTranscription = completedTranscriptionStageOverride(visit)
-  if (fromCompletedTranscription) return fromCompletedTranscription
-
   const statusEarly = norm(visit.status)
   if (['completed', 'complete', 'closed', 'ended'].includes(statusEarly)) return 'post-visit-summary'
+
+  const fromEmbedded = embeddedProgressKanbanStage(visit)
+  if (fromEmbedded) return fromEmbedded
+
+  const fromCompletedTranscription = completedTranscriptionStageOverride(visit)
+  if (fromCompletedTranscription) return fromCompletedTranscription
 
   const explicit = collectCandidateTokens(visit)
   for (const token of explicit) {

@@ -364,4 +364,5 @@ def _generate_by_type(*, note_type: NoteType, request: NoteGenerateRequest) -> N
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _sync_note_into_visit(note_type="india_clinical", doc=doc)
     return NoteGenerateResponse(**_encode_note_patient_id(doc))

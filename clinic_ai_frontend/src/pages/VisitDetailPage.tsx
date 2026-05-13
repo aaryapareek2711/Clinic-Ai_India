@@ -31,6 +31,7 @@ import {
 import NotificationsDrawer from './NotificationsDrawer'
 import { isWalkInVisitType, languageLabel } from './visit/intakeUtils'
 import VisitClinicalNotePanel from './visit/VisitClinicalNotePanel'
+import VisitClinicalAssistantDrawer from './visit/VisitClinicalAssistantDrawer'
 import VisitIntakeCanvas from './visit/VisitIntakeCanvas'
 
 export type VisitWorkflowTab = 'pre-visit' | 'vitals' | 'transcription' | 'clinical-note' | 'post-visit'
@@ -424,6 +425,9 @@ export default function VisitDetailPage() {
   const [labModalError, setLabModalError] = useState<string | null>(null)
   const [labUploadFeedback, setLabUploadFeedback] = useState<string | null>(null)
   const labFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
+  const [aiAssistantMinimized, setAiAssistantMinimized] = useState(false)
+  const [aiAssistantExpandSignal, setAiAssistantExpandSignal] = useState(0)
 
   const syncTabToUrl = useCallback(
     (next: VisitWorkflowTab) => {
@@ -1473,17 +1477,36 @@ export default function VisitDetailPage() {
                       {labUploadFeedback}
                     </p>
                   )}
-                  <button
-                    className="flex items-center justify-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
-                    onClick={() => {
-                      resetLabForm()
-                      setLabModalOpen(true)
-                    }}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined mr-2">add_circle</span>
-                    Add Lab Result
-                  </button>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                    <button
+                      className="flex items-center justify-center rounded-lg border border-white/20 bg-white/10 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/20"
+                      onClick={() => {
+                        resetLabForm()
+                        setLabModalOpen(true)
+                      }}
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined mr-2">add_circle</span>
+                      Add Lab Result
+                    </button>
+                    <button
+                      className="flex items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-5 py-2.5 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                      onClick={() => {
+                        if (aiAssistantOpen && !aiAssistantMinimized) {
+                          setAiAssistantOpen(false)
+                          setAiAssistantMinimized(false)
+                          return
+                        }
+                        setAiAssistantOpen(true)
+                        setAiAssistantMinimized(false)
+                        setAiAssistantExpandSignal((n) => n + 1)
+                      }}
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[22px]">smart_toy</span>
+                      {aiAssistantOpen && !aiAssistantMinimized ? 'Hide AI Assistant' : 'Show AI Assistant'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2426,6 +2449,21 @@ export default function VisitDetailPage() {
       )}
 
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+
+      {visitId && (
+        <VisitClinicalAssistantDrawer
+          expandSignal={aiAssistantExpandSignal}
+          minimized={aiAssistantMinimized}
+          onClose={() => {
+            setAiAssistantOpen(false)
+            setAiAssistantMinimized(false)
+          }}
+          onMinimizedChange={setAiAssistantMinimized}
+          open={aiAssistantOpen}
+          patientName={patientName}
+          visitId={visitId}
+        />
+      )}
     </div>
   )
 }

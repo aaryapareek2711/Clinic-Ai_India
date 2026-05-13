@@ -764,6 +764,47 @@ class OpenAIQuestionClient:
             body = json.loads(resp.read().decode("utf-8"))
         return body["choices"][0]["message"]["content"]
 
+    @classmethod
+    def clinical_assistant_multiturn(
+        cls,
+        *,
+        system_prompt: str,
+        conversation: list[dict[str, str]],
+    ) -> str:
+        """Provider-portal clinical assistant: multi-turn chat with a fixed system prompt + context."""
+        settings = get_settings()
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+
+        api_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt.strip()}]
+        for m in conversation:
+            role = str(m.get("role") or "").strip().lower()
+            content = str(m.get("content") or "").strip()
+            if role not in {"user", "assistant"} or not content:
+                continue
+            api_messages.append({"role": role, "content": content[:12000]})
+        if len(api_messages) < 2:
+            raise ValueError("messages_must_include_at_least_one_user_turn")
+
+        payload = {
+            "model": settings.openai_model,
+            "messages": api_messages,
+            "temperature": 0.35,
+            "max_tokens": 2000,
+        }
+        req = request.Request(
+            url="https://api.openai.com/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with request.urlopen(req, timeout=90) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return str(body["choices"][0]["message"]["content"] or "").strip()
+
     @staticmethod
     def _validation_error(reason_code: str, field: str) -> dict:
         return {"valid": False, "reason_code": reason_code, "field": field}
