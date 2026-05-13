@@ -260,53 +260,6 @@ def test_visit_dialogue_returns_202_while_queued(
     assert response.headers.get("Retry-After") == "60"
 
 
-def test_delete_visit_transcription_purges_session_and_pipeline(app_client, fake_db) -> None:
-    now = datetime.now(timezone.utc)
-    fake_db.visits.insert_one(
-        {
-            "visit_id": "v-del",
-            "patient_id": "p-del",
-            "transcription_session": {
-                "patient_id": "p-del",
-                "visit_id": "v-del",
-                "job_id": "j-del",
-                "transcription_status": "completed",
-                "transcript": "hello world",
-                "structured_dialogue": [{"Doctor": "hi"}],
-                "completed_at": now,
-            },
-        }
-    )
-    fake_db.transcription_jobs.insert_one(
-        {
-            "job_id": "j-del",
-            "audio_id": "a-del",
-            "patient_id": "p-del",
-            "visit_id": "v-del",
-            "status": "completed",
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
-    fake_db.transcription_results.insert_one({"job_id": "j-del", "full_transcript_text": "hello world"})
-    fake_db.audio_files.insert_one(
-        {
-            "audio_id": "a-del",
-            "patient_id": "p-del",
-            "visit_id": "v-del",
-            "storage_ref": "gridfs://507f1f77bcf86cd799439011",
-        }
-    )
-    response = app_client.delete("/api/notes/p-del/visits/v-del/transcription")
-    assert response.status_code == 200
-    visit = fake_db.visits.find_one({"visit_id": "v-del"})
-    assert visit is not None
-    assert not visit.get("transcription_session")
-    assert fake_db.transcription_jobs.find_one({"job_id": "j-del"}) is None
-    assert fake_db.transcription_results.find_one({"job_id": "j-del"}) is None
-    assert fake_db.audio_files.find_one({"audio_id": "a-del"}) is None
-
-
 def test_visit_dialogue_returns_payload_when_completed(app_client, fake_db) -> None:
     now = datetime.now(timezone.utc)
     fake_db.visit_transcription_sessions.insert_one(

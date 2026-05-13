@@ -15,7 +15,6 @@ function TemplatesPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [templateSavedMessage, setTemplateSavedMessage] = useState<string | null>(null)
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
-  const [specialtyFilter, setSpecialtyFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<string>('name')
   const filtersRef = useRef<HTMLDivElement>(null)
   const [myTemplates, setMyTemplates] = useState<ClinicalTemplateListItem[]>([])
@@ -41,10 +40,8 @@ function TemplatesPage() {
           setTemplatesLoading(true)
           setTemplatesError(null)
         }
-        const specialty = specialtyFilter !== 'all' ? specialtyFilter : undefined
         const res = await listClinicalTemplates({
           search: debouncedSearch.trim() || undefined,
-          specialty,
           page_size: 100,
         })
         const items = [...res.items]
@@ -62,7 +59,7 @@ function TemplatesPage() {
     return () => {
       cancelled = true
     }
-  }, [specialtyFilter, debouncedSearch, sortBy, templatesRefreshNonce])
+  }, [debouncedSearch, sortBy, templatesRefreshNonce])
 
   useEffect(() => {
     if (!isFiltersOpen) return
@@ -125,7 +122,7 @@ function TemplatesPage() {
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#6e7b6c]">search</span>
               <input
                 className="w-full rounded-xl border border-[#bdcaba] bg-white py-2.5 pl-10 pr-4 placeholder:text-slate-400 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-[#2563eb]"
-                placeholder="Search templates by name or specialty..."
+                placeholder="Search templates by name..."
                 type="text"
                 value={templateSearch}
                 onChange={(e) => setTemplateSearch(e.target.value)}
@@ -152,27 +149,6 @@ function TemplatesPage() {
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#6e7b6c] mb-3">Filter by</p>
                   <div className="space-y-3">
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-[#171d16]" htmlFor="template-specialty">
-                        Specialty
-                      </label>
-                      <div className="relative">
-                        <select
-                          className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-9 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#2563eb]"
-                          id="template-specialty"
-                          value={specialtyFilter}
-                          onChange={(e) => setSpecialtyFilter(e.target.value)}
-                        >
-                          <option value="all">All specialties</option>
-                          <option value="general">General OPD</option>
-                          <option value="pediatrics">Pediatrics</option>
-                          <option value="chronic">Chronic care</option>
-                        </select>
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[#6e7b6c]">
-                          <span className="material-symbols-outlined text-xl">expand_more</span>
-                        </span>
-                      </div>
-                    </div>
-                    <div>
                       <label className="mb-1 block text-sm font-medium text-[#171d16]" htmlFor="template-sort">
                         Sort recommended
                       </label>
@@ -196,7 +172,6 @@ function TemplatesPage() {
                     <button
                       className="rounded-lg px-3 py-2 text-sm font-medium text-[#575e70] hover:bg-gray-50"
                       onClick={() => {
-                        setSpecialtyFilter('all')
                         setSortBy('name')
                       }}
                       type="button"

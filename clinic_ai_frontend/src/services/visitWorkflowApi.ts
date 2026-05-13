@@ -566,18 +566,22 @@ export async function fetchLatestVitalsForVisit(
   }
 }
 
+export type TranscriptionSpeakerMode = 'two_speakers' | 'three_speakers'
+
 export async function uploadTranscriptionAudio(
   patientId: string,
   visitId: string,
   file: File,
   languageMix: string = 'auto',
+  /** Azure + stored session hint; three-speakers keeps family/caregiver lines separate when possible. */
+  speakerMode: TranscriptionSpeakerMode = 'three_speakers',
 ): Promise<TranscriptionUploadAccepted> {
   const formData = new FormData()
   formData.set('patient_id', patientId)
   formData.set('visit_id', visitId)
   formData.set('audio_file', file)
   formData.set('language_mix', languageMix || 'auto')
-  formData.set('speaker_mode', 'two_speakers')
+  formData.set('speaker_mode', speakerMode)
   const { data } = await apiClient.post<TranscriptionUploadAccepted>('/api/notes/transcribe', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -594,21 +598,25 @@ export async function fetchTranscriptionStatus(
   return data
 }
 
-/** POST /api/notes/{patient_id}/visits/{visit_id}/dialogue/structure — LLM Doctor/Patient turns from raw transcript */
+/** POST /api/notes/{patient_id}/visits/{visit_id}/dialogue/structure — LLM speaker turns from raw transcript */
 export async function structureVisitDialogue(
   patientId: string,
   visitId: string,
+  options?: { speakerMode?: TranscriptionSpeakerMode },
 ): Promise<Array<Record<string, string>>> {
+  const payload =
+    options?.speakerMode != null ? { speaker_mode: options.speakerMode } : undefined
   const { data } = await apiClient.post<{ dialogue: Array<Record<string, string>>; message?: string }>(
     `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`,
+    payload,
   )
   return Array.isArray(data.dialogue) ? data.dialogue : []
 }
 
-/** DELETE /api/notes/{patient_id}/visits/{visit_id}/transcription — removes transcript, dialogue, jobs, and audio */
-export async function deleteVisitTranscription(patientId: string, visitId: string): Promise<void> {
+/** DELETE /api/notes/{patient_id}/visits/{visit_id}/dialogue — removes stored Doctor/Patient dialogue only */
+export async function deleteVisitStructuredDialogue(patientId: string, visitId: string): Promise<void> {
   await apiClient.delete(
-    `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcription`,
+    `/api/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue`,
   )
 }
 

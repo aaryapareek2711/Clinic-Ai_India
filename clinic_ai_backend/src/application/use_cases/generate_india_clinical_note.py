@@ -17,27 +17,6 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-_STRUCTURED_DIALOGUE_KEYS = frozenset({"Doctor", "Patient", "Family Member", "Unknown"})
-
-
-def _sanitize_structured_dialogue_for_context(raw: object) -> list[dict[str, str]] | None:
-    """Normalize visit transcription_session.structured_dialogue for LLM context."""
-    if not isinstance(raw, list) or not raw:
-        return None
-    out: list[dict[str, str]] = []
-    for turn in raw:
-        if not isinstance(turn, dict):
-            continue
-        for key in _STRUCTURED_DIALOGUE_KEYS:
-            if key not in turn:
-                continue
-            text = str(turn.get(key) or "").strip()
-            if text:
-                out.append({key: text})
-            break
-    return out or None
-
-
 class GenerateIndiaClinicalNoteUseCase:
     """Compose context, generate note payload, persist clinical note."""
 
@@ -404,7 +383,7 @@ class GenerateIndiaClinicalNoteUseCase:
         if effective_visit:
             visit = self.db.visits.find_one(
                 {"$or": [{"visit_id": effective_visit}, {"id": effective_visit}], "patient_id": patient_id},
-                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1, "transcription_session": 1},
+                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1},
             ) or {}
             previsit = dict(visit.get("pre_visit_summary") or {})
             intake = dict(visit.get("intake_session") or {})
@@ -412,14 +391,12 @@ class GenerateIndiaClinicalNoteUseCase:
         else:
             visit = self.db.visits.find_one(
                 {"patient_id": patient_id},
-                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1, "transcription_session": 1},
+                {"_id": 0, "pre_visit_summary": 1, "intake_session": 1, "vitals": 1},
                 sort=[("updated_at", -1)],
             ) or {}
             previsit = dict(visit.get("pre_visit_summary") or {})
             intake = dict(visit.get("intake_session") or {})
             vitals = dict(visit.get("vitals") or {})
-        session = dict(visit.get("transcription_session") or {})
-        structured_dialogue = _sanitize_structured_dialogue_for_context(session.get("structured_dialogue"))
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
 
         eff_vid = str(visit_id or job.get("visit_id") or previsit.get("visit_id") or "").strip() or None
@@ -444,7 +421,7 @@ class GenerateIndiaClinicalNoteUseCase:
         if not medication_images:
             data_gaps.append("medication_images_missing")
 
-        ctx: dict = {
+        return {
             "patient_id": patient_id,
             "visit_id": visit_id or job.get("visit_id"),
             "transcription_job_id": job.get("job_id"),
@@ -464,9 +441,6 @@ class GenerateIndiaClinicalNoteUseCase:
             "medication_images": medication_images,
             "data_gaps": data_gaps,
         }
-        if structured_dialogue:
-            ctx["structured_dialogue"] = structured_dialogue
-        return ctx
 
     @staticmethod
     def _extract_medication_images(intake_session: dict) -> list[dict]:

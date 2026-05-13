@@ -11,6 +11,12 @@ NoiseEnvironment = Literal["quiet_clinic", "moderate_opd", "crowded_opd", "high_
 SpeakerMode = Literal["two_speakers", "three_speakers"]
 
 
+class StructureDialogueRequest(BaseModel):
+    """Optional body for POST dialogue/structure (speaker attribution for LLM pass)."""
+
+    speaker_mode: SpeakerMode | None = None
+
+
 class TranscriptionUploadAcceptedResponse(BaseModel):
     """Async upload accepted response."""
 

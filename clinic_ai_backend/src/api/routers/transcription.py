@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import unquote
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from src.adapters.db.mongo.client import get_database
@@ -18,6 +18,7 @@ from src.adapters.external.queue.producer import TranscriptionQueueProducer
 from src.adapters.external.storage.object_storage import TranscriptionAudioStore
 from src.api.schemas.audio import (
     SpeakerMode,
+    StructureDialogueRequest,
     TranscriptionUploadAcceptedResponse,
 )
 from src.api.schemas.transcription_session import TranscriptionSessionResponse
@@ -151,6 +152,7 @@ async def upload_transcription_audio(
         audio_id=audio_id,
         audio_file_path=storage_ref,
         language_mix=effective_language,
+        speaker_mode=speaker_mode,
     )
 
     _upload_log.info(
@@ -305,8 +307,28 @@ async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Re
     )
 
 
+def _resolve_structure_speaker_mode(
+    *,
+    session: dict,
+    body: StructureDialogueRequest | None,
+) -> SpeakerMode:
+    """Prefer explicit request body, then session from upload, then three-speaker default."""
+    if body is not None and body.speaker_mode is not None:
+        return body.speaker_mode
+    stored = str(session.get("speaker_mode") or "").strip().lower()
+    if stored == "two_speakers":
+        return "two_speakers"
+    if stored == "three_speakers":
+        return "three_speakers"
+    return "three_speakers"
+
+
 @router.post("/{patient_id}/visits/{visit_id}/dialogue/structure")
-async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONResponse:
+async def structure_visit_dialogue(
+    patient_id: str,
+    visit_id: str,
+    body: StructureDialogueRequest | None = Body(default=None),
+) -> JSONResponse:
     """Structure stored transcript into Doctor/Patient JSON and scrub PII; persists on the visit session."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
@@ -319,11 +341,13 @@ async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONRespon
         )
     raw = str(session.get("transcript") or "")
     language_mix = str(session.get("language_mix") or "en")
+    speaker_mode = _resolve_structure_speaker_mode(session=dict(session), body=body)
     try:
         dialogue = await asyncio.to_thread(
             structure_dialogue_from_transcript_sync,
             raw_transcript=raw,
             language=language_mix,
+            speaker_mode=speaker_mode,
         )
     except RuntimeError as exc:
         if "OPENAI_API_KEY" in str(exc):
@@ -335,21 +359,18 @@ async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONRespon
     return JSONResponse(status_code=200, content={"dialogue": scrubbed, "message": "Success"})
 
 
-@router.delete("/{patient_id}/visits/{visit_id}/transcription", response_model=None)
-async def delete_visit_transcription(patient_id: str, visit_id: str) -> JSONResponse:
-    """Remove this visit's transcription: session (raw text + dialogue), jobs, results, and stored audio."""
+@router.delete("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
+async def delete_visit_structured_dialogue(patient_id: str, visit_id: str) -> JSONResponse:
+    """Remove stored structured (Doctor/Patient) dialogue for this visit; transcript remains."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
     vrepo = VisitTranscriptionRepository()
-    if not vrepo.purge_transcription_for_visit(patient_id=internal_pid, visit_id=internal_vid):
+    if not vrepo.clear_structured_dialogue(patient_id=internal_pid, visit_id=internal_vid):
         raise HTTPException(
             status_code=404,
-            detail={
-                "error": "TRANSCRIPTION_NOT_FOUND",
-                "message": "No transcription data found for this visit",
-            },
+            detail={"error": "TRANSCRIPTION_SESSION_NOT_FOUND", "message": "No transcription session for this visit"},
         )
-    return JSONResponse(status_code=200, content={"message": "Transcription removed"})
+    return JSONResponse(status_code=200, content={"message": "Structured dialogue removed"})
 
 
 def _normalize_language_mix(value: str) -> str:

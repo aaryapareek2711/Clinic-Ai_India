@@ -12,7 +12,7 @@ import {
   fetchVisitTranscriptionDialogue,
   translateDisplayPayload,
   structureVisitDialogue,
-  deleteVisitTranscription,
+  deleteVisitStructuredDialogue,
   generatePostVisitSummary,
   generateVitalsForm,
   sendPostVisitSummaryWhatsApp,
@@ -313,7 +313,7 @@ function transcriptionStatusUiLabel(
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-/** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string }[]` (one key per turn). */
+/** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string, 'Family Member'?: string }[]` (one key per turn). */
 function flattenStructuredDialogue(
   turns: Array<Record<string, unknown>> | null | undefined,
 ): { role: string; text: string }[] {
@@ -364,9 +364,9 @@ export default function VisitDetailPage() {
     Record<string, unknown>
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
-  const [deleteTranscriptOpen, setDeleteTranscriptOpen] = useState(false)
-  const [deleteTranscriptLoading, setDeleteTranscriptLoading] = useState(false)
-  const [deleteTranscriptError, setDeleteTranscriptError] = useState<string | null>(null)
+  const [deleteDialogueOpen, setDeleteDialogueOpen] = useState(false)
+  const [deleteDialogueLoading, setDeleteDialogueLoading] = useState(false)
+  const [deleteDialogueError, setDeleteDialogueError] = useState<string | null>(null)
   const [transcriptionUploading, setTranscriptionUploading] = useState(false)
   /** Last audio file-name successfully accepted by the transcribe API (browser recording or picked file). */
   const [lastSubmittedAudioFilename, setLastSubmittedAudioFilename] = useState<string | null>(null)
@@ -1149,7 +1149,7 @@ export default function VisitDetailPage() {
     if (!patientId || !visitId || structureDialogueLoading) return
     setStructureDialogueLoading(true)
     try {
-      await structureVisitDialogue(patientId, visitId)
+      await structureVisitDialogue(patientId, visitId, { speakerMode: 'three_speakers' })
       await loadTranscriptBody({ silent: true })
       setTranscriptionMessage('Speaker-labeled dialogue updated.')
     } catch (e) {
@@ -1159,28 +1159,25 @@ export default function VisitDetailPage() {
     }
   }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
 
-  const handleDeleteVisitTranscription = useCallback(async () => {
-    if (!patientId || !visitId || deleteTranscriptLoading) return
-    setDeleteTranscriptLoading(true)
-    setDeleteTranscriptError(null)
+  const handleDeleteStructuredDialogue = useCallback(async () => {
+    if (!patientId || !visitId || deleteDialogueLoading) return
+    setDeleteDialogueLoading(true)
+    setDeleteDialogueError(null)
     try {
-      await deleteVisitTranscription(patientId, visitId)
-      setTranscriptionText(null)
+      await deleteVisitStructuredDialogue(patientId, visitId)
       setTranscriptionStructuredDialogue(null)
       setTranslatedDisplayBundle((prev) =>
-        prev
-          ? { ...prev, transcriptionText: null, transcriptionStructuredDialogue: null }
-          : null,
+        prev ? { ...prev, transcriptionStructuredDialogue: null } : null,
       )
-      await refreshTranscriptionStatus()
-      setTranscriptionMessage('Transcription deleted.')
-      setDeleteTranscriptOpen(false)
+      await loadTranscriptBody({ silent: true })
+      setTranscriptionMessage('Speaker dialogue deleted.')
+      setDeleteDialogueOpen(false)
     } catch (e) {
-      setDeleteTranscriptError(getApiErrorMessage(e))
+      setDeleteDialogueError(getApiErrorMessage(e))
     } finally {
-      setDeleteTranscriptLoading(false)
+      setDeleteDialogueLoading(false)
     }
-  }, [deleteTranscriptLoading, patientId, refreshTranscriptionStatus, visitId])
+  }, [deleteDialogueLoading, loadTranscriptBody, patientId, visitId])
 
   const dialogueTurns = useMemo(
     () => flattenStructuredDialogue(displayStructuredDialogue),
@@ -1190,11 +1187,6 @@ export default function VisitDetailPage() {
   const queuedStatuses = new Set(['queued', 'uploading'])
   const processingStatuses = new Set(['processing', 'in_progress', 'running', 'started', 'stale_processing'])
   const transcriptReadyStatuses = new Set(['completed', 'success', 'partial_success'])
-  const canDeleteVisitTranscription =
-    transcriptReadyStatuses.has(transcriptionStateLowerRaw) ||
-    transcriptionStateLowerRaw === 'failed' ||
-    (displayTranscriptionText?.length ?? 0) > 0 ||
-    dialogueTurns.length > 0
   const effectiveStateLower = transcriptReadyStatuses.has(transcriptionStateLowerRaw)
     ? 'completed'
     : transcriptionStateLowerRaw
@@ -1889,16 +1881,16 @@ export default function VisitDetailPage() {
                         <h4 className="text-sm font-semibold text-[#171d16]">Speaker dialogue</h4>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-2">
-                        {canDeleteVisitTranscription && (
+                        {dialogueTurns.length > 0 && (
                           <button
                             className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
                             onClick={() => {
-                              setDeleteTranscriptError(null)
-                              setDeleteTranscriptOpen(true)
+                              setDeleteDialogueError(null)
+                              setDeleteDialogueOpen(true)
                             }}
                             type="button"
                           >
-                            Delete transcript
+                            Delete dialogue
                           </button>
                         )}
                         {transcriptLoading && <span className="text-xs text-[#575e70]">Loading…</span>}
@@ -1920,8 +1912,8 @@ export default function VisitDetailPage() {
                       (displayTranscriptionText?.length ?? 0) > 0 ? (
                       <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-[#3e4a3d]">
                         <p className="mb-3">
-                          Raw speech-to-text is ready, but speaker-labeled dialogue is not on file yet. Generate Doctor/Patient
-                          turns (server uses OpenAI).
+                          Raw speech-to-text is ready, but speaker-labeled dialogue is not on file yet. Generate
+                          Doctor / Patient / Family Member turns when applicable (server uses OpenAI, three-speaker mode).
                         </p>
                         <button
                           className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -1929,7 +1921,7 @@ export default function VisitDetailPage() {
                           onClick={() => void handleStructureVisitDialogue()}
                           type="button"
                         >
-                          {structureDialogueLoading ? 'Generating dialogue…' : 'Generate Doctor/Patient dialogue'}
+                          {structureDialogueLoading ? 'Generating dialogue…' : 'Generate speaker dialogue'}
                         </button>
                       </div>
                     ) : (
@@ -2373,44 +2365,44 @@ export default function VisitDetailPage() {
         </div>
       )}
 
-      {deleteTranscriptOpen && (
+      {deleteDialogueOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#171d16]/40 p-4 backdrop-blur-sm">
           <button
-            aria-label="Close delete transcript confirmation"
+            aria-label="Close delete dialogue confirmation"
             className="absolute inset-0"
             onClick={() => {
-              if (!deleteTranscriptLoading) {
-                setDeleteTranscriptOpen(false)
-                setDeleteTranscriptError(null)
+              if (!deleteDialogueLoading) {
+                setDeleteDialogueOpen(false)
+                setDeleteDialogueError(null)
               }
             }}
             type="button"
           />
           <div
-            aria-labelledby="delete-transcript-title"
+            aria-labelledby="delete-dialogue-title"
             aria-modal="true"
             className="relative z-[101] w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl"
             role="dialog"
           >
-            <h3 className="text-lg font-semibold text-[#171d16]" id="delete-transcript-title">
-              Delete transcription?
+            <h3 className="text-lg font-semibold text-[#171d16]" id="delete-dialogue-title">
+              Delete speaker dialogue?
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-[#575e70]">
-              This removes the raw transcript, speaker dialogue, transcription jobs, and stored audio for this visit. You can
-              upload new audio when ready.
+              This removes the Doctor/Patient turn list from this visit. The raw transcript stays on file; you can generate
+              dialogue again later.
             </p>
-            {deleteTranscriptError ? (
+            {deleteDialogueError ? (
               <p className="mt-3 text-sm text-red-700" role="alert">
-                {deleteTranscriptError}
+                {deleteDialogueError}
               </p>
             ) : null}
             <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
               <button
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#171d16] hover:bg-slate-50 disabled:opacity-50"
-                disabled={deleteTranscriptLoading}
+                disabled={deleteDialogueLoading}
                 onClick={() => {
-                  setDeleteTranscriptOpen(false)
-                  setDeleteTranscriptError(null)
+                  setDeleteDialogueOpen(false)
+                  setDeleteDialogueError(null)
                 }}
                 type="button"
               >
@@ -2418,11 +2410,11 @@ export default function VisitDetailPage() {
               </button>
               <button
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={deleteTranscriptLoading}
-                onClick={() => void handleDeleteVisitTranscription()}
+                disabled={deleteDialogueLoading}
+                onClick={() => void handleDeleteStructuredDialogue()}
                 type="button"
               >
-                {deleteTranscriptLoading ? 'Deleting…' : 'Delete'}
+                {deleteDialogueLoading ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>

@@ -288,8 +288,6 @@ function CalendarPage() {
       const y = focusDate.getFullYear()
       const m = focusDate.getMonth()
       const d = focusDate.getDate()
-      const focusDayStart = localDayStartMs(focusDate)
-      const todayStart = localDayStartMs(new Date())
       const now = new Date()
       return appointmentsOnDay(base, y, m, d)
         .filter((a) => {
@@ -297,8 +295,9 @@ function CalendarPage() {
           if (!a.scheduled_start) return false
           const slot = new Date(a.scheduled_start)
           if (Number.isNaN(slot.getTime())) return false
-          if (focusDayStart === todayStart) return isUpcomingSidebarSlot(slot, now)
-          return true
+          // Always use wall-clock "now": past days drop out, today keeps only future slots,
+          // future days keep the full day list. (Do not show every slot on non-today days.)
+          return isUpcomingSidebarSlot(slot, now)
         })
         .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
         .slice(0, 12)
@@ -314,6 +313,16 @@ function CalendarPage() {
       .sort((x, y) => new Date(x.scheduled_start).getTime() - new Date(y.scheduled_start).getTime())
       .slice(0, 12)
   }, [focusDate, viewMode, visibleAppointments])
+
+  /** Compare focused calendar day to today (local) for sidebar empty-state copy. */
+  const focusCalendarDayRelation = useMemo((): 'past' | 'today' | 'future' => {
+    const today = new Date()
+    const fd = localDayStartMs(focusDate)
+    const td = localDayStartMs(today)
+    if (fd < td) return 'past'
+    if (fd > td) return 'future'
+    return 'today'
+  }, [focusDate])
 
   const rescheduleSlotBlocks = useMemo(
     () =>
@@ -710,6 +719,8 @@ function CalendarPage() {
                   <div className="p-6 text-sm text-[#575e70]">
                     {visibleAppointments.length === 0 ? (
                       <p>No visits scheduled for {monthTitle}.</p>
+                    ) : viewMode === 'day' && focusCalendarDayRelation === 'future' ? (
+                      <p>No appointments scheduled for {dayTitle}.</p>
                     ) : (
                       <p>
                         No upcoming visits in this list: for today, only times that have not started yet are shown; past

@@ -347,11 +347,7 @@ class IntakeChatService:
                     str(session.get("patient_id") or ""),
                 )
                 return
-            self._remember_inbound_text(
-                session["_id"],
-                cleaned,
-                scope_key=self._inbound_dedupe_scope_key(session),
-            )
+            self._remember_inbound_text(session["_id"], cleaned)
             if self._has_pending_opt_out_confirmation(session):
                 self._handle_opt_out_confirmation_reply(session=session, message_text=cleaned, message_id=message_id)
                 return
@@ -457,15 +453,6 @@ class IntakeChatService:
                     self._generate_and_send_next_turn(refreshed)
                     return
             if latest_status == "in_progress":
-                pending = str(latest.get("pending_question") or "").strip()
-                stored_illness = str(latest.get("illness") or "").strip()
-                if (
-                    not pending
-                    and stored_illness == str(illness_text or "").strip()
-                ):
-                    # Concurrent worker already captured this illness and is generating the first
-                    # follow-up; do not run another LLM turn or treat illness as a follow-up answer.
-                    return
                 logger.warning(
                     "intake_awaiting_illness_claim_failed_recovering_as_in_progress visit_id=%s patient_id=%s",
                     str(session.get("visit_id") or ""),
@@ -1045,6 +1032,12 @@ class IntakeChatService:
         if follow_up_answers:
             return False
 
+        # If the model duplicated a chief-complaint ask (same topic) after illness was already
+        # stored, the patient's reply must advance via normal answer capture — not regeneration.
+        pending_topic = str(session.get("pending_topic", "") or "").strip()
+        if pending_topic == "reason_for_visit":
+            return False
+
         last_outbound_at = self._parse_datetime(session.get("last_outbound_at"))
         if not last_outbound_at:
             return False
@@ -1058,8 +1051,10 @@ class IntakeChatService:
         if not normalized_new or not normalized_old:
             return False
 
+        # Replying with the same words as the stored chief complaint is usually answering the
+        # bot's question again (including duplicate chief-complaint phrasing), not correcting illness.
         if normalized_new == normalized_old:
-            return True
+            return False
 
         similarity = SequenceMatcher(a=normalized_new, b=normalized_old).ratio()
         return similarity >= 0.6
@@ -1188,14 +1183,7 @@ class IntakeChatService:
     def _is_probable_duplicate_reply(self, session: dict, message_text: str) -> bool:
         recent_text = str(session.get("recent_inbound_text", "") or "").strip()
         recent_at = self._parse_datetime(session.get("recent_inbound_at"))
-        recent_scope = str(session.get("recent_inbound_scope", "") or "").strip()
         if not recent_text or not recent_at:
-            return False
-        # Scope missing = legacy session row; do not use text-only suppression (it blocked the same
-        # answer word for the next intake question within seconds, e.g. "Diabetes" twice).
-        if not recent_scope:
-            return False
-        if recent_scope != self._inbound_dedupe_scope_key(session):
             return False
         if self._normalize_for_similarity(recent_text) != self._normalize_for_similarity(message_text):
             return False
@@ -1237,14 +1225,13 @@ class IntakeChatService:
 
         return False
 
-    def _remember_inbound_text(self, session_id: object, message_text: str, *, scope_key: str) -> None:
+    def _remember_inbound_text(self, session_id: object, message_text: str) -> None:
         self.db.intake_sessions.update_one(
             {"_id": session_id},
             {
                 "$set": {
                     "recent_inbound_text": message_text,
                     "recent_inbound_at": datetime.now(timezone.utc).isoformat(),
-                    "recent_inbound_scope": scope_key,
                 }
             },
         )
@@ -1256,44 +1243,27 @@ class IntakeChatService:
         Some WhatsApp webhook deliveries can replay the same patient text quickly
         (network retries / duplicate endpoint delivery). If we process both, one
         patient reply can advance the flow twice and emit two questions.
-
-        Fingerprinting is scoped to ``status`` + ``pending_question`` so the same
-        word (e.g. condition name) can legitimately answer successive questions.
         """
         normalized = self._normalize_for_similarity(message_text)
         if not normalized:
             return True
         now = datetime.now(timezone.utc)
-        scope_key = self._inbound_dedupe_scope_key(session)
         last_fp = str(session.get("last_inbound_fingerprint", "") or "").strip()
-        last_scope = str(session.get("last_inbound_fingerprint_scope", "") or "").strip()
         last_at = self._parse_datetime(session.get("last_inbound_fingerprint_at"))
-        if (
-            last_fp == normalized
-            and last_scope == scope_key
-            and last_at is not None
-            and (now - last_at).total_seconds() <= 15
-        ):
-            return False
+        if last_fp == normalized and last_at is not None:
+            if (now - last_at).total_seconds() <= 15:
+                return False
         self.db.intake_sessions.update_one(
             {"_id": session["_id"]},
             {
                 "$set": {
                     "last_inbound_fingerprint": normalized,
                     "last_inbound_fingerprint_at": now.isoformat(),
-                    "last_inbound_fingerprint_scope": scope_key,
                     "updated_at": now,
                 }
             },
         )
         return True
-
-    @staticmethod
-    def _inbound_dedupe_scope_key(session: dict) -> str:
-        """Identify which intake step this inbound message belongs to (for dedupe)."""
-        status = str(session.get("status") or "")
-        pending = IntakeChatService._normalize_for_similarity(str(session.get("pending_question") or ""))
-        return f"{status}:{pending[:240]}"
 
     def _should_end_intake_via_llm(self, session: dict, message_text: str) -> bool:
         """Let LLM decide whether patient intends to stop intake."""

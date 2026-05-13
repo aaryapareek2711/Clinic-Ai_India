@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,9 +16,8 @@ class InsertOneResult:
 
 
 class UpdateResult:
-    def __init__(self, matched_count: int, modified_count: int | None = None) -> None:
+    def __init__(self, matched_count: int) -> None:
         self.matched_count = matched_count
-        self.modified_count = modified_count if modified_count is not None else matched_count
 
 
 class InMemoryCollection:
@@ -105,53 +103,22 @@ class InMemoryCollection:
                 self.docs.pop(index)
                 return
 
-    def delete_many(self, query: dict | None = None) -> SimpleNamespace:
-        query = query or {}
-        before = len(self.docs)
-        self.docs = [doc for doc in self.docs if not self._matches(doc, query)]
-        return SimpleNamespace(deleted_count=before - len(self.docs))
-
-    @staticmethod
-    def _apply_unset(target: dict, dotted_key: str) -> None:
-        parts = dotted_key.split(".")
-        if len(parts) == 1:
-            target.pop(parts[0], None)
-            return
-        cur: dict = target
-        for p in parts[:-1]:
-            nxt = cur.get(p)
-            if not isinstance(nxt, dict):
-                return
-            cur = nxt
-        cur.pop(parts[-1], None)
-
     def update_one(self, query: dict, update: dict, upsert: bool = False) -> UpdateResult:
         for index, doc in enumerate(self.docs):
             if self._matches(doc, query):
                 updated = deepcopy(doc)
                 for key, value in update.get("$set", {}).items():
-                    if "." in key:
-                        parts = key.split(".")
-                        cur = updated
-                        for p in parts[:-1]:
-                            if p not in cur or not isinstance(cur[p], dict):
-                                cur[p] = {}
-                            cur = cur[p]
-                        cur[parts[-1]] = value
-                    else:
-                        updated[key] = value
+                    updated[key] = value
                 for key, value in update.get("$inc", {}).items():
                     updated[key] = int(updated.get(key, 0)) + int(value)
-                for key in update.get("$unset", {}):
-                    self._apply_unset(updated, key)
                 self.docs[index] = updated
-                return UpdateResult(1, 1)
+                return UpdateResult(1)
         if upsert and update.get("$set"):
             new_doc = {key: value for key, value in query.items()}
             new_doc.update(update["$set"])
             self.insert_one(new_doc)
-            return UpdateResult(1, 1)
-        return UpdateResult(0, 0)
+            return UpdateResult(1)
+        return UpdateResult(0)
 
     def update_many(self, query: dict, update: dict) -> None:
         for index, doc in enumerate(self.docs):
