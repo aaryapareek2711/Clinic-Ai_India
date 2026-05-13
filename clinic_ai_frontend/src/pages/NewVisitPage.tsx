@@ -418,7 +418,7 @@ function NewVisitPage() {
             </div>
             <div className="flex gap-4">
               <button
-                className="flex items-center gap-2 rounded-lg bg-[#16a34a] px-6 py-2 font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-[#006b2c] px-6 py-2 font-semibold text-white shadow-sm transition-colors hover:bg-[#005a24] disabled:opacity-50"
                 disabled={submitting}
                 onClick={() => void handleConfirm()}
                 type="button"

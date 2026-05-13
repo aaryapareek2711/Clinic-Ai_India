@@ -294,7 +294,7 @@ function ProviderDashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  className="flex w-fit items-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-base font-semibold text-white hover:opacity-90"
+                  className="flex w-fit items-center gap-2 rounded-xl bg-[#006b2c] px-5 py-2.5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-[#005a24]"
                   onClick={() => navigate('/start-visit')}
                   type="button"
                 >

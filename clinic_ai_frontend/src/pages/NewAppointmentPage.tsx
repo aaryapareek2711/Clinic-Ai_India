@@ -536,7 +536,7 @@ function NewAppointmentPage() {
                 Cancel
               </button>
               <button
-                className="flex items-center gap-2 rounded-xl bg-[#16a34a] px-8 py-3 font-bold text-white shadow-sm transition-all hover:bg-[#00873a] disabled:opacity-50"
+                className="flex items-center gap-2 rounded-xl bg-[#006b2c] px-8 py-3 font-bold text-white shadow-sm transition-colors hover:bg-[#005a24] disabled:opacity-50"
                 disabled={submitting || (visitKind === 'scheduled' && (dayAtCapacity || selectedStartIsos.length === 0))}
                 onClick={() => void handleConfirm()}
                 type="button"

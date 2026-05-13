@@ -40,6 +40,7 @@ export default function VisitClinicalAssistantDrawer({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export default function VisitClinicalAssistantDrawer({
     setMessages([{ role: 'assistant', content: INTRO_MESSAGE }])
     setDraft('')
     setError(null)
+    setSuggestionsCollapsed(false)
   }, [visitId])
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export default function VisitClinicalAssistantDrawer({
           onClick={() => onMinimizedChange(false)}
           type="button"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2563eb] text-white">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#006b2c] text-white">
             <span className="material-symbols-outlined text-[22px]">smart_toy</span>
           </span>
           <span className="pr-1">
@@ -143,12 +145,12 @@ export default function VisitClinicalAssistantDrawer({
             <span className="block max-w-[200px] truncate text-xs text-[#575e70]">{patientName || 'Patient'}</span>
           </span>
           {sending ? (
-            <span className="material-symbols-outlined ml-1 animate-pulse text-[20px] text-[#2563eb]">progress_activity</span>
+            <span className="material-symbols-outlined ml-1 animate-pulse text-[20px] text-[#006b2c]">progress_activity</span>
           ) : null}
         </button>
         <button
           aria-label="Expand AI assistant"
-          className="border-l border-gray-200 px-2 text-[#575e70] hover:bg-gray-50 hover:text-[#2563eb]"
+          className="border-l border-gray-200 px-2 text-[#575e70] hover:bg-gray-50 hover:text-[#006b2c]"
           onClick={() => onMinimizedChange(false)}
           type="button"
         >
@@ -179,12 +181,12 @@ export default function VisitClinicalAssistantDrawer({
         type="button"
       />
       <aside
-        className={`fixed bottom-3 left-3 right-3 z-[110] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#bdcaba] bg-white shadow-lg lg:inset-x-auto lg:left-auto lg:right-3 lg:top-auto lg:bottom-4 lg:z-30 lg:w-[min(32vw,400px)] lg:max-w-[400px] ${asideHeight}`}
+        className={`fixed bottom-3 left-3 right-3 z-[110] grid min-h-0 grid-rows-[auto_auto_minmax(5rem,1fr)_auto] overflow-hidden rounded-2xl border border-[#bdcaba] bg-white shadow-lg lg:inset-x-auto lg:left-auto lg:right-3 lg:top-auto lg:bottom-4 lg:z-30 lg:w-[min(32vw,400px)] lg:max-w-[400px] ${asideHeight}`}
         role="complementary"
         aria-label="AI Clinical Assistant"
         aria-labelledby="clinical-assistant-title"
       >
-        <div className="flex shrink-0 items-center justify-between bg-[#2563eb] px-3 py-2 text-white">
+        <div className="flex shrink-0 items-center justify-between bg-[#006b2c] px-3 py-2 text-white">
           <div className="flex min-w-0 items-center gap-2 pr-2">
             <span className="material-symbols-outlined shrink-0 text-[20px] leading-none">smart_toy</span>
             <h2 className="truncate text-sm font-semibold leading-tight tracking-tight" id="clinical-assistant-title">
@@ -233,7 +235,7 @@ export default function VisitClinicalAssistantDrawer({
           <span className="font-mono text-[11px]">{visitId}</span>
         </p>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" ref={listRef}>
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3" ref={listRef}>
           <div className="space-y-4">
             {messages.map((m, idx) => (
               <div
@@ -241,7 +243,7 @@ export default function VisitClinicalAssistantDrawer({
                 className={`flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
                 {m.role === 'assistant' ? (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#2563eb]">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[#006b2c]">
                     <span className="material-symbols-outlined text-[20px]">smart_toy</span>
                   </div>
                 ) : (
@@ -251,7 +253,7 @@ export default function VisitClinicalAssistantDrawer({
                 )}
                 <div
                   className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                    m.role === 'assistant' ? 'bg-gray-100 text-[#171d16]' : 'bg-[#2563eb] text-white'
+                    m.role === 'assistant' ? 'bg-gray-100 text-[#171d16]' : 'bg-[#006b2c] text-white'
                   }`}
                 >
                   <p className="whitespace-pre-wrap">{m.content}</p>
@@ -260,7 +262,7 @@ export default function VisitClinicalAssistantDrawer({
             ))}
             {sending && (
               <div className="flex gap-2 text-sm text-[#575e70]">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#2563eb]">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[#006b2c]">
                   <span className="material-symbols-outlined animate-pulse text-[20px]">smart_toy</span>
                 </div>
                 <div className="rounded-2xl bg-gray-100 px-3 py-2">Thinking…</div>
@@ -269,28 +271,49 @@ export default function VisitClinicalAssistantDrawer({
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-gray-200 bg-gray-50/80 px-4 py-3">
-          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[#575e70]">
-            <span className="material-symbols-outlined text-[16px] text-amber-600">lightbulb</span>
-            Suggestions:
-          </div>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {SUGGESTIONS.map((label) => (
-              <button
-                key={label}
-                className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-left text-xs font-medium text-[#171d16] transition-colors hover:border-[#2563eb] hover:text-[#2563eb] disabled:opacity-50"
-                disabled={sending}
-                onClick={() => void sendTurn(label)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="flex min-h-0 flex-col overflow-hidden border-t border-gray-200 bg-[#f8f9fa]">
+          <button
+            aria-controls="clinical-assistant-suggestions"
+            aria-expanded={!suggestionsCollapsed}
+            className="flex w-full shrink-0 cursor-pointer items-center justify-between gap-2 border-b border-gray-200/90 px-4 py-2.5 text-left text-xs font-medium text-[#575e70] transition-colors hover:bg-gray-100/90"
+            onClick={() => setSuggestionsCollapsed((c) => !c)}
+            title={suggestionsCollapsed ? 'Show suggested questions' : 'Hide suggested questions'}
+            type="button"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="material-symbols-outlined shrink-0 text-[16px] leading-none text-amber-600">
+                lightbulb
+              </span>
+              <span className="truncate">Suggestions:</span>
+            </span>
+            <span className="material-symbols-outlined shrink-0 text-[22px] leading-none text-[#006b2c]" aria-hidden>
+              {suggestionsCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
+            </span>
+          </button>
+
+          {!suggestionsCollapsed ? (
+            <div className="px-4 pb-3 pt-1" id="clinical-assistant-suggestions">
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTIONS.map((label) => (
+                  <button
+                    key={label}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs font-medium leading-snug text-[#171d16] shadow-sm transition-colors hover:border-[#006b2c]/50 hover:text-[#006b2c] disabled:opacity-50"
+                    disabled={sending}
+                    onClick={() => void sendTurn(label)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="shrink-0 border-t border-gray-200 bg-gray-50/90 px-4 pb-4 pt-3">
           {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
           <form className="flex gap-2" onSubmit={onSubmit}>
             <textarea
-              className="min-h-[44px] flex-1 resize-y rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-[#171d16] placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+              className="min-h-[44px] flex-1 resize-y rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-[#171d16] placeholder:text-gray-400 focus:border-[#006b2c] focus:outline-none focus:ring-1 focus:ring-[#006b2c]"
               disabled={sending}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
@@ -300,7 +323,7 @@ export default function VisitClinicalAssistantDrawer({
             />
             <button
               className={`flex h-11 w-11 shrink-0 items-center justify-center self-end rounded-xl text-white transition-colors disabled:opacity-40 ${
-                draft.trim() && !sending ? 'bg-[#2563eb] hover:bg-blue-700' : 'bg-gray-300'
+                draft.trim() && !sending ? 'bg-[#006b2c] hover:bg-[#005a24]' : 'bg-gray-300'
               }`}
               disabled={sending || !draft.trim()}
               type="submit"
@@ -310,10 +333,7 @@ export default function VisitClinicalAssistantDrawer({
             </button>
           </form>
           <p className="mt-2 text-[11px] text-[#575e70]">Press Enter to send, Shift+Enter for new line</p>
-          <p className="mt-1 text-[10px] leading-snug text-gray-400">
-            AI suggestions are not medical advice. The treating clinician is solely responsible for decisions and
-            documentation.
-          </p>
+          </div>
         </div>
       </aside>
     </>

@@ -1490,7 +1490,7 @@ export default function VisitDetailPage() {
                       Add Lab Result
                     </button>
                     <button
-                      className="flex items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-5 py-2.5 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                      className="flex items-center justify-center gap-2 rounded-lg bg-[#006b2c] px-5 py-2.5 font-semibold text-white shadow-sm transition-colors hover:bg-[#005a24]"
                       onClick={() => {
                         if (aiAssistantOpen && !aiAssistantMinimized) {
                           setAiAssistantOpen(false)
@@ -1584,7 +1584,7 @@ export default function VisitDetailPage() {
                   />
                   <div className="flex justify-end">
                     <button
-                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24]"
                       onClick={() => syncTabToUrl('vitals')}
                       type="button"
                     >
@@ -1605,7 +1605,7 @@ export default function VisitDetailPage() {
                   {!isTranscriptionCurrentlyProcessing && !vitalsFormVisible && (
                     <div className="flex flex-wrap items-center gap-3">
                       <button
-                        className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24] disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={vitalsFormGenerating}
                         onClick={() => void handleGenerateVitalsForm()}
                         type="button"
@@ -1657,7 +1657,7 @@ export default function VisitDetailPage() {
                       </div>
                       <div className="relative z-10 pt-1">
                         <button
-                          className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24] disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={vitalsSubmitting || !vitalsForm || vitalsLocked}
                           onClick={(ev) => void handleSubmitVitals(ev)}
                           type="button"
@@ -1669,7 +1669,7 @@ export default function VisitDetailPage() {
                   )}
                   <div className="flex justify-end border-t border-[#e9f0e5] pt-4">
                     <button
-                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24]"
                       onClick={() => syncTabToUrl('transcription')}
                       type="button"
                     >
@@ -1967,7 +1967,7 @@ export default function VisitDetailPage() {
                   </div>
                   <div className="flex justify-end border-t border-[#e9f0e5] pt-4">
                     <button
-                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24]"
                       onClick={() => syncTabToUrl('clinical-note')}
                       type="button"
                     >
@@ -1990,7 +1990,7 @@ export default function VisitDetailPage() {
                   />
                   <div className="flex justify-end">
                     <button
-                      className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white"
+                      className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#005a24]"
                       onClick={() => syncTabToUrl('post-visit')}
                       type="button"
                     >
@@ -2334,7 +2334,7 @@ export default function VisitDetailPage() {
                     Report Name
                   </label>
                   <input
-                    className="w-full rounded-lg border border-[#e5e7eb] px-4 py-2.5 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#2563eb]"
+                    className="w-full rounded-lg border border-[#e5e7eb] px-4 py-2.5 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#006b2c]"
                     id="lab-report-name"
                     onChange={(e) => setLabReportName(e.target.value)}
                     placeholder="e.g. Metabolic Panel Oct 2023"
@@ -2348,7 +2348,7 @@ export default function VisitDetailPage() {
                   </label>
                   <div className="relative">
                     <select
-                      className="w-full appearance-none rounded-lg border border-[#e5e7eb] bg-white px-4 py-2.5 pr-10 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#2563eb]"
+                      className="w-full appearance-none rounded-lg border border-[#e5e7eb] bg-white px-4 py-2.5 pr-10 text-sm text-[#171d16] outline-none transition-all focus:ring-2 focus:ring-[#006b2c]"
                       id="lab-test-category"
                       onChange={(e) => setLabCategory(e.target.value)}
                       value={labCategory}

@@ -175,7 +175,7 @@ function VisitsPage() {
 
           <div className="mb-8 flex justify-end">
             <button
-              className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
+              className="shrink-0 rounded-lg bg-[#006b2c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#005a24]"
               onClick={() => navigate('/start-visit')}
               type="button"
             >

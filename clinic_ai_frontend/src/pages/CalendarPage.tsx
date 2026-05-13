@@ -430,7 +430,7 @@ function CalendarPage() {
           <p className="text-slate-500">Manage and monitor all appointments.</p>
           <div className="flex items-center gap-3">
             <button
-              className="shrink-0 rounded-lg bg-[#16a34a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#15803d]"
+              className="shrink-0 rounded-lg bg-[#006b2c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#005a24]"
               onClick={() => navigate('/start-visit')}
               type="button"
             >
