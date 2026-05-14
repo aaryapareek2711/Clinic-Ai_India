@@ -34,26 +34,30 @@ import {
   type ProviderProfile,
   type ProviderProfilePatch,
 } from '../services/profileApi'
+import { imageFileToJpegDataUrl } from '../lib/avatarImageDataUrl'
 
 function hasAuthToken(): boolean {
   if (typeof localStorage === 'undefined') return false
   return !!(localStorage.getItem('access_token') ?? localStorage.getItem('token'))
 }
 
-function profileStrengthPct(p: {
-  full_name: string
-  job_title: string
-  phone: string
-  medical_license_number: string
-  avatar_url: string
-}): number {
+function profileStrengthPct(
+  p: {
+    full_name: string
+    job_title: string
+    phone: string
+    medical_license_number: string
+    avatar_url: string
+  },
+  hasPendingAvatar = false,
+): number {
   let n = 0
   const checks = [
     p.full_name.trim(),
     p.job_title.trim(),
     p.phone.trim(),
     p.medical_license_number.trim(),
-    p.avatar_url.trim(),
+    p.avatar_url.trim() || (hasPendingAvatar ? 'pending' : ''),
   ]
   for (const c of checks) {
     if (c) n += 1
@@ -317,6 +321,7 @@ function SettingsEditProfilePage() {
   const [phone, setPhone] = useState('')
   const [license, setLicense] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null)
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [weeklyUi, setWeeklyUi] = useState<WeeklyDayUi[]>(() => scheduleToWeeklyUi(getDoctorScheduleSettings()))
@@ -346,6 +351,7 @@ function SettingsEditProfilePage() {
     setPhone('')
     setLicense('')
     setAvatarUrl('')
+    setPendingAvatarFile(null)
     setInitialProfile({
       fullName: cached.fullName || '',
       jobTitle: cached.jobTitle || '',
@@ -362,6 +368,11 @@ function SettingsEditProfilePage() {
   const loadProfile = useCallback(async () => {
     setLoading(true)
     setBanner(null)
+    setPendingAvatarFile(null)
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
     if (!hasAuthToken()) {
       applyStoredFallbackProfile()
       setLoading(false)
@@ -407,8 +418,12 @@ function SettingsEditProfilePage() {
   const avatarSrc = previewBlobUrl || avatarUrl.trim() || ''
 
   const strength = useMemo(
-    () => profileStrengthPct({ full_name: fullName, job_title: jobTitle, phone, medical_license_number: license, avatar_url: avatarUrl }),
-    [fullName, jobTitle, phone, license, avatarUrl],
+    () =>
+      profileStrengthPct(
+        { full_name: fullName, job_title: jobTitle, phone, medical_license_number: license, avatar_url: avatarUrl },
+        !!pendingAvatarFile,
+      ),
+    [fullName, jobTitle, phone, license, avatarUrl, pendingAvatarFile],
   )
 
   const availabilityErrors = useMemo(() => collectWeeklyAvailabilityErrors(weeklyUi), [weeklyUi])
@@ -448,20 +463,41 @@ function SettingsEditProfilePage() {
       jobTitle.trim() !== initialProfile.jobTitle.trim() ||
       phone.trim() !== initialProfile.phone.trim() ||
       license.trim() !== initialProfile.license.trim() ||
-      avatarUrl.trim() !== initialProfile.avatarUrl.trim()
+      avatarUrl.trim() !== initialProfile.avatarUrl.trim() ||
+      pendingAvatarFile != null
     if (!profileChanged && !scheduleChanged) {
       setBanner({ type: 'ok', text: 'No changes to save.' })
       return
     }
     setSaving(true)
     try {
+      let avatarForPatch = avatarUrl.trim()
+      if (pendingAvatarFile) {
+        try {
+          avatarForPatch = await imageFileToJpegDataUrl(pendingAvatarFile)
+        } catch (err) {
+          setBanner({
+            type: 'err',
+            text:
+              err instanceof Error
+                ? err.message
+                : 'Could not process that image. Try a smaller JPG or PNG.',
+          })
+          setSaving(false)
+          return
+        }
+        setPendingAvatarFile(null)
+        if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
+        setPreviewBlobUrl(null)
+        setAvatarUrl(avatarForPatch)
+      }
       const g = globalsFromWeeklyUi(weeklyUi)
       const patch: ProviderProfilePatch = {
         full_name: fullName.trim(),
         phone: phone.trim() || undefined,
         job_title: jobTitle.trim() || undefined,
         medical_license_number: license.trim() || undefined,
-        avatar_url: avatarUrl.trim() || undefined,
+        avatar_url: avatarForPatch || undefined,
         opd_morning_start: g.opdStart,
         opd_morning_end: g.opdEnd,
         opd_evening_enabled: g.addEveningShift,
@@ -486,8 +522,10 @@ function SettingsEditProfilePage() {
         avatarUrl: updated.avatar_url ?? '',
       })
       initialWeeklyJsonRef.current = scheduleSnap
-      if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
-      setPreviewBlobUrl(null)
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
       setBanner({ type: 'ok', text: 'Profile and availability saved.' })
       navigate('/settings')
     } catch (err) {
@@ -507,6 +545,7 @@ function SettingsEditProfilePage() {
   function onFileChange(files: FileList | null) {
     const file = files?.[0]
     if (!file || !file.type.startsWith('image/')) return
+    setPendingAvatarFile(file)
     setPreviewBlobUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return URL.createObjectURL(file)
@@ -586,8 +625,9 @@ function SettingsEditProfilePage() {
                       <span className="material-symbols-outlined text-lg">photo_camera</span>
                       Change photo
                     </button>
-                    <p className="max-w-[200px] text-[11px] leading-snug text-[#3e4a3d]">
-                      Preview updates instantly. Persist a portrait by saving a secure image URL below.
+                    <p className="max-w-[220px] text-[11px] leading-snug text-[#3e4a3d]">
+                      Preview updates instantly. Saving stores your chosen photo on your profile. You can also paste a secure image URL
+                      in the field below.
                     </p>
                   </div>
                 </div>
@@ -894,7 +934,7 @@ function SettingsEditProfilePage() {
                   <CheckRow done={!!jobTitle.trim()} label="Clinical title" />
                   <CheckRow done={!!phone.trim()} label="Reachable phone" />
                   <CheckRow done={!!license.trim()} label="Registration number" />
-                  <CheckRow done={!!avatarUrl.trim() || !!previewBlobUrl} label="Profile photo" />
+                  <CheckRow done={!!avatarUrl.trim() || !!previewBlobUrl || !!pendingAvatarFile} label="Profile photo" />
                 </ul>
               </div>
             </aside>
