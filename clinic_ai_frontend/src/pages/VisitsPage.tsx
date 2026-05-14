@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import BackButton from '../components/BackButton'
+import ProviderHeaderProfileMenu from '../components/ProviderHeaderProfileMenu'
 import { getApiErrorMessage } from '../lib/apiClient'
 import { computeVisitDateRange, presetAnchoredToLiveToday, ymdFromLocalDate, ymdToLocalStart, type VisitDatePresetId } from '../lib/visitDateRangePresets'
-import { useProviderIdentity } from '../hooks/useProviderIdentity'
 import {
   fetchProviderVisitsPaged,
   getSignedInProviderId,
@@ -25,7 +25,6 @@ const MIN_FOCUS_REFRESH_GAP_MS = 8_000
 
 function VisitsPage() {
   const navigate = useNavigate()
-  const provider = useProviderIdentity()
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<VisitSort>('patient_newest')
@@ -130,41 +129,37 @@ function VisitsPage() {
   }
 
   return (
-    <div className="text-[#171d16] min-h-screen">
-      <main className="min-h-screen">
-        <header className="fixed top-0 right-0 w-[calc(100%-240px)] h-16 bg-white border-b border-gray-200 flex items-center justify-end px-8 z-10">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <button
-                aria-label="Open notifications"
-                className="relative text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors"
-                onClick={() => setIsNotificationsOpen(true)}
-                type="button"
-              >
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-              </button>
-            </div>
-            <div className="h-8 w-px bg-gray-200" />
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-sm font-semibold">{provider.displayName}</p>
-                <p className="text-[10px] text-gray-500">{provider.title}</p>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#bdcaba] bg-[#e9f0e5] text-[#3e4a3d]">
-                <span className="material-symbols-outlined text-[22px]">account_circle</span>
-              </div>
-            </div>
-          </div>
-        </header>
+    <div className="min-h-screen font-manrope text-[#171d16] antialiased">
+      <header className="fixed top-0 right-0 z-40 flex h-16 w-[calc(100%-240px)] items-center justify-between border-b border-gray-200 bg-white px-8">
+        <div className="flex min-w-0 items-center gap-2">
+          <BackButton to="/dashboard" className="-ml-2 shrink-0" />
+          <h2 className="truncate text-[28px] font-bold leading-[1.2] tracking-[-0.02em]">All Visits</h2>
+        </div>
+        <div className="flex shrink-0 items-center gap-6">
+          <button
+            aria-label="Open notifications"
+            className="relative flex items-center text-gray-500 transition-opacity hover:opacity-80"
+            onClick={() => setIsNotificationsOpen(true)}
+            type="button"
+          >
+            <span className="material-symbols-outlined">notifications</span>
+            <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-[#ba1a1a] ring-2 ring-white" />
+          </button>
+          <div className="h-8 w-px bg-gray-200" />
+          <ProviderHeaderProfileMenu />
+        </div>
+      </header>
 
-        <div className="pt-24 px-8 pb-12">
-          <div className="mb-8 flex items-start gap-2">
-            <BackButton to="/dashboard" className="-ml-2 mt-1" />
-            <div>
-              <h2 className="text-[28px] font-bold">All Visits</h2>
-              <p className="text-[#3e4a3d] mt-1">Manage patient visits and documentation</p>
-            </div>
+      <main className="min-h-screen px-8 pb-12 pt-20">
+          <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <p className="text-sm text-[#3e4a3d]">Manage patient visits and documentation</p>
+            <button
+              className="shrink-0 self-start rounded-lg bg-[#006b2c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#005a24] sm:self-auto"
+              onClick={() => navigate('/start-visit')}
+              type="button"
+            >
+              New Visit
+            </button>
           </div>
 
           {listError && (
@@ -173,15 +168,6 @@ function VisitsPage() {
             </div>
           )}
 
-          <div className="mb-8 flex justify-end">
-            <button
-              className="shrink-0 rounded-lg bg-[#006b2c] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#005a24]"
-              onClick={() => navigate('/start-visit')}
-              type="button"
-            >
-              New Visit
-            </button>
-          </div>
           <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
             <div className="relative min-w-0 flex-1">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
@@ -312,7 +298,6 @@ function VisitsPage() {
             </div>
           )}
 
-        </div>
       </main>
       <NotificationsDrawer isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
     </div>
