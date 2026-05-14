@@ -325,10 +325,28 @@ function NewVisitPage() {
       return
     }
     const hasAppointmentDate = appointmentDate.trim().length > 0
-    if (hasAppointmentDate && visitKind === 'walk_in' && !selectedSlot) {
-      setFormError('Select an appointment slot for Walk-in visit type.')
-      return
+
+    const startsToCreate = hasAppointmentDate
+      ? visitKind === 'walk_in'
+        ? selectedSlot
+          ? [selectedSlot.startIso]
+          : []
+        : selectedSlots
+            .map((s) => s.startIso)
+            .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+      : []
+
+    if (visitKind === 'scheduled') {
+      if (!hasAppointmentDate) {
+        setFormError('Select a day and at least one appointment time slot for a scheduled visit.')
+        return
+      }
+      if (startsToCreate.length === 0) {
+        setFormError('Select at least one appointment time slot for a scheduled visit.')
+        return
+      }
     }
+
     try {
       setSubmitting(true)
       const registered = await registerPatient({
@@ -341,29 +359,34 @@ function NewVisitPage() {
         consent: true,
         visit_type: visitKind,
       })
-      if (hasAppointmentDate) {
-        const startsToCreate =
-          visitKind === 'walk_in'
-            ? selectedSlot
-              ? [selectedSlot.startIso]
-              : []
-            : selectedSlots
-                .map((s) => s.startIso)
-                .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+      const pid = await resolveSignedInProviderId()
 
-        if (visitKind === 'walk_in' && startsToCreate.length === 0) {
-          setFormError('Select appointment slot(s).')
+      if (visitKind === 'walk_in') {
+        const firstStart = startsToCreate.length > 0 ? startsToCreate[0] : null
+        const createdVisit = await createVisitFromPatient(registered.patient_id, {
+          provider_id: pid,
+          ...(firstStart ? { scheduled_start: firstStart } : {}),
+          visit_type: 'walk_in',
+        })
+        if (firstStart && startsToCreate.length > 0) {
+          const totalDuration = startsToCreate.length * (schedule.defaultSlotMinutes || 15)
+          persistAppointmentDuration(firstStart, totalDuration)
+        }
+        const walkInVisitId = safeVisitId(createdVisit?.visit_id)
+        if (walkInVisitId) {
+          navigate(
+            `/visits/detail?visitId=${encodeURIComponent(walkInVisitId)}&tab=vitals`,
+            { replace: true },
+          )
           return
         }
+        navigate('/dashboard', { replace: true })
+        return
+      }
 
-        if (startsToCreate.length === 0) {
-          setFormError('Select appointment slot(s).')
-          return
-        }
-
+      if (visitKind === 'scheduled' && hasAppointmentDate && startsToCreate.length > 0) {
         const firstStart = startsToCreate[0]
         const totalDuration = startsToCreate.length * (schedule.defaultSlotMinutes || 15)
-        const pid = await resolveSignedInProviderId()
         const createdVisit = await createVisitFromPatient(registered.patient_id, {
           provider_id: pid,
           scheduled_start: firstStart,
@@ -378,7 +401,7 @@ function NewVisitPage() {
         navigate('/dashboard', { replace: true })
         return
       }
-      // Registration-only mode: patient is created, visit is created later on booking.
+
       navigate('/dashboard', { replace: true })
     } catch (e) {
       setFormError(getApiErrorMessage(e))
@@ -554,7 +577,9 @@ function NewVisitPage() {
                           ? `${appointmentDate} ${formatChipTime(selectedSlot?.startIso || '')} (${schedule.defaultSlotMinutes || 15}m) · Walk-in`
                           : `${selectedSlots.length} slot(s) selected on ${appointmentDate}`
                         : visitKind === 'walk_in'
-                          ? 'Select walk-in time'
+                          ? selectedSlot
+                            ? 'Walk-in with time'
+                            : 'Walk-in — no slot (optional)'
                           : 'Open / TBD'}
                     </span>
                   </div>
@@ -703,8 +728,10 @@ function NewVisitPage() {
                       })}
                     </div>
                     {!appointmentDate && <p className="mt-2 text-xs text-[#575e70]">Choose a day first.</p>}
-                    {visitKind === 'walk_in' && !selectedSlot && (
-                      <p className="mt-2 text-xs font-semibold text-[#0f5132]">Walk-in also needs an appointment time.</p>
+                    {visitKind === 'walk_in' && (
+                      <p className="mt-2 text-xs text-[#575e70]">
+                        Time slot is optional for walk-in. Add one if you want the visit on the schedule today.
+                      </p>
                     )}
                     {visitKind === 'scheduled' && selectedSlots.length > 0 && (
                       <p className="mt-2 text-xs font-semibold text-[#0f5132]">Selected slots: {selectedSlots.length}</p>
