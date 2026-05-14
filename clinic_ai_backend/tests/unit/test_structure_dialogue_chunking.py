@@ -121,5 +121,32 @@ def test_structure_dialogue_three_speaker_mode_includes_family_member_instructio
 
     assert out == [{"Family Member": "I am his daughter"}]
     assert captured_system
-    assert "Doctor, Patient, and Family Member" in captured_system[0]
-    assert "Do not collapse Family Member speech into Patient." in captured_system[0]
+    assert "Family Member" in captured_system[0]
+    assert "attendant" in captured_system[0].lower()
+    assert "Do not collapse attendant speech into Patient." in captured_system[0]
+
+
+def test_extract_dialogue_array_splits_multi_key_objects() -> None:
+    raw = json.dumps([{"Doctor": "How are you?", "Patient": "Fine thanks"}])
+    out = sd._extract_dialogue_array(raw)
+    assert out == [{"Doctor": "How are you?"}, {"Patient": "Fine thanks"}]
+
+
+def test_normalize_dialogue_turn_keys_maps_family_aliases_three_speakers() -> None:
+    turns = [
+        {"Attendant": "She has had fever for two days."},
+        {"pt": "It started Monday"},
+    ]
+    out = sd._normalize_dialogue_turn_keys(turns, speaker_mode="three_speakers")
+    assert out == [
+        {"Family Member": "She has had fever for two days."},
+        {"Patient": "It started Monday"},
+    ]
+
+
+def test_normalize_dialogue_turn_keys_maps_family_to_patient_two_speakers() -> None:
+    out = sd._normalize_dialogue_turn_keys(
+        [{"Attendant": "He cannot speak English well."}],
+        speaker_mode="two_speakers",
+    )
+    assert out == [{"Patient": "He cannot speak English well."}]

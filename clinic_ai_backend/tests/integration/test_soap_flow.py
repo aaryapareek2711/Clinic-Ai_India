@@ -221,7 +221,7 @@ def test_post_visit_summary_follow_up_date_overrides_next_visit(app_client, fake
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["payload"]["next_visit_date"] == "2030-08-10"
+    assert str(body["payload"]["next_visit_date"]).startswith("2030-08-10")
     reminder = fake_db.follow_up_reminders.find_one({"patient_id": "p-note-fu-pv", "visit_id": "v1"})
     assert reminder is not None
     assert reminder["next_visit_at"].date().isoformat() == "2030-08-10"

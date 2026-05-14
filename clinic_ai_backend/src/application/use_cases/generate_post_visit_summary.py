@@ -9,7 +9,11 @@ from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
 from src.adapters.services.post_visit_summary_service import PostVisitSummaryService
 from src.application.use_cases.schedule_follow_up_reminders import schedule_follow_up_after_post_visit
-from src.application.utils.follow_up_dates import parse_next_visit_at
+from src.application.utils.follow_up_dates import (
+    format_next_visit_patient_display,
+    next_visit_instant_for_staff_input,
+    parse_next_visit_at,
+)
 
 
 def _utc_now() -> datetime:
@@ -52,6 +56,7 @@ class GeneratePostVisitSummaryUseCase:
         preferred_language: str | None = None,
         follow_up_in: str | None = None,
         follow_up_date: date | None = None,
+        follow_up_time: str | None = None,
     ) -> dict:
         """Generate summary with India-note-first strategy and transcript fallback."""
         patient = self.db.patients.find_one({"patient_id": patient_id}) or {}
@@ -61,6 +66,15 @@ class GeneratePostVisitSummaryUseCase:
         )
         if not resolved_language:
             raise ValueError("preferred_language missing in both patient profile and request")
+
+        fu_date = follow_up_date
+        if isinstance(fu_date, str) and str(fu_date).strip():
+            try:
+                fu_date = date.fromisoformat(str(fu_date).strip()[:10])
+            except ValueError:
+                fu_date = None
+        elif isinstance(fu_date, datetime):
+            fu_date = fu_date.date()
 
         india_note = self.note_repo.find_latest(
             patient_id=patient_id,
@@ -87,7 +101,8 @@ class GeneratePostVisitSummaryUseCase:
             context=context,
             preferred_language=resolved_language,
             follow_up_in=follow_up_in,
-            follow_up_date=follow_up_date,
+            follow_up_date=fu_date,
+            follow_up_time=follow_up_time,
         )
         # Keep backward compatibility for callers that still read only payload/whatsapp_payload.
         payload = dict(payload_by_language.get("en") or {})
@@ -134,6 +149,7 @@ class GeneratePostVisitSummaryUseCase:
         preferred_language: str,
         follow_up_in: str | None,
         follow_up_date: date | None,
+        follow_up_time: str | None,
     ) -> dict[str, dict]:
         """Generate English-first payload plus preferred-language variant when needed."""
         payloads: dict[str, dict] = {}
@@ -143,6 +159,7 @@ class GeneratePostVisitSummaryUseCase:
             payload=english_payload,
             follow_up_in=follow_up_in,
             follow_up_date=follow_up_date,
+            follow_up_time=follow_up_time,
         )
 
         preferred = str(preferred_language or "").strip().lower()
@@ -156,6 +173,7 @@ class GeneratePostVisitSummaryUseCase:
                 payload=preferred_payload,
                 follow_up_in=follow_up_in,
                 follow_up_date=follow_up_date,
+                follow_up_time=follow_up_time,
             )
 
         return payloads
@@ -166,15 +184,19 @@ class GeneratePostVisitSummaryUseCase:
         payload: dict,
         follow_up_in: str | None,
         follow_up_date: date | None,
+        follow_up_time: str | None,
     ) -> dict:
         updated = dict(payload or {})
         follow_up_in_text = str(follow_up_in or "").strip()
         if follow_up_in_text:
             updated["follow_up"] = follow_up_in_text
         if follow_up_date is not None:
-            parsed_staff = parse_next_visit_at(follow_up_date)
-            if parsed_staff:
-                updated["next_visit_date"] = parsed_staff.date().isoformat()
+            instant = next_visit_instant_for_staff_input(
+                follow_up_date,
+                follow_up_time_hh_mm=str(follow_up_time or "").strip() or None,
+            )
+            if instant:
+                updated["next_visit_date"] = instant.isoformat()
         return updated
 
     def _resolve_transcription_job(
@@ -323,10 +345,11 @@ class GeneratePostVisitSummaryUseCase:
         self_care = payload.get("self_care") or []
         warnings = payload.get("warning_signs") or []
         follow_up_text = str(payload.get("follow_up") or "").strip()
-        next_visit_date = str(payload.get("next_visit_date") or "").strip()
+        next_visit_raw = str(payload.get("next_visit_date") or "").strip()
+        next_visit_display = format_next_visit_patient_display(next_visit_raw) if next_visit_raw else ""
         follow_up_line = follow_up_text
-        if next_visit_date:
-            follow_up_line = f"{follow_up_text} (Next visit date: {next_visit_date})".strip()
+        if next_visit_display:
+            follow_up_line = f"{follow_up_text} (Next visit: {next_visit_display} IST)".strip()
         lines = [
             "Post-visit summary",
             f"🩺 Finding: {payload.get('what_doctor_found', '')}",
