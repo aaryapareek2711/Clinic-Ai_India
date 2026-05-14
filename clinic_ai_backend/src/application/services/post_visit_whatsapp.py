@@ -8,7 +8,6 @@ from src.application.services.follow_up_whatsapp_templates import (
     default_follow_up_body_line,
     follow_up_meta_template_param_count,
     follow_up_template_body_values,
-    resolve_follow_up_template_name,
 )
 from src.application.services.intake_chat_service import IntakeChatService
 from src.application.utils.follow_up_dates import parse_next_visit_at
@@ -126,10 +125,12 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
     if not (settings.whatsapp_access_token or "").strip() or not (settings.whatsapp_phone_number_id or "").strip():
         logger.info("follow_up_immediate_whatsapp_skipped reason=no_meta_credentials")
         return False
-    primary_template = resolve_follow_up_template_name(settings)
-    fallback_template = (settings.whatsapp_intake_template_name or "").strip()
-    if not primary_template and not fallback_template:
-        logger.info("follow_up_immediate_whatsapp_skipped reason=no_template_configured")
+    primary_template = (settings.whatsapp_followup_template_name or "").strip()
+    if not primary_template:
+        logger.info(
+            "follow_up_immediate_whatsapp_skipped reason=no_follow_up_template "
+            "(set WHATSAPP_FOLLOWUP_TEMPLATE_NAME to your Meta template e.g. follow_up_1)"
+        )
         return False
     raw_phone = str(patient.get("phone_number") or "").strip()
     to_number = IntakeChatService._normalize_phone_number(raw_phone)
@@ -150,14 +151,13 @@ def send_immediate_follow_up_template_whatsapp(*, patient: dict, payload: dict, 
             body_values = [default_follow_up_body_line("immediate", nv, synthetic)]
     else:
         body_values = [f"Your visit summary is ready. {follow_up_text}".strip()[:900]] if param_count > 0 else []
-    candidate_templates: list[str] = []
-    if primary_template:
-        candidate_templates.append(primary_template)
-    if fallback_template and fallback_template not in candidate_templates:
-        candidate_templates.append(fallback_template)
+
+    # Post-visit ping must use the follow-up template only (e.g. follow_up_1). Do not fall back to
+    # WHATSAPP_INTAKE_TEMPLATE_NAME (opening_msg): different category in Meta and wrong patient copy.
+    candidate_templates: list[str] = [primary_template]
 
     for template_name in candidate_templates:
-        body_primary = body_values[:param_count] if param_count else body_values
+        body_primary = body_values[:param_count] if param_count > 0 else []
         body_variants: list[list[str]] = [body_primary]
         if body_primary:
             body_variants.append([])
