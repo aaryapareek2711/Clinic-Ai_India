@@ -365,6 +365,7 @@ export default function VisitDetailPage() {
     Record<string, unknown>
   > | null>(null)
   const [structureDialogueLoading, setStructureDialogueLoading] = useState(false)
+  const [dialogueStructureAutoFailed, setDialogueStructureAutoFailed] = useState(false)
   const [deleteTranscriptOpen, setDeleteTranscriptOpen] = useState(false)
   const [deleteTranscriptLoading, setDeleteTranscriptLoading] = useState(false)
   const [deleteTranscriptError, setDeleteTranscriptError] = useState<string | null>(null)
@@ -375,6 +376,7 @@ export default function VisitDetailPage() {
   const [hasTranscriptionUploadAttempt, setHasTranscriptionUploadAttempt] = useState(false)
   const [pendingTranscriptionAudio, setPendingTranscriptionAudio] = useState<File | null>(null)
   const pendingTranscriptionAudioRef = useRef<File | null>(null)
+  const autoDialogueStructureInFlightRef = useRef(false)
   const transcriptionFileInputRef = useRef<HTMLInputElement | null>(null)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
   const [recordingPhase, setRecordingPhase] = useState<'idle' | 'recording' | 'paused' | 'preview'>('idle')
@@ -507,6 +509,7 @@ export default function VisitDetailPage() {
     setTranscriptionText(null)
     setTranscriptionStructuredDialogue(null)
     setStructureDialogueLoading(false)
+    setDialogueStructureAutoFailed(false)
     setTranscriptionUploading(false)
     setHasTranscriptionUploadAttempt(false)
     pendingTranscriptionAudioRef.current = null
@@ -1149,19 +1152,34 @@ export default function VisitDetailPage() {
     }
   }, [patientId, visitId, loadTranscriptBody, transcriptionUploading, hasTranscriptionUploadAttempt])
 
-  const handleStructureVisitDialogue = useCallback(async () => {
-    if (!patientId || !visitId || structureDialogueLoading) return
+  const runStructureVisitDialogue = useCallback(async (): Promise<boolean> => {
+    if (!patientId || !visitId) return false
     setStructureDialogueLoading(true)
+    setDialogueStructureAutoFailed(false)
     try {
-      await structureVisitDialogue(patientId, visitId, { speakerMode: 'three_speakers' })
+      const dialogue = await structureVisitDialogue(patientId, visitId, { speakerMode: 'three_speakers' })
       await loadTranscriptBody({ silent: true })
-      setTranscriptionMessage('Speaker-labeled dialogue updated.')
+      const ok = Array.isArray(dialogue) && dialogue.length > 0
+      if (ok) {
+        setTranscriptionMessage('Speaker-labeled dialogue updated.')
+      } else {
+        setTranscriptionMessage('Speaker dialogue could not be generated from this transcript.')
+        setDialogueStructureAutoFailed(true)
+      }
+      return ok
     } catch (e) {
       setTranscriptionMessage(getApiErrorMessage(e))
+      setDialogueStructureAutoFailed(true)
+      return false
     } finally {
       setStructureDialogueLoading(false)
     }
-  }, [loadTranscriptBody, patientId, structureDialogueLoading, visitId])
+  }, [loadTranscriptBody, patientId, visitId])
+
+  const handleStructureVisitDialogue = useCallback(async () => {
+    if (!patientId || !visitId || structureDialogueLoading) return
+    await runStructureVisitDialogue()
+  }, [patientId, runStructureVisitDialogue, structureDialogueLoading, visitId])
 
   const handleDeleteTranscription = useCallback(async () => {
     if (!patientId || !visitId || deleteTranscriptLoading) return
@@ -1211,6 +1229,33 @@ export default function VisitDetailPage() {
     if (transcriptionStatus) return transcriptionStatus
     return { status: 'pending', message: 'Transcription not started' } as TranscriptionStatusResponse
   })()
+
+  useEffect(() => {
+    if (!patientId || !visitId) return
+    if (transcriptionStateLower !== 'completed') return
+    if (!(displayTranscriptionText ?? '').trim()) return
+    if (dialogueTurns.length > 0) return
+    if (structureDialogueLoading) return
+    if (dialogueStructureAutoFailed) return
+    if (autoDialogueStructureInFlightRef.current) return
+    autoDialogueStructureInFlightRef.current = true
+    void (async () => {
+      try {
+        await runStructureVisitDialogue()
+      } finally {
+        autoDialogueStructureInFlightRef.current = false
+      }
+    })()
+  }, [
+    dialogueStructureAutoFailed,
+    dialogueTurns.length,
+    displayTranscriptionText,
+    patientId,
+    runStructureVisitDialogue,
+    structureDialogueLoading,
+    transcriptionStateLower,
+    visitId,
+  ])
 
   const handleUploadRecordedPreview = useCallback(() => {
     if (!recordedPreviewFile || !patientId || !visitId || isTranscriptionControlLocked) return
@@ -1935,12 +1980,22 @@ export default function VisitDetailPage() {
                           </div>
                         ))}
                       </div>
-                    ) : transcriptionStateLower === 'completed' &&
-                      (displayTranscriptionText?.length ?? 0) > 0 ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-5 text-sm text-[#3e4a3d]">
+                    ) : structureDialogueLoading &&
+                      transcriptionStateLower === 'completed' &&
+                      (displayTranscriptionText?.trim().length ?? 0) > 0 ? (
+                      <div className="rounded-lg border border-[#bdcaba] bg-[#f8fdf6] px-4 py-4 text-sm text-[#3e4a3d]">
+                        <p className="flex items-center gap-2 font-medium text-[#171d16]">
+                          <span className="material-symbols-outlined animate-pulse text-[#006b2c]">progress_activity</span>
+                          Generating speaker-labeled dialogue (Doctor / Patient / Family Member)…
+                        </p>
+                      </div>
+                    ) : dialogueStructureAutoFailed &&
+                      transcriptionStateLower === 'completed' &&
+                      (displayTranscriptionText?.trim().length ?? 0) > 0 ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50/80 px-4 py-4 text-sm text-[#3e4a3d]">
                         <p className="mb-3">
-                          Raw speech-to-text is ready, but speaker-labeled dialogue is not on file yet. Generate
-                          Doctor / Patient / Family Member turns when applicable (server uses OpenAI, three-speaker mode).
+                          {transcriptionMessage ||
+                            'Speaker dialogue could not be generated. Check the server has OPENAI_API_KEY configured, then retry.'}
                         </p>
                         <button
                           className="rounded-lg bg-[#006b2c] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -1948,8 +2003,13 @@ export default function VisitDetailPage() {
                           onClick={() => void handleStructureVisitDialogue()}
                           type="button"
                         >
-                          {structureDialogueLoading ? 'Generating dialogue…' : 'Generate speaker dialogue'}
+                          {structureDialogueLoading ? 'Retrying…' : 'Retry'}
                         </button>
+                      </div>
+                    ) : transcriptionStateLower === 'completed' &&
+                      (displayTranscriptionText?.length ?? 0) > 0 ? (
+                      <div className="rounded-lg border border-dashed border-[#bdcaba] px-4 py-4 text-center text-xs text-[#575e70]">
+                        <p>Preparing speaker dialogue…</p>
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-[#bdcaba] px-4 py-6 text-center text-xs text-[#575e70]">
