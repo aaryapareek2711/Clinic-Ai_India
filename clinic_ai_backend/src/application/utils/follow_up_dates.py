@@ -2,8 +2,55 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+
+# India Standard Time (no DST). Avoid requiring IANA tzdata on Windows CI.
+_IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+
+def parse_staff_follow_up_hh_mm(raw: str | None) -> tuple[int, int] | None:
+    """Parse ``HH:MM`` (24h) from staff input; return (hour, minute) or None."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    m = re.fullmatch(r"(?:([01]\d|2[0-3]):([0-5]\d))", text)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def next_visit_instant_for_staff_input(
+    d: date | None,
+    *,
+    follow_up_time_hh_mm: str | None,
+) -> datetime | None:
+    """
+    UTC instant for WhatsApp reminder windows (T-3d / T-1d).
+
+    When ``follow_up_time_hh_mm`` is set, interpret date + time in **Asia/Kolkata** (clinic wall clock).
+    When time is omitted, keep legacy behaviour: **09:00 UTC** on that calendar date.
+    """
+    if d is None:
+        return None
+    parts = parse_staff_follow_up_hh_mm(follow_up_time_hh_mm)
+    if parts is None:
+        return datetime.combine(d, time(9, 0, tzinfo=timezone.utc))
+    hh, mm = parts
+    local = datetime.combine(d, time(hh, mm, tzinfo=_IST))
+    return local.astimezone(timezone.utc)
+
+
+def format_next_visit_patient_display(stored: str | None) -> str:
+    """Human-readable next visit line for WhatsApp text (India local when parseable)."""
+    text = str(stored or "").strip()
+    if not text:
+        return ""
+    dt = parse_next_visit_at(text)
+    if dt is None:
+        return text
+    local = dt.astimezone(_IST)
+    return local.strftime("%d-%m-%Y %I:%M %p").replace(" 0", " ").strip()
 
 
 def parse_next_visit_at(value: Any) -> datetime | None:

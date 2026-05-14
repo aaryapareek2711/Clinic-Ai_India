@@ -255,6 +255,7 @@ def generate_post_visit_summary(
             preferred_language=request.preferred_language,
             follow_up_in=request.follow_up_in,
             follow_up_date=request.follow_up_date,
+            follow_up_time=request.follow_up_time,
         )
     except ValueError as exc:
         detail = str(exc)

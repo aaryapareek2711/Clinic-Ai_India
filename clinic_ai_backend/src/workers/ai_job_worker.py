@@ -106,7 +106,9 @@ class AIJobWorker:
                     visit_id=visit_id,
                     transcription_job_id=str(payload.get("transcription_job_id") or ""),
                     preferred_language=payload.get("preferred_language"),
+                    follow_up_in=payload.get("follow_up_in"),
                     follow_up_date=payload.get("follow_up_date"),
+                    follow_up_time=payload.get("follow_up_time"),
                 )
                 self._sync_result_into_visit(job_type=job_type, result=doc)
                 self._mark_completed(job_id, doc)

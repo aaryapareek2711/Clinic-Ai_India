@@ -1083,6 +1083,10 @@ export default function VisitDetailPage() {
       if (!opts?.silent) setTranscriptLoading(true)
       try {
         const d = await fetchVisitTranscriptionDialogue(patientId, visitId)
+        if (d == null) {
+          // 202 Retry-After: session still syncing — do not wipe transcript/dialogue already shown.
+          return
+        }
         const raw = d?.transcript?.trim()
         setTranscriptionText(raw && raw.length > 0 ? raw : null)
         const turns = d?.structured_dialogue
@@ -2212,10 +2216,12 @@ export default function VisitDetailPage() {
                           setPostVisitSendInfo(null)
                           try {
                             const nextVisitDate = recapFollowUpDateDraft.trim()
+                            const nextVisitTime = to24HourTimeForApi(compose12HourTime(recapFollowUpTimeParts).trim())
                             const res = await generatePostVisitSummary(patientId, visitId, {
                               preferred_language: postVisitTargetLanguageForApi,
                               follow_up_in: clinicalFollowUpIn || undefined,
                               follow_up_date: nextVisitDate || undefined,
+                              follow_up_time: nextVisitTime || undefined,
                             })
                             setPostVisitSummary(res)
                             setPostVisitMessage('Post-visit summary generated. Ready to send.')

@@ -75,7 +75,10 @@ class PostVisitSummaryPayload(BaseModel):
     self_care: list[str]
     warning_signs: list[str]
     follow_up: str
-    next_visit_date: str | None = Field(default=None, description="ISO YYYY-MM-DD when a return visit was scheduled")
+    next_visit_date: str | None = Field(
+        default=None,
+        description="Next return visit: YYYY-MM-DD, or ISO-8601 instant (UTC offset) when a time was set at post-visit.",
+    )
 
 
 class NoteGenerateRequest(BaseModel):

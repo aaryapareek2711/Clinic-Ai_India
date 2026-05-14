@@ -63,9 +63,19 @@ def _extract_dialogue_array(content: str) -> list[dict[str, str]] | None:
         if isinstance(parsed, list):
             normalized: list[dict[str, str]] = []
             for item in parsed:
-                if isinstance(item, dict) and len(item) == 1:
+                if not isinstance(item, dict) or not item:
+                    continue
+                if len(item) == 1:
                     k, v = next(iter(item.items()))
                     normalized.append({str(k): str(v)})
+                else:
+                    # Models often emit {"Doctor": "...", "Patient": "..."} in one object; split so we keep all text.
+                    for k, v in item.items():
+                        if v is None:
+                            continue
+                        vs = str(v).strip()
+                        if vs:
+                            normalized.append({str(k): vs})
             return normalized or None
     except json.JSONDecodeError:
         pass
@@ -74,10 +84,68 @@ def _extract_dialogue_array(content: str) -> list[dict[str, str]] | None:
         try:
             arr = json.loads(m.group(0))
             if isinstance(arr, list):
-                return [dict(t) for t in arr if isinstance(t, dict) and len(t) == 1]  # type: ignore[misc]
+                out: list[dict[str, str]] = []
+                for t in arr:
+                    if not isinstance(t, dict) or not t:
+                        continue
+                    if len(t) == 1:
+                        k, v = next(iter(t.items()))
+                        out.append({str(k): str(v)})
+                    else:
+                        for k, v in t.items():
+                            if v is None:
+                                continue
+                            vs = str(v).strip()
+                            if vs:
+                                out.append({str(k): vs})
+                return out or None
         except json.JSONDecodeError:
             return None
     return None
+
+
+def _normalize_speaker_label(raw_key: str, *, speaker_mode: str) -> str:
+    """Map model-specific role names onto Doctor / Patient / Family Member (or Patient in two-speaker mode)."""
+    k = str(raw_key or "").strip()
+    if not k:
+        return "Patient"
+    lower = k.lower().replace("_", " ").strip()
+
+    doctor_aliases = frozenset(
+        {
+            "doctor",
+            "dr",
+            "physician",
+            "clinician",
+            "provider",
+            "md",
+            "doc",
+            "clinican",  # common misspelling
+        }
+    )
+    patient_aliases = frozenset({"patient", "pt"})
+    family_aliases = frozenset({"attendant"})
+
+    if lower in doctor_aliases:
+        return "Doctor"
+    if lower in patient_aliases:
+        return "Patient"
+    if lower in family_aliases:
+        if str(speaker_mode or "").strip().lower() == "three_speakers":
+            return "Family Member"
+        return "Patient"
+    return k
+
+
+def _normalize_dialogue_turn_keys(turns: list[dict[str, str]], *, speaker_mode: str) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for turn in turns:
+        if not isinstance(turn, dict) or len(turn) != 1:
+            continue
+        sk, sv = next(iter(turn.items()))
+        nk = _normalize_speaker_label(sk, speaker_mode=speaker_mode)
+        out.append({nk: str(sv)})
+    return out
 
 
 def _dedupe_adjacent_dialogue_turns(turns: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -109,15 +177,13 @@ def _speaker_rules_block(speaker_mode: str) -> str:
     normalized_mode = str(speaker_mode or "two_speakers").strip().lower()
     if normalized_mode == "three_speakers":
         return (
-            "The consultation uses three roles: Doctor, Patient, and Family Member. "
-            "Preserve Family Member turns when a caregiver/attendant speaks for or about the patient. "
-            "Do not collapse Family Member speech into Patient. "
-            "Use {\"Family Member\": \"...\"} when a relative/caregiver speaks (including answering for the patient); "
-            "use {\"Patient\": \"...\"} only for the patient themselves."
+            "The consultation uses exactly three JSON keys for speakers: \"Doctor\", \"Patient\", and \"Family Member\". "
+            "Do not use other role names as keys. When an attendant speaks (for or about the patient), use {\"Family Member\": \"...\"}; "
+            "use {\"Patient\": \"...\"} only for the patient themselves. "
+            "Do not collapse attendant speech into Patient."
         )
     return (
-        "Use only Doctor and Patient roles for this consultation; map third-party caregiver lines to Patient "
-        "(two-speaker mode)."
+        "Use only Doctor and Patient roles for this consultation; map attendant lines to Patient (two-speaker mode)."
     )
 
 
@@ -134,8 +200,8 @@ def _structure_one_chunk_openai(
     speaker_instruction = _speaker_rules_block(speaker_mode)
     system = (
         "You are a medical dialogue analyst. Convert the raw consultation transcript into a JSON array. "
-        "Each element must be exactly one single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
-        "or {\"Family Member\": \"text\"} when applicable. "
+        "Each array element must be exactly one single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
+        "or {\"Family Member\": \"text\"} when applicable. Never put two speakers in one object. "
         f"{speaker_instruction}\n\n"
         "STRICT one speaker per JSON object (paragraph-style text is OK; mixed speakers in one object is NOT):\n"
         "- Patient turns: symptoms, concerns, history, lifestyle, answers to questions, short replies "
@@ -239,5 +305,6 @@ def structure_dialogue_from_transcript_sync(
         )
         merged.extend(part)
 
+    merged = _normalize_dialogue_turn_keys(merged, speaker_mode=speaker_mode)
     return _dedupe_adjacent_dialogue_turns(merged)
 
