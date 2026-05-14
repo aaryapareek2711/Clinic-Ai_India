@@ -680,6 +680,9 @@ function SettingsEditProfilePage() {
                       Defaults match the hours you chose when your profile was created until you save changes here. Appointment slots follow these
                       timings once saved.
                     </p>
+                    <p className="mt-2 text-[11px] font-medium leading-snug text-red-600">
+                      Only times outside Shift 1 are available (no overlap; Shift 1 end and Shift 2 start may be the same time).
+                    </p>
                   </div>
 
                   {availabilityErrors.length > 0 ? (
@@ -819,9 +822,6 @@ function SettingsEditProfilePage() {
                           {row.eveningEnabled && !row.closed ? (
                             <div className="mt-3">
                               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Shift 2</p>
-                              <p className="mb-2 text-[11px] font-medium leading-snug text-red-600">
-                                Only times outside Shift 1 are available (no overlap; Shift 1 end and Shift 2 start may be the same time).
-                              </p>
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                 <TimeSingleSelect
                                   ariaLabel={`${d.label} Shift 2 start`}
