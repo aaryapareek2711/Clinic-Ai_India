@@ -113,7 +113,7 @@ class Settings:
         self.encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
         self.jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
         self.jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-        self.access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        self.access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
         self.refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 
