@@ -74,7 +74,7 @@ def test_segment_gap_audit_sums_spans_and_max_gap() -> None:
 
 
 def test_family_member_turn_maps_to_attendant_slug() -> None:
-    structured = [{"Family Member": "She has been dizzy since Tuesday morning."}]
+    structured = [{"Attendant": "She has been dizzy since Tuesday morning."}]
     segments = [
         {
             "segment_id": "seg_1",
@@ -86,7 +86,7 @@ def test_family_member_turn_maps_to_attendant_slug() -> None:
         }
     ]
     out = align_segments_with_structured_dialogue(segments, structured)
-    assert out[0]["speaker_label"] == "Family Member"
+    assert out[0]["speaker_label"] == "Attendant"
 
 
 def test_dedupe_chunk_overlap_removes_duplicate_time_text() -> None:

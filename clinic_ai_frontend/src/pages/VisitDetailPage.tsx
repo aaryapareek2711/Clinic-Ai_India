@@ -314,7 +314,7 @@ function transcriptionStatusUiLabel(
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-/** GET dialogue returns `structured_dialogue` as `{ Doctor?: string, Patient?: string, 'Family Member'?: string }[]` (one key per turn). */
+/** GET dialogue returns `structured_dialogue` as `{ Doctor?, Patient?, Attendant?, Family Member? }[]` (one key per turn). */
 function flattenStructuredDialogue(
   turns: Array<Record<string, unknown>> | null | undefined,
 ): { role: string; text: string }[] {
@@ -1990,7 +1990,7 @@ export default function VisitDetailPage() {
                       <div className="rounded-lg border border-[#bdcaba] bg-[#f8fdf6] px-4 py-4 text-sm text-[#3e4a3d]">
                         <p className="flex items-center gap-2 font-medium text-[#171d16]">
                           <span className="material-symbols-outlined animate-pulse text-[#006b2c]">progress_activity</span>
-                          Generating speaker-labeled dialogue (Doctor / Patient / Family Member)…
+                          Generating speaker-labeled dialogue (Doctor / Patient / Attendant)…
                         </p>
                       </div>
                     ) : dialogueStructureAutoFailed &&

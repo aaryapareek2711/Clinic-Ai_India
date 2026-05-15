@@ -105,7 +105,7 @@ def _extract_dialogue_array(content: str) -> list[dict[str, str]] | None:
 
 
 def _normalize_speaker_label(raw_key: str, *, speaker_mode: str) -> str:
-    """Map model-specific role names onto Doctor / Patient / Family Member (or Patient in two-speaker mode)."""
+    """Map model-specific role names onto Doctor / Patient / Attendant (or Patient in two-speaker mode)."""
     k = str(raw_key or "").strip()
     if not k:
         return "Patient"
@@ -124,15 +124,23 @@ def _normalize_speaker_label(raw_key: str, *, speaker_mode: str) -> str:
         }
     )
     patient_aliases = frozenset({"patient", "pt"})
-    family_aliases = frozenset({"attendant"})
+    third_aliases = frozenset(
+        {
+            "attendant",
+            "family member",
+            "familymember",
+            "caregiver",
+            "relative",
+        }
+    )
 
     if lower in doctor_aliases:
         return "Doctor"
     if lower in patient_aliases:
         return "Patient"
-    if lower in family_aliases:
+    if lower in third_aliases:
         if str(speaker_mode or "").strip().lower() == "three_speakers":
-            return "Family Member"
+            return "Attendant"
         return "Patient"
     return k
 
@@ -177,10 +185,10 @@ def _speaker_rules_block(speaker_mode: str) -> str:
     normalized_mode = str(speaker_mode or "two_speakers").strip().lower()
     if normalized_mode == "three_speakers":
         return (
-            "The consultation uses exactly three JSON keys for speakers: \"Doctor\", \"Patient\", and \"Family Member\". "
-            "Do not use other role names as keys. When an attendant speaks (for or about the patient), use {\"Family Member\": \"...\"}; "
+            "The consultation uses exactly three JSON keys for speakers: \"Doctor\", \"Patient\", and \"Attendant\". "
+            "When a family member or attendant speaks (for or about the patient), use {\"Attendant\": \"...\"}; "
             "use {\"Patient\": \"...\"} only for the patient themselves. "
-            "Do not collapse attendant speech into Patient."
+            "Do not collapse attendant or family speech into Patient."
         )
     return (
         "Use only Doctor and Patient roles for this consultation; map attendant lines to Patient (two-speaker mode)."
@@ -201,7 +209,7 @@ def _structure_one_chunk_openai(
     system = (
         "You are a medical dialogue analyst. Convert the raw consultation transcript into a JSON array. "
         "Each array element must be exactly one single-key object: {\"Doctor\": \"text\"} or {\"Patient\": \"text\"} "
-        "or {\"Family Member\": \"text\"} when applicable. Never put two speakers in one object. "
+        "or {\"Attendant\": \"text\"} when applicable. Never put two speakers in one object. "
         f"{speaker_instruction}\n\n"
         "STRICT one speaker per JSON object (paragraph-style text is OK; mixed speakers in one object is NOT):\n"
         "- Patient turns: symptoms, concerns, history, lifestyle, answers to questions, short replies "

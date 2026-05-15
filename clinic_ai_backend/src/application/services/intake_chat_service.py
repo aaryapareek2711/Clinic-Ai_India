@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from typing import Any, Callable
 
 from src.adapters.db.mongo.client import get_database
 from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuestionClient
@@ -542,10 +544,6 @@ class IntakeChatService:
         self._generate_and_send_next_turn(refreshed)
 
     def _generate_and_send_next_turn(self, session: dict) -> None:
-        self._send_typing_indicator_best_effort(
-            to_number=str(session.get("to_number") or ""),
-            reply_to_message_id=str(session.get("last_inbound_message_id") or "") or None,
-        )
         language = session.get("language", "en")
         fallback_topic = self._planner_fallback_topic(session)
         planner_fallback_question = self.openai._topic_message(fallback_topic, language)
@@ -614,7 +612,10 @@ class IntakeChatService:
                 "has_travelled_recently": bool(patient.get("travelled_recently", False)),
                 "chief_complaint": session.get("illness", ""),
             }
-            ai_turn = self.openai.generate_intake_turn(context)
+            ai_turn = self._with_whatsapp_typing_during_llm(
+                session,
+                lambda: self.openai.generate_intake_turn(context),
+            )
             message = str(ai_turn.get("message", "") or "").strip()
             if not message:
                 raise RuntimeError("Empty message in AI turn")
@@ -1690,7 +1691,7 @@ class IntakeChatService:
             )
         if typing_sent:
             # Keep a short delay so the patient can see WhatsApp typing dots.
-            time.sleep(1.2)
+            time.sleep(1.6)
         self.whatsapp.send_text(to_number, message)
 
     def _send_typing_indicator_best_effort(self, *, to_number: str, reply_to_message_id: str | None = None) -> None:
@@ -1703,6 +1704,34 @@ class IntakeChatService:
                 "whatsapp_typing_indicator_failed to=%s",
                 self._mask_phone_number(str(to_number or "")),
             )
+
+    def _typing_pulse_while(self, *, to_number: str, reply_to_message_id: str | None, stop: threading.Event) -> None:
+        """Re-send WhatsApp typing so dots stay visible while the LLM call runs (Meta clears typing quickly)."""
+        if not to_number or not (reply_to_message_id or "").strip():
+            return
+        while not stop.is_set():
+            self._send_typing_indicator_best_effort(to_number=to_number, reply_to_message_id=reply_to_message_id)
+            if stop.wait(timeout=2.8):
+                break
+
+    def _with_whatsapp_typing_during_llm(self, session: dict, fn: Callable[[], Any]) -> Any:
+        """Show typing indicator on the patient's last inbound message while ``fn`` (LLM) executes."""
+        to_number = str(session.get("to_number") or "").strip()
+        mid = str(session.get("last_inbound_message_id") or "").strip()
+        if not to_number or not mid:
+            return fn()
+        stop = threading.Event()
+        pulse = threading.Thread(
+            target=self._typing_pulse_while,
+            kwargs={"to_number": to_number, "reply_to_message_id": mid, "stop": stop},
+            daemon=True,
+        )
+        pulse.start()
+        try:
+            return fn()
+        finally:
+            stop.set()
+            pulse.join(timeout=1.0)
 
     @staticmethod
     def _opt_out_confirm_message(language: str) -> str:

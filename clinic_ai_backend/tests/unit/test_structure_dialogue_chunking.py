@@ -95,7 +95,7 @@ def test_structure_dialogue_three_speaker_mode_includes_family_member_instructio
     class _Resp:
         def __init__(self) -> None:
             self._body = json.dumps(
-                {"choices": [{"message": {"content": json.dumps([{"Family Member": "I am his daughter"}])}}]}
+                {"choices": [{"message": {"content": json.dumps([{"Attendant": "I am his daughter"}])}}]}
             ).encode()
 
         def read(self) -> bytes:
@@ -119,11 +119,11 @@ def test_structure_dialogue_three_speaker_mode_includes_family_member_instructio
             speaker_mode="three_speakers",
         )
 
-    assert out == [{"Family Member": "I am his daughter"}]
+    assert out == [{"Attendant": "I am his daughter"}]
     assert captured_system
-    assert "Family Member" in captured_system[0]
+    assert "Attendant" in captured_system[0]
     assert "attendant" in captured_system[0].lower()
-    assert "Do not collapse attendant speech into Patient." in captured_system[0]
+    assert "Do not collapse attendant or family speech into Patient." in captured_system[0]
 
 
 def test_extract_dialogue_array_splits_multi_key_objects() -> None:
@@ -139,7 +139,7 @@ def test_normalize_dialogue_turn_keys_maps_family_aliases_three_speakers() -> No
     ]
     out = sd._normalize_dialogue_turn_keys(turns, speaker_mode="three_speakers")
     assert out == [
-        {"Family Member": "She has had fever for two days."},
+        {"Attendant": "She has had fever for two days."},
         {"Patient": "It started Monday"},
     ]
 

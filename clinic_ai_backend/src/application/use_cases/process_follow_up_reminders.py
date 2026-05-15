@@ -1,4 +1,4 @@
-"""Send WhatsApp template reminders at T-3 days and the calendar day before next visit."""
+"""Send WhatsApp template reminders at T-3 days and T-24 hours before next visit (``next_visit_at``)."""
 from __future__ import annotations
 
 import logging
@@ -142,13 +142,13 @@ class ProcessFollowUpRemindersUseCase:
             if language_code and language_code not in language_codes:
                 language_codes.insert(0, language_code)
 
-            t3 = nv - timedelta(days=3)
-            # Second ping: one calendar day before visit (same clock as next_visit_at), not only "24h" wall literal.
-            t1d = nv - timedelta(days=1)
+            t_three = nv - timedelta(days=3)
+            t_twentyfour = nv - timedelta(hours=24)
             rid = doc.get("reminder_id")
             due_any = False
 
-            if doc.get("remind_3d_sent_at") is None and now_utc >= t3 and now_utc < nv:
+            # 3-day ping: from 72h before visit until strictly before the final 24h window (avoids double-send with 24h ping).
+            if doc.get("remind_3d_sent_at") is None and now_utc >= t_three and now_utc < t_twentyfour and now_utc < nv:
                 due_any = True
                 body_values = follow_up_template_body_values(
                     reminder_kind="3d",
@@ -207,15 +207,15 @@ class ProcessFollowUpRemindersUseCase:
                         last_error = str(exc)[:300]
 
             fresh = db.follow_up_reminders.find_one({"reminder_id": rid}) or doc
-            if fresh.get("remind_24h_sent_at") is None and now_utc >= t1d and now_utc < nv:
+            if fresh.get("remind_24h_sent_at") is None and now_utc >= t_twentyfour and now_utc < nv:
                 due_any = True
                 body_values = follow_up_template_body_values(
-                    reminder_kind="1d",
+                    reminder_kind="24h",
                     next_visit_at=nv,
                     follow_up_text=str(doc.get("follow_up_text") or ""),
                 )
                 if param_count > 0 and not body_values:
-                    body_values = [default_follow_up_body_line("1d", nv, fresh)]
+                    body_values = [default_follow_up_body_line("24h", nv, fresh)]
                 try:
                     body_primary = body_values[:param_count] if param_count else body_values
                     body_variants: list[list[str]] = [body_primary]
@@ -237,7 +237,7 @@ class ProcessFollowUpRemindersUseCase:
                             except Exception as exc:
                                 last_send_error = str(exc)
                                 logger.warning(
-                                    "follow_up_reminder_try_failed reminder_kind=1d reminder_id=%s to=%s lang=%s params=%d error=%s",
+                                    "follow_up_reminder_try_failed reminder_kind=24h reminder_id=%s to=%s lang=%s params=%d error=%s",
                                     rid,
                                     to_number,
                                     lang_code,
@@ -255,7 +255,7 @@ class ProcessFollowUpRemindersUseCase:
                     sent_24h += 1
                 except Exception as exc:
                     logger.warning(
-                        "follow_up_reminder_send_failed reminder_kind=1d reminder_id=%s to=%s error=%s",
+                        "follow_up_reminder_send_failed reminder_kind=24h reminder_id=%s to=%s error=%s",
                         rid,
                         to_number,
                         exc,

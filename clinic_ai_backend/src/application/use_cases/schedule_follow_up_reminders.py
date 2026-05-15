@@ -28,7 +28,7 @@ def schedule_follow_up_after_post_visit(
     """
     If the post-visit payload includes a parseable next visit instant, upsert a reminder row.
 
-    A cron job calls ``ProcessFollowUpRemindersUseCase`` to send Meta template messages at T-3d and on the calendar day before the visit.
+    A cron job calls ``ProcessFollowUpRemindersUseCase`` to send Meta template messages at T-3 days and T-24 hours before ``next_visit_at``.
     """
     if not visit_id:
         return

@@ -201,7 +201,7 @@ class TranscriptionWorker:
                     "speaker": str(seg.get("speaker_label") or "Unknown"),
                     "role": (
                         str(seg.get("speaker_label"))
-                        if str(seg.get("speaker_label")) in {"Doctor", "Patient", "Family Member"}
+                        if str(seg.get("speaker_label")) in {"Doctor", "Patient", "Attendant", "Family Member"}
                         else None
                     ),
                     "start_time": self._format_ms_to_timestamp(int(seg.get("start_ms", 0))),
@@ -359,7 +359,7 @@ class TranscriptionWorker:
         coverage = structured_dialogue_segment_coverage_ratio(normalized, cleaned)
         has_clinical_roles = any(
             isinstance(turn, dict)
-            and any(role in turn for role in ("Doctor", "Patient", "Family Member"))
+            and any(role in turn for role in ("Doctor", "Patient", "Attendant", "Family Member"))
             for turn in cleaned
         )
         if not has_clinical_roles:
@@ -1346,7 +1346,7 @@ class TranscriptionWorker:
         if speaker in {"patient"}:
             return "Patient"
         if speaker in {"attendant", "caregiver", "family member"}:
-            return "Family Member"
+            return "Attendant"
         if speaker in {"speaker_1", "speaker1", "speaker 1", "guest-1"}:
             return "Speaker 1"
         if speaker in {"speaker_2", "speaker2", "speaker 2", "guest-2"}:

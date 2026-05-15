@@ -47,7 +47,9 @@ def follow_up_template_body_values(
     when_ist = _format_visit_when_ist(nv)
     now = datetime.now(timezone.utc)
     if reminder_kind in {"24h", "1d"}:
-        return [f"Follow-up visit tomorrow ({when_ist} IST). {follow_up_text}".strip()[:900]]
+        return [
+            f"Reminder: your follow-up visit is within 24 hours ({when_ist} IST). {follow_up_text}".strip()[:900]
+        ]
     if reminder_kind == "immediate":
         if nv <= now:
             return [
@@ -65,7 +67,7 @@ def default_follow_up_body_line(kind: str, next_visit_at: datetime, doc: dict) -
     when_ist = _format_visit_when_ist(nv)
     ft = str(doc.get("follow_up_text", "") or "")
     if kind in {"24h", "1d"}:
-        return f"Reminder: your follow-up visit is tomorrow ({when_ist} IST). {ft}".strip()
+        return f"Reminder: your follow-up visit is within 24 hours ({when_ist} IST). {ft}".strip()
     if kind == "immediate":
         now = datetime.now(timezone.utc)
         if nv <= now:

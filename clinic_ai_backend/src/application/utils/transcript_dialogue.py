@@ -16,8 +16,8 @@ def segments_to_structured_dialogue(segments: list[dict[str, Any]]) -> list[dict
     label_to_role = {
         "doctor": "Doctor",
         "patient": "Patient",
-        "attendant": "Family Member",
-        "family member": "Family Member",
+        "attendant": "Attendant",
+        "family member": "Attendant",
         "unknown": "Unknown",
     }
     out: list[dict[str, str]] = []
@@ -79,12 +79,12 @@ def _word_overlap_ratio(segment_text: str, turn_text: str) -> float:
 
 
 def _flatten_structured_turns(structured_dialogue: list[dict[str, str]]) -> list[tuple[str, str]]:
-    """(speaker_label, text) in order — labels are Doctor / Patient / Family Member (Mongo + UI)."""
+    """(speaker_label, text) in order — labels are Doctor / Patient / Attendant (Mongo + UI)."""
     out: list[tuple[str, str]] = []
     for turn in structured_dialogue:
         if not isinstance(turn, dict):
             continue
-        for display_key in ("Doctor", "Patient", "Family Member"):
+        for display_key in ("Doctor", "Patient", "Attendant", "Family Member"):
             raw = turn.get(display_key)
             if raw is None:
                 continue
@@ -136,7 +136,7 @@ def align_segments_with_structured_dialogue(
     structured_dialogue: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
     """
-    Map each STT segment to Doctor / Patient / Family Member using structured dialogue from OpenAI
+    Map each STT segment to Doctor / Patient / Attendant using structured dialogue from OpenAI
     (or bundle-style turns), with monotone time-in-dialogue order.
 
     Azure short-audio REST responses do not include per-phrase speaker ids; STT segments are

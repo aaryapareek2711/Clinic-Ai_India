@@ -380,7 +380,7 @@ def test_follow_up_reminders_run_sends_day_before_reminder(app_client, patched_d
     assert body["sent_3d"] == 0
     assert body["sent_24h"] == 1
     assert len(sent) == 1
-    assert "tomorrow" in (sent[0]["body_values"] or [""])[0].lower()
+    assert "within 24 hours" in (sent[0]["body_values"] or [""])[0].lower()
 
     updated = patched_db.follow_up_reminders.find_one({"reminder_id": "r-fu-2"})
     assert updated.get("remind_24h_sent_at") is not None
