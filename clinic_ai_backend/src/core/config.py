@@ -23,6 +23,17 @@ class Settings:
         self.mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "clinic_ai")
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
         self.openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        # Visit-page clinical assistant only (intake/SOAP/transcription still use OpenAI).
+        self.clinical_assistant_provider: str = os.getenv(
+            "CLINICAL_ASSISTANT_PROVIDER", "medgemma"
+        ).strip().lower()
+        self.medgemma_model_id: str = os.getenv(
+            "MEDGEMMA_MODEL_ID", "google/medgemma-1.5-4b-it"
+        )
+        self.medgemma_max_new_tokens: int = int(os.getenv("MEDGEMMA_MAX_NEW_TOKENS", "220"))
+        self.clinical_assistant_max_output_tokens: int = int(
+            os.getenv("CLINICAL_ASSISTANT_MAX_OUTPUT_TOKENS", "220")
+        )
         self.whatsapp_access_token: str = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
         self.whatsapp_phone_number_id: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
         self.whatsapp_verify_token: str = os.getenv("WHATSAPP_VERIFY_TOKEN", "")

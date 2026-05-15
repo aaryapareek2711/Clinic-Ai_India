@@ -789,8 +789,8 @@ class OpenAIQuestionClient:
         payload = {
             "model": settings.openai_model,
             "messages": api_messages,
-            "temperature": 0.35,
-            "max_tokens": 2000,
+            "temperature": 0.25,
+            "max_tokens": settings.clinical_assistant_max_output_tokens,
         }
         req = request.Request(
             url="https://api.openai.com/v1/chat/completions",

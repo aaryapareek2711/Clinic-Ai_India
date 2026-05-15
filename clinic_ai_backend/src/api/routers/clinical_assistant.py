@@ -1,12 +1,14 @@
-"""Provider clinical assistant chat (visit-scoped context + OpenAI)."""
+"""Provider clinical assistant chat (visit-scoped context + MedGemma or OpenAI)."""
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.clinical_note_repository import ClinicalNoteRepository
+from src.adapters.external.ai.medgemma_clinical_assistant import MedGemmaClinicalAssistant
 from src.adapters.external.ai.openai_client import OpenAIQuestionClient
 from src.api.deps import get_current_user
 from src.api.routers.visits import _ensure_visit_indexes, _find_visit
@@ -14,6 +16,8 @@ from src.api.tenant_scope import ensure_visit_owned_by_doctor, normalize_doctor_
 from src.application.use_cases.store_vitals import StoreVitalsUseCase
 from src.core.ai_factory import get_active_prompt
 from src.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/visits", tags=["Visits"])
 
@@ -188,10 +192,7 @@ def clinical_assistant_chat(
     body: ClinicalAssistantChatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """
-    Context-aware assistant for the open visit (vitals, intake, pre-visit, transcript, clinical note).
-    Requires OPENAI_API_KEY on the server.
-    """
+    """Context-aware assistant for the open visit (vitals, intake, pre-visit, transcript, clinical note)."""
     db = get_database()
     doctor_id = normalize_doctor_id(current_user)
     _ensure_visit_indexes(db)
@@ -225,17 +226,32 @@ def clinical_assistant_chat(
     if api_conv[-1]["role"] != "user":
         raise HTTPException(status_code=400, detail="Last message must be from the user")
 
+    settings = get_settings()
+    provider = (settings.clinical_assistant_provider or "medgemma").strip().lower()
     try:
-        reply = OpenAIQuestionClient.clinical_assistant_multiturn(
-            system_prompt=system_prompt,
-            conversation=api_conv,
-        )
+        if provider == "openai":
+            reply = OpenAIQuestionClient.clinical_assistant_multiturn(
+                system_prompt=system_prompt,
+                conversation=api_conv,
+            )
+        else:
+            reply = MedGemmaClinicalAssistant.clinical_assistant_multiturn(
+                system_prompt=system_prompt,
+                conversation=api_conv,
+            )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Assistant request failed: {exc}") from exc
+        logger.exception("clinical_assistant_failed provider=%s", provider)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "AI assistant is temporarily unavailable. Please continue with clinical judgment "
+                "and try again later."
+            ),
+        ) from exc
 
     if not reply:
         raise HTTPException(status_code=502, detail="Assistant returned an empty reply")
